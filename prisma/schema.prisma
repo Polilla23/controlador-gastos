@@ -1,0 +1,123 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// id = Supabase Auth user id (uuid). Created on first login.
+model User {
+  id             String            @id
+  email          String            @unique
+  name           String            @default("")
+  whatsappPhone  String?           @unique // E.164 digits only, e.g. 5491155551234
+  whatsappCode   String?           @unique // one-time code used to link the phone
+  createdAt      DateTime          @default(now())
+  accounts       Account[]
+  categories     Category[]
+  tags           Tag[]
+  transactions   Transaction[]
+  plans          InstallmentPlan[]
+}
+
+model Account {
+  id             Int               @id @default(autoincrement())
+  userId         String
+  user           User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name           String
+  type           String // CASH | BANK | CREDIT_CARD | WALLET | SAVINGS
+  currency       String // ARS | USD | ...
+  color          String            @default("#1A9D76")
+  initialBalance Float             @default(0)
+  archived       Boolean           @default(false)
+  createdAt      DateTime          @default(now())
+  transactions   Transaction[]     @relation("AccountTx")
+  transfersIn    Transaction[]     @relation("ToAccountTx")
+  installments   InstallmentPlan[]
+
+  @@index([userId])
+}
+
+model Category {
+  id           Int               @id @default(autoincrement())
+  userId       String
+  user         User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name         String
+  kind         String // INCOME | EXPENSE
+  color        String            @default("#6B7280")
+  icon         String            @default("tag")
+  transactions Transaction[]
+  installments InstallmentPlan[]
+
+  @@unique([userId, name])
+}
+
+model Tag {
+  id           Int           @id @default(autoincrement())
+  userId       String
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name         String
+  color        String        @default("#24C092")
+  transactions Transaction[]
+
+  @@unique([userId, name])
+}
+
+model Transaction {
+  id            Int              @id @default(autoincrement())
+  userId        String
+  user          User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type          String // INCOME | EXPENSE | TRANSFER
+  amount        Float
+  currency      String
+  date          DateTime
+  description   String           @default("")
+  note          String           @default("")
+  accountId     Int
+  account       Account          @relation("AccountTx", fields: [accountId], references: [id], onDelete: Cascade)
+  toAccountId   Int?
+  toAccount     Account?         @relation("ToAccountTx", fields: [toAccountId], references: [id], onDelete: Cascade)
+  toAmount      Float? // amount received in destination currency (transfers)
+  categoryId    Int?
+  category      Category?        @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  tags          Tag[]
+  planId        Int?
+  plan          InstallmentPlan? @relation(fields: [planId], references: [id], onDelete: Cascade)
+  installmentNo Int?
+  attachments   Attachment[]
+  createdAt     DateTime         @default(now())
+
+  @@index([userId, date])
+  @@index([accountId])
+}
+
+model InstallmentPlan {
+  id           Int           @id @default(autoincrement())
+  userId       String
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  description  String
+  totalAmount  Float
+  installments Int
+  startDate    DateTime
+  accountId    Int
+  account      Account       @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  categoryId   Int?
+  category     Category?     @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  transactions Transaction[]
+  createdAt    DateTime      @default(now())
+
+  @@index([userId])
+}
+
+model Attachment {
+  id            Int         @id @default(autoincrement())
+  transactionId Int
+  transaction   Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  storagePath   String // path inside the Supabase Storage bucket
+  mimeType      String
+  source        String      @default("WEB") // WEB | WHATSAPP
+  createdAt     DateTime    @default(now())
+}

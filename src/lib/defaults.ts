@@ -1,0 +1,16 @@
+export const DEFAULT_CATEGORIES = [
+  { name: "Alimentación", color: "#F59E0B", icon: "utensils", kind: "EXPENSE" },
+  { name: "Supermercado", color: "#EF4444", icon: "shopping-cart", kind: "EXPENSE" },
+  { name: "Transporte", color: "#3B82F6", icon: "car", kind: "EXPENSE" },
+  { name: "Vivienda", color: "#8B5CF6", icon: "home", kind: "EXPENSE" },
+  { name: "Servicios", color: "#06B6D4", icon: "zap", kind: "EXPENSE" },
+  { name: "Salud", color: "#EC4899", icon: "heart-pulse", kind: "EXPENSE" },
+  { name: "Ocio", color: "#10B981", icon: "gamepad-2", kind: "EXPENSE" },
+  { name: "Ropa", color: "#F97316", icon: "shirt", kind: "EXPENSE" },
+  { name: "Educación", color: "#6366F1", icon: "graduation-cap", kind: "EXPENSE" },
+  { name: "Otros gastos", color: "#6B7280", icon: "circle-dot", kind: "EXPENSE" },
+  { name: "Sueldo", color: "#1A9D76", icon: "briefcase", kind: "INCOME" },
+  { name: "Freelance", color: "#24C092", icon: "laptop", kind: "INCOME" },
+  { name: "Inversiones", color: "#187D60", icon: "trending-up", kind: "INCOME" },
+  { name: "Otros ingresos", color: "#6B7280", icon: "circle-plus", kind: "INCOME" },
+];
