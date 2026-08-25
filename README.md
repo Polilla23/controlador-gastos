@@ -55,6 +55,24 @@ https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://TU-APP.vercel.app/api
 
 Todos los días el cron revisa los vencimientos planificados y las tarjetas de crédito con día de vencimiento, y avisa por Telegram con la anticipación que cada uno elija en Perfil.
 
+## Seguridad de la base
+
+Supabase publica automáticamente todo el esquema `public` como API REST usando los roles `anon` y `authenticated`, y la clave `anon` viaja en el JavaScript del navegador. Como esta app no usa esa API (habla con Postgres por Prisma), a esos roles se les quitan todos los permisos y se activa RLS en todas las tablas.
+
+Eso lo hace [`prisma/seguridad.sql`](prisma/seguridad.sql), que `npm run db:push` ejecuta solo después de cada cambio de esquema. Si alguna vez creás una tabla desde el panel de Supabase, corré:
+
+```bash
+npm run db:secure
+```
+
+Para comprobar que está bien cerrado, esto tiene que responder `permission denied`:
+
+```bash
+curl "$NEXT_PUBLIC_SUPABASE_URL/rest/v1/Transaction?select=id" -H "apikey: $NEXT_PUBLIC_SUPABASE_ANON_KEY"
+```
+
+El bucket `comprobantes` es privado y los archivos se sirven sólo con enlaces firmados de 10 minutos, generados por el servidor tras verificar que el adjunto sea del usuario que lo pide.
+
 ## Funcionalidades
 
 - **Resumen configurable**: 18 tarjetas (saldo, flujo de caja, pronóstico, estructura de gastos, naturaleza del gasto, uso de tarjetas, libro de ingresos y gastos…). Se eligen, se reordenan arrastrando y se filtra qué cuentas suman a los indicadores.
