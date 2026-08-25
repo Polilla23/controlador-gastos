@@ -1,32 +1,27 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
-import {
-  Area,
-  AreaChart,
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Cell,
-  ComposedChart,
-  Line,
-  Pie,
-  PieChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
-import { ArrowDownLeft, ArrowUpRight, ChevronRight, X } from "lucide-react";
-import type { Dashboard, Slice } from "@/lib/stats";
+import dynamic from "next/dynamic";
+import { ArrowDownLeft, ArrowUpRight } from "lucide-react";
+import type { Dashboard } from "@/lib/stats";
 import { CARDS } from "@/lib/cards";
 import { money, fmtDate, fmtDayMonth, pct, NATURES, NATURE_COLORS, ACCOUNT_TYPES } from "@/lib/format";
-import { ChartTooltip, Delta, Empty, axisNumber } from "./ui";
+import { Delta, Empty } from "./ui";
+
+/* Recharts pesa ~400 KB: se carga aparte, ya en el navegador, con un hueco mientras tanto. */
+function box(h: string) {
+  const Placeholder = () => <div className={`${h} animate-pulse rounded-xl bg-subtle`} />;
+  Placeholder.displayName = "ChartPlaceholder";
+  return Placeholder;
+}
+const Sparkline = dynamic(() => import("./charts").then((m) => m.Sparkline), { ssr: false, loading: box("mt-4 h-16") });
+const BalanceTrend = dynamic(() => import("./charts").then((m) => m.BalanceTrend), { ssr: false, loading: box("mt-2 h-56") });
+const CashflowTrend = dynamic(() => import("./charts").then((m) => m.CashflowTrend), { ssr: false, loading: box("mt-2 h-56") });
+const CategoryDonut = dynamic(() => import("./charts").then((m) => m.CategoryDonut), { ssr: false, loading: box("mt-2 h-40") });
+const ForecastBars = dynamic(() => import("./charts").then((m) => m.ForecastBars), { ssr: false, loading: box("mt-3 h-48") });
+const RatioDonut = dynamic(() => import("./charts").then((m) => m.RatioDonut), { ssr: false, loading: box("h-32 w-32 shrink-0 rounded-full") });
 
 type Props = { data: Dashboard; cards: string[] };
-
-const GRID = "var(--grid)";
 
 /* ---------- Individual cards ---------- */
 
@@ -38,20 +33,7 @@ function Patrimonio({ d }: { d: Dashboard }) {
         <Delta value={pct(d.netWorth, d.netWorthPrev)} />
         <span className="text-xs text-muted">vs. período anterior</span>
       </div>
-      <div className="mt-4 h-16">
-        <ResponsiveContainer>
-          <AreaChart data={d.balanceTrend}>
-            <defs>
-              <linearGradient id="g-nw" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#1A9D76" stopOpacity={0.35} />
-                <stop offset="100%" stopColor="#1A9D76" stopOpacity={0} />
-              </linearGradient>
-            </defs>
-            <Area type="monotone" dataKey="value" stroke="#1A9D76" strokeWidth={2} fill="url(#g-nw)" />
-            <Tooltip content={<ChartTooltip currency={d.mainCurrency} />} />
-          </AreaChart>
-        </ResponsiveContainer>
-      </div>
+      <Sparkline data={d.balanceTrend} currency={d.mainCurrency} />
     </>
   );
 }
@@ -132,146 +114,11 @@ function SaldoCuentas({ d }: { d: Dashboard }) {
 }
 
 function TendenciaSaldo({ d }: { d: Dashboard }) {
-  return (
-    <div className="mt-2 h-56">
-      <ResponsiveContainer>
-        <AreaChart data={d.balanceTrend}>
-          <defs>
-            <linearGradient id="g-bal" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#3B82F6" stopOpacity={0.4} />
-              <stop offset="100%" stopColor="#3B82F6" stopOpacity={0} />
-            </linearGradient>
-          </defs>
-          <CartesianGrid vertical={false} stroke={GRID} />
-          <XAxis dataKey="label" tickLine={false} axisLine={false} fontSize={11} />
-          <YAxis tickLine={false} axisLine={false} fontSize={11} width={52} tickFormatter={axisNumber} />
-          <Tooltip content={<ChartTooltip currency={d.mainCurrency} />} />
-          <Area type="monotone" dataKey="value" name="Saldo" stroke="#3B82F6" strokeWidth={2} fill="url(#g-bal)" />
-        </AreaChart>
-      </ResponsiveContainer>
-    </div>
-  );
+  return <BalanceTrend data={d.balanceTrend} currency={d.mainCurrency} />;
 }
 
 function TendenciaFlujo({ d }: { d: Dashboard }) {
-  return (
-    <div className="mt-2 h-56">
-      <ResponsiveContainer>
-        <ComposedChart data={d.cashflowTrend}>
-          <CartesianGrid vertical={false} stroke={GRID} />
-          <XAxis dataKey="label" tickLine={false} axisLine={false} fontSize={11} />
-          <YAxis tickLine={false} axisLine={false} fontSize={11} width={52} tickFormatter={axisNumber} />
-          <Tooltip content={<ChartTooltip currency={d.mainCurrency} />} />
-          <Bar dataKey="income" name="Ingresos" fill="#1A9D76" radius={[4, 4, 0, 0]} />
-          <Bar dataKey="expense" name="Gastos" fill="#EF4444" radius={[4, 4, 0, 0]} />
-          <Line type="monotone" dataKey="net" name="Neto" stroke="var(--fg)" strokeWidth={2} dot={false} />
-        </ComposedChart>
-      </ResponsiveContainer>
-    </div>
-  );
-}
-
-/** Donut with drill-down: clicking a parent slice opens its subcategories. */
-function Donut({ slices, currency, empty }: { slices: Slice[]; currency: string; empty: string }) {
-  const [open, setOpen] = useState<Slice | null>(null);
-  const total = slices.reduce((s, c) => s + c.value, 0);
-  if (!slices.length) return <Empty>{empty}</Empty>;
-
-  return (
-    <>
-      <div className="mt-2 flex flex-col items-center gap-4 sm:flex-row">
-        <div className="h-40 w-40 shrink-0">
-          <ResponsiveContainer>
-            <PieChart>
-              <Pie
-                data={slices}
-                dataKey="value"
-                nameKey="name"
-                innerRadius={46}
-                outerRadius={72}
-                paddingAngle={2}
-                stroke="none"
-                onClick={(_, i) => setOpen(slices[i])}
-                className="cursor-pointer outline-none"
-              >
-                {slices.map((c) => (
-                  <Cell key={c.id} fill={c.color} />
-                ))}
-              </Pie>
-              <Tooltip content={<ChartTooltip currency={currency} />} />
-            </PieChart>
-          </ResponsiveContainer>
-        </div>
-        <ul className="w-full flex-1 space-y-1.5 text-sm">
-          {slices.slice(0, 6).map((c) => (
-            <li key={c.id}>
-              <button
-                type="button"
-                onClick={() => setOpen(c)}
-                className="flex w-full items-center justify-between gap-2 rounded-lg px-1.5 py-1 text-left transition hover:bg-subtle"
-              >
-                <span className="flex min-w-0 items-center gap-2">
-                  <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: c.color }} />
-                  <span className="truncate">{c.name}</span>
-                </span>
-                <span className="flex shrink-0 items-center gap-1 text-muted">
-                  {Math.round((c.value / total) * 100)}%
-                  {c.children.length > 1 && <ChevronRight size={13} />}
-                </span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      </div>
-
-      {open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setOpen(null)}>
-          <div className="w-full max-w-md rounded-2xl border border-line bg-card p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <div className="mb-3 flex items-start justify-between">
-              <div>
-                <h3 className="font-bold">{open.name}</h3>
-                <p className="text-sm text-muted">
-                  {money(open.value, currency)} · {Math.round((open.value / total) * 100)}% del total
-                </p>
-              </div>
-              <button type="button" onClick={() => setOpen(null)} className="btn-icon">
-                <X size={18} />
-              </button>
-            </div>
-            {open.children.length ? (
-              <>
-                <div className="h-40">
-                  <ResponsiveContainer>
-                    <PieChart>
-                      <Pie data={open.children} dataKey="value" nameKey="name" innerRadius={40} outerRadius={66} paddingAngle={2} stroke="none">
-                        {open.children.map((c) => (
-                          <Cell key={c.id} fill={c.color} />
-                        ))}
-                      </Pie>
-                      <Tooltip content={<ChartTooltip currency={currency} />} />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-                <ul className="mt-3 divide-y divide-line text-sm">
-                  {open.children.map((c) => (
-                    <li key={c.id} className="flex items-center justify-between py-2">
-                      <span className="flex items-center gap-2">
-                        <span className="h-2.5 w-2.5 rounded-full" style={{ background: c.color }} />
-                        {c.name}
-                      </span>
-                      <b>{money(c.value, currency)}</b>
-                    </li>
-                  ))}
-                </ul>
-              </>
-            ) : (
-              <Empty>Esta categoría no tiene subcategorías.</Empty>
-            )}
-          </div>
-        </div>
-      )}
-    </>
-  );
+  return <CashflowTrend data={d.cashflowTrend} currency={d.mainCurrency} />;
 }
 
 function TopGastos({ d }: { d: Dashboard }) {
@@ -338,21 +185,7 @@ function Pronostico({ d }: { d: Dashboard }) {
     <>
       <div className="text-xs font-semibold uppercase tracking-wide text-muted">Próximos 30 días</div>
       <div className={`kpi-value ${f.end < 0 ? "text-red-500" : ""}`}>{money(f.end, d.mainCurrency)}</div>
-      <div className="mt-3 h-48">
-        <ResponsiveContainer>
-          <BarChart data={rows} margin={{ top: 8 }}>
-            <CartesianGrid vertical={false} stroke={GRID} />
-            <XAxis dataKey="label" tickLine={false} axisLine={false} fontSize={10} interval={0} />
-            <YAxis tickLine={false} axisLine={false} fontSize={11} width={52} tickFormatter={axisNumber} />
-            <Tooltip content={<ChartTooltip currency={d.mainCurrency} />} />
-            <Bar dataKey="value" name="Monto" radius={[4, 4, 0, 0]}>
-              {rows.map((r) => (
-                <Cell key={r.label} fill={r.fill} />
-              ))}
-            </Bar>
-          </BarChart>
-        </ResponsiveContainer>
-      </div>
+      <ForecastBars rows={rows} currency={d.mainCurrency} />
       <p className="mt-1 text-xs text-muted">El gasto e ingreso esperados salen del promedio de los últimos 90 días.</p>
     </>
   );
@@ -418,25 +251,9 @@ function Deudas({ d }: { d: Dashboard }) {
 }
 
 function DeudaIngresos({ d }: { d: Dashboard }) {
-  const ratio = Math.min(100, d.debtRatio);
-  const data = [
-    { name: "Comprometido", value: ratio, color: ratio > 50 ? "#EF4444" : "#F59E0B" },
-    { name: "Disponible", value: 100 - ratio, color: "var(--subtle)" },
-  ];
   return (
     <div className="mt-2 flex items-center gap-4">
-      <div className="relative h-32 w-32 shrink-0">
-        <ResponsiveContainer>
-          <PieChart>
-            <Pie data={data} dataKey="value" innerRadius={44} outerRadius={60} startAngle={90} endAngle={-270} stroke="none">
-              {data.map((s) => (
-                <Cell key={s.name} fill={s.color} />
-              ))}
-            </Pie>
-          </PieChart>
-        </ResponsiveContainer>
-        <span className={`absolute inset-0 flex items-center justify-center text-xl font-bold ${ratio > 50 ? "text-red-500" : "text-brand-500"}`}>{d.debtRatio}%</span>
-      </div>
+      <RatioDonut ratio={d.debtRatio} />
       <dl className="space-y-2 text-sm">
         <div>
           <dt className="text-muted">Gastos fijos</dt>
@@ -608,9 +425,9 @@ export default function DashboardCards({ data, cards }: Props) {
       case "tendencia-flujo":
         return <TendenciaFlujo d={data} />;
       case "estructura-gastos":
-        return <Donut slices={data.byCategory} currency={data.mainCurrency} empty="Sin gastos en este período." />;
+        return <CategoryDonut slices={data.byCategory} currency={data.mainCurrency} empty="Sin gastos en este período." />;
       case "ingresos-categoria":
-        return <Donut slices={data.byIncomeCategory} currency={data.mainCurrency} empty="Sin ingresos en este período." />;
+        return <CategoryDonut slices={data.byIncomeCategory} currency={data.mainCurrency} empty="Sin ingresos en este período." />;
       case "top-gastos":
         return <TopGastos d={data} />;
       case "naturaleza":
