@@ -4,6 +4,7 @@ import { useState } from "react";
 import clsx from "clsx";
 import ActionForm from "./ActionForm";
 import CategorySelect, { type CategoryOpt } from "./CategorySelect";
+import MoneyInput from "./MoneyInput";
 import { saveTransaction } from "@/lib/actions";
 import { toInputDateTime, toInputDate, money } from "@/lib/format";
 import { parseInput } from "@/lib/tz";
@@ -118,18 +119,7 @@ export default function TransactionForm({
         </div>
         <div>
           <label className="label">Monto {account ? `(${account.currency})` : ""}</label>
-          <input
-            name="amount"
-            type="number"
-            step="0.01"
-            min="0"
-            required
-            className="input"
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            placeholder="0,00"
-            inputMode="decimal"
-          />
+          <MoneyInput name="amount" required defaultValue={initial?.amount} onValueChange={setAmount} />
         </div>
       </div>
 
@@ -150,7 +140,7 @@ export default function TransactionForm({
           {crossCurrency && (
             <div>
               <label className="label">Monto recibido ({toAccount?.currency})</label>
-              <input name="toAmount" type="number" step="0.01" min="0" required className="input" defaultValue={initial?.toAmount ?? ""} />
+              <MoneyInput name="toAmount" required defaultValue={initial?.toAmount} />
             </div>
           )}
         </div>

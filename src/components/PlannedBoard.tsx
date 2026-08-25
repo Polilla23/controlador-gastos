@@ -5,6 +5,7 @@ import ActionForm from "./ActionForm";
 import Modal from "./Modal";
 import ConfirmButton from "./ConfirmButton";
 import CategorySelect, { type CategoryOpt } from "./CategorySelect";
+import MoneyInput from "./MoneyInput";
 import { confirmPlanned, deletePlanned, savePlanned } from "@/lib/actions";
 import { CURRENCIES, RECURRENCES, fmtDate, money, toInputDate } from "@/lib/format";
 import type { AccountOpt } from "./TransactionForm";
@@ -36,7 +37,7 @@ function Fields({ item, type, accounts, categories }: { item?: PlannedRow; type:
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div>
           <label className="label">Monto</label>
-          <input name="amount" type="number" step="0.01" min="0" required className="input" defaultValue={item?.amount} inputMode="decimal" />
+          <MoneyInput name="amount" required defaultValue={item?.amount} />
         </div>
         <div>
           <label className="label">Moneda</label>

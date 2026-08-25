@@ -1,4 +1,4 @@
-import { Bell, MessageCircle, RefreshCw, Send, Unlink } from "lucide-react";
+import { Bell, MessageCircle, RefreshCw, Send, Smartphone, Unlink } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { regenerateTelegramCode, saveNotificationPrefs, unlinkTelegram } from "@/lib/actions";
@@ -6,6 +6,7 @@ import { fmtDate } from "@/lib/format";
 import PageHeader from "@/components/PageHeader";
 import ConfirmButton from "@/components/ConfirmButton";
 import ActionForm from "@/components/ActionForm";
+import InstallApp from "@/components/InstallApp";
 
 export default async function PerfilPage() {
   const user = await requireUser();
@@ -109,6 +110,16 @@ export default async function PerfilPage() {
           {!user.telegramChatId && <p className="mt-3 text-xs text-amber-600">Vinculá tu Telegram para recibir los avisos.</p>}
         </section>
       </div>
+
+      <section className="card mt-4">
+        <h2 className="mb-1 flex items-center gap-2 font-bold">
+          <Smartphone size={18} className="text-brand-500" /> Instalar en el celular
+        </h2>
+        <p className="mb-3 text-sm text-muted">
+          Podés dejarla como una app más: ícono en la pantalla de inicio, pantalla completa y sin barra del navegador. Se actualiza sola, no hay que bajar nada de ninguna tienda.
+        </p>
+        <InstallApp />
+      </section>
 
       <section className="card mt-4">
         <h2 className="mb-2 font-bold">Últimos comprobantes recibidos por Telegram</h2>

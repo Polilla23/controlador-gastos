@@ -3,6 +3,7 @@
 import ActionForm from "./ActionForm";
 import Modal from "./Modal";
 import CategorySelect, { type CategoryOpt } from "./CategorySelect";
+import MoneyInput from "./MoneyInput";
 import { updatePlan } from "@/lib/actions";
 import { toInputDate } from "@/lib/format";
 import type { AccountOpt } from "./TransactionForm";
@@ -34,7 +35,7 @@ export default function PlanEditor({ plan, accounts, categories }: { plan: PlanR
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
             <label className="label">Monto total</label>
-            <input name="totalAmount" type="number" step="0.01" min="0" required className="input" defaultValue={plan.totalAmount} inputMode="decimal" />
+            <MoneyInput name="totalAmount" required defaultValue={plan.totalAmount} />
           </div>
           <div>
             <label className="label">Cantidad de cuotas</label>

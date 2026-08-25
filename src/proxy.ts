@@ -24,7 +24,7 @@ export async function proxy(request: NextRequest) {
   const { data } = await supabase.auth.getClaims();
   const signedIn = !!data?.claims?.sub;
   const { pathname } = request.nextUrl;
-  const isPublic = pathname.startsWith("/login") || pathname.startsWith("/api/telegram") || pathname.startsWith("/api/cron") || pathname.startsWith("/api/health");
+  const isPublic = pathname.startsWith("/login") || pathname.startsWith("/api/telegram") || pathname.startsWith("/api/cron") || pathname.startsWith("/api/health") || pathname === "/offline";
 
   if (!signedIn && !isPublic) return NextResponse.redirect(new URL("/login", request.url));
   if (signedIn && pathname.startsWith("/login")) return NextResponse.redirect(new URL("/", request.url));
@@ -32,5 +32,7 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  // Los archivos de la PWA (manifiesto, íconos, service worker) tienen que quedar
+  // fuera: si el proxy los redirige al login, el celular no puede instalar la app.
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|sw.js|manifest.webmanifest|icons/).*)"],
 };

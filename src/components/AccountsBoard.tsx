@@ -6,6 +6,7 @@ import ActionForm from "./ActionForm";
 import Modal from "./Modal";
 import ConfirmButton from "./ConfirmButton";
 import { ColorPicker, Sortable } from "./ui";
+import MoneyInput from "./MoneyInput";
 import { deleteAccount, reorderAccounts, saveAccount, toggleAccountStats } from "@/lib/actions";
 import { ACCOUNT_TYPES, CURRENCIES, money } from "@/lib/format";
 
@@ -56,7 +57,7 @@ function AccountFields({ account }: { account?: AccountRow }) {
       </div>
       <div>
         <label className="label">Saldo inicial</label>
-        <input name="initialBalance" type="number" step="0.01" className="input" defaultValue={account?.initialBalance ?? 0} inputMode="decimal" />
+        <MoneyInput name="initialBalance" defaultValue={account?.initialBalance ?? 0} />
       </div>
 
       {type === "CREDIT_CARD" && (
@@ -67,7 +68,7 @@ function AccountFields({ account }: { account?: AccountRow }) {
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <div>
               <label className="label">Límite</label>
-              <input name="creditLimit" type="number" step="0.01" min="0" className="input" defaultValue={account?.creditLimit ?? ""} placeholder="0,00" />
+              <MoneyInput name="creditLimit" defaultValue={account?.creditLimit} />
             </div>
             <div>
               <label className="label">Día de cierre</label>

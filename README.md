@@ -65,3 +65,5 @@ Todos los días el cron revisa los vencimientos planificados y las tarjetas de c
 - **Cuotas**: se generan solas y el plan entero se puede editar (montos, fechas, cantidad de cuotas) actualizando todos los registros.
 - **Planificados**: vencimientos e ingresos futuros, con repetición semanal, mensual o anual.
 - **Modo oscuro** y diseño pensado para el celular.
+- **Instalable como app (PWA)**: desde Perfil, cada uno la agrega a la pantalla de inicio y queda con ícono propio, a pantalla completa y sin barra del navegador. Se actualiza sola en cada deploy.
+- **Montos con separador de miles** mientras se escriben.
