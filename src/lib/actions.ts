@@ -165,12 +165,20 @@ function splitAmount(total: number, n: number) {
 
 
 
+/** Valida en una sola ida a la base que cuentas, categoría y etiquetas sean del usuario. */
 async function assertOwned(userId: string, d: { accountId: number; toAccountId?: number | null; categoryId?: number | null }, tagIds: number[]) {
-  const account = await prisma.account.findFirst({ where: { id: d.accountId, userId } });
+  const accountIds = [d.accountId, ...(d.toAccountId ? [d.toAccountId] : [])];
+  const [accounts, categories, tagCount] = await prisma.$transaction([
+    prisma.account.findMany({ where: { id: { in: accountIds }, userId } }),
+    prisma.category.findMany({ where: { id: d.categoryId ? { in: [d.categoryId] } : { in: [] }, userId }, select: { id: true } }),
+    prisma.tag.count({ where: { id: { in: tagIds }, userId } }),
+  ]);
+  const account = accounts.find((a) => a.id === d.accountId);
   if (!account) throw new Error("Cuenta inválida");
-  if (d.categoryId && !(await prisma.category.findFirst({ where: { id: d.categoryId, userId } }))) throw new Error("Categoría inválida");
-  if (tagIds.length && (await prisma.tag.count({ where: { id: { in: tagIds }, userId } })) !== tagIds.length) throw new Error("Etiqueta inválida");
-  return account;
+  if (d.toAccountId && !accounts.some((a) => a.id === d.toAccountId)) throw new Error("Cuenta destino inválida");
+  if (d.categoryId && !categories.length) throw new Error("Categoría inválida");
+  if (tagIds.length && tagCount !== tagIds.length) throw new Error("Etiqueta inválida");
+  return { account, toAccount: accounts.find((a) => a.id === d.toAccountId) };
 }
 
 export async function saveTransaction(fd: FormData) {
@@ -178,7 +186,7 @@ export async function saveTransaction(fd: FormData) {
   const id = fd.get("id") ? Number(fd.get("id")) : null;
   const d = txSchema.parse(Object.fromEntries(fd));
   const tagIds = fd.getAll("tagIds").map(Number).filter(Boolean);
-  const account = await assertOwned(userId, d, tagIds);
+  const { account, toAccount } = await assertOwned(userId, d, tagIds);
   const date = new Date(d.date);
   if (Number.isNaN(date.getTime())) throw new Error("Fecha inválida");
 
@@ -197,10 +205,8 @@ export async function saveTransaction(fd: FormData) {
   };
 
   if (d.type === "TRANSFER") {
-    if (!d.toAccountId) throw new Error("Falta la cuenta destino");
-    const to = await prisma.account.findFirst({ where: { id: d.toAccountId, userId } });
-    if (!to) throw new Error("Cuenta destino inválida");
-    if (to.currency === account.currency) base.toAmount = d.amount;
+    if (!toAccount) throw new Error("Falta la cuenta destino");
+    if (toAccount.currency === account.currency) base.toAmount = d.amount;
     else if (!d.toAmount) throw new Error("Indicá el monto recibido en la moneda destino");
   }
 
@@ -313,7 +319,7 @@ export async function updatePlan(fd: FormData) {
   const d = planSchema.parse(Object.fromEntries(fd));
   const plan = await prisma.installmentPlan.findFirst({ where: { id, userId }, include: { transactions: { orderBy: { installmentNo: "asc" } } } });
   if (!plan) throw new Error("El plan no existe");
-  const account = await assertOwned(userId, d, []);
+  const { account } = await assertOwned(userId, d, []);
   const start = parseInput(d.startDate);
   const parts = splitAmount(d.totalAmount, d.installments);
 

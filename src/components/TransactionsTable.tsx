@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Paperclip, Pencil, Trash2, Layers, AlarmClock } from "lucide-react";
+import { Paperclip, Pencil, Trash2, Layers, AlarmClock, ExternalLink, FileText } from "lucide-react";
 import ActionForm from "./ActionForm";
 import Modal from "./Modal";
 import ConfirmButton from "./ConfirmButton";
@@ -33,34 +33,76 @@ export type TxRow = {
 };
 
 function Attachments({ tx }: { tx: TxRow }) {
+  const images = tx.attachments.filter((a) => a.mimeType.startsWith("image/"));
+  const files = tx.attachments.filter((a) => !a.mimeType.startsWith("image/"));
   return (
-    <div className="space-y-4">
-      <form action={uploadAttachment} className="space-y-3">
+    <div className="space-y-5">
+      <div>
+        <h3 className="label">Comprobantes ({tx.attachments.length})</h3>
+        {tx.attachments.length === 0 && (
+          <p className="text-sm text-muted">
+            Todavía no hay comprobantes. También podés mandarlos por Telegram con el texto #{tx.id}.
+          </p>
+        )}
+
+        {images.length > 0 && (
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            {images.map((a) => (
+              <div key={a.id} className="group relative">
+                {/* La miniatura y el enlace apuntan a la misma URL firmada. */}
+                <a href={`/api/adjuntos/${a.id}`} target="_blank" rel="noreferrer" title="Abrir en una pestaña nueva">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={`/api/adjuntos/${a.id}`}
+                    alt={`Comprobante del registro ${tx.id}`}
+                    loading="lazy"
+                    className="aspect-square w-full rounded-xl border border-line bg-subtle object-cover transition group-hover:brightness-90"
+                  />
+                  <span className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-xl bg-black/45 opacity-0 transition group-hover:opacity-100">
+                    <span className="flex items-center gap-1 text-xs font-semibold text-white">
+                      <ExternalLink size={13} /> Ver completa
+                    </span>
+                  </span>
+                </a>
+                <ConfirmButton
+                  action={async () => deleteAttachment(a.id)}
+                  className="absolute right-1.5 top-1.5 rounded-lg bg-black/55 p-1.5 text-white opacity-0 transition hover:bg-red-500 group-hover:opacity-100"
+                  message="¿Eliminar este comprobante?"
+                >
+                  <Trash2 size={14} />
+                </ConfirmButton>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {files.length > 0 && (
+          <ul className="mt-3 divide-y divide-line">
+            {files.map((a) => (
+              <li key={a.id} className="flex items-center justify-between py-2 text-sm">
+                <a href={`/api/adjuntos/${a.id}`} target="_blank" rel="noreferrer" className="flex items-center gap-2 font-medium text-brand-500 hover:underline">
+                  <FileText size={15} /> Abrir archivo
+                  <ExternalLink size={12} />
+                </a>
+                <ConfirmButton action={async () => deleteAttachment(a.id)} className="btn-icon hover:text-red-500" message="¿Eliminar este comprobante?">
+                  <Trash2 size={15} />
+                </ConfirmButton>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      <form action={uploadAttachment} className="space-y-3 border-t border-line pt-4">
         <input type="hidden" name="transactionId" value={tx.id} />
         <div>
-          <label className="label">Subir comprobante (imagen o PDF, hasta 10 MB)</label>
+          <label className="label">Subir otro (imagen o PDF, hasta 10 MB)</label>
           <input type="file" name="file" accept="image/*,application/pdf" required className="input file:mr-3 file:rounded-lg file:border-0 file:bg-subtle file:px-3 file:py-1 file:text-sm" />
         </div>
         <button type="submit" className="btn-primary">
           Subir
         </button>
       </form>
-      <div>
-        <h3 className="label">Adjuntos ({tx.attachments.length})</h3>
-        {tx.attachments.length === 0 && <p className="text-sm text-muted">Todavía no hay adjuntos. También podés mandarlos por Telegram con el texto #{tx.id}.</p>}
-        <ul className="divide-y divide-line">
-          {tx.attachments.map((a) => (
-            <li key={a.id} className="flex items-center justify-between py-2 text-sm">
-              <a href={`/api/adjuntos/${a.id}`} target="_blank" rel="noreferrer" className="font-medium text-brand-500 hover:underline">
-                {a.mimeType.startsWith("image/") ? "Ver imagen" : "Abrir archivo"}
-              </a>
-              <ConfirmButton action={async () => deleteAttachment(a.id)} className="btn-icon hover:text-red-500" message="¿Eliminar este adjunto?">
-                <Trash2 size={15} />
-              </ConfirmButton>
-            </li>
-          ))}
-        </ul>
-      </div>
     </div>
   );
 }
@@ -85,7 +127,7 @@ export default function TransactionsTable({
 
   const rowActions = (t: TxRow) => (
     <div className="flex shrink-0 items-center gap-0.5">
-      <Modal title={`Adjuntos de #${t.id}`} triggerClassName="btn-icon" trigger={<span className="relative"><Paperclip size={15} />{t.attachments.length > 0 && <span className="absolute -right-1.5 -top-1.5 rounded-full bg-brand-500 px-1 text-[10px] font-bold text-white">{t.attachments.length}</span>}</span>}>
+      <Modal title={`Comprobantes de #${t.id}`} triggerClassName="btn-icon" trigger={<span className="relative"><Paperclip size={15} />{t.attachments.length > 0 && <span className="absolute -right-1.5 -top-1.5 rounded-full bg-brand-500 px-1 text-[10px] font-bold text-white">{t.attachments.length}</span>}</span>}>
         <Attachments tx={t} />
       </Modal>
       <Modal title={`Editar #${t.id}`} triggerClassName="btn-icon" trigger={<Pencil size={15} />}>
