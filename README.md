@@ -33,7 +33,7 @@ npm run dev              # http://localhost:3132
 ## 3. Vercel
 
 1. Importá el repo de GitHub en [vercel.com](https://vercel.com).
-2. **Settings → Environment Variables**: pegá todas las de `.env.example` (incluida `TZ`).
+2. **Settings → Environment Variables**: pegá todas las de `.env.example`. No hace falta configurar zona horaria: la app calcula meses, semanas y vencimientos con el calendario argentino aunque el servidor corra en UTC (Vercel no permite definir `TZ`).
 3. Deploy. El cron de recordatorios queda activo solo (ver `vercel.json`).
 
 ## 4. Bot de Telegram

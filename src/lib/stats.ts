@@ -1,5 +1,6 @@
 import { prisma } from "./prisma";
 import { monthKey, monthLabel, previousRange, type Range } from "./format";
+import { addDays, fromCivil, civil, startOfDay, startOfMonth } from "./tz";
 
 export type Slice = { id: string; name: string; value: number; color: string; children: Slice[] };
 
@@ -90,9 +91,10 @@ export async function loadDashboard(userId: string, range: Range, accountIds?: n
   const expensePrev = sum(past, "EXPENSE");
 
   /* ---------- Trends (last 12 months) ---------- */
+  const thisMonth = civil(startOfMonth(now));
   const months = Array.from({ length: 12 }, (_, i) => {
-    const d = new Date(now.getFullYear(), now.getMonth() - 11 + i, 1);
-    return { key: M(d), label: shortMonth(M(d)), end: new Date(d.getFullYear(), d.getMonth() + 1, 1) };
+    const d = fromCivil(thisMonth.y, thisMonth.m - 11 + i, 1);
+    return { key: M(d), label: shortMonth(M(d)), end: fromCivil(thisMonth.y, thisMonth.m - 10 + i, 1) };
   });
   const cashflowTrend = months.map((m) => {
     const rows = flows.filter((t) => M(t.date) === m.key);
@@ -169,13 +171,13 @@ export async function loadDashboard(userId: string, range: Range, accountIds?: n
     });
 
   /* ---------- Planned money & forecast ---------- */
-  const in30 = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 30);
+  const in30 = addDays(startOfDay(now), 30);
   const upcoming = planned.filter((p) => p.dueDate < in30);
   const plannedOut = upcoming.filter((p) => p.type === "EXPENSE" && p.currency === mainCurrency).reduce((s, p) => s + p.amount, 0);
   const plannedIn = upcoming.filter((p) => p.type === "INCOME" && p.currency === mainCurrency).reduce((s, p) => s + p.amount, 0);
 
   // Expected flows from the last 90 days of history, prorated to 30 days.
-  const since = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 90);
+  const since = addDays(startOfDay(now), -90);
   const hist = flows.filter((t) => t.date >= since && t.date <= now);
   const expectedExpense = (hist.filter((t) => t.type === "EXPENSE").reduce((s, t) => s + t.amount, 0) / 90) * 30;
   const expectedIncome = (hist.filter((t) => t.type === "INCOME").reduce((s, t) => s + t.amount, 0) / 90) * 30;

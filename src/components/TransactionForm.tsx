@@ -6,6 +6,7 @@ import ActionForm from "./ActionForm";
 import CategorySelect, { type CategoryOpt } from "./CategorySelect";
 import { saveTransaction } from "@/lib/actions";
 import { toInputDateTime, toInputDate, money } from "@/lib/format";
+import { parseInput } from "@/lib/tz";
 
 export type AccountOpt = { id: number; name: string; currency: string; color: string };
 export type TagOpt = { id: number; name: string; color: string };
@@ -159,8 +160,8 @@ export default function TransactionForm({
         <div>
           <label className="label">Fecha y hora</label>
           <input type="datetime-local" required className="input" value={date} onChange={(e) => setDate(e.target.value)} />
-          {/* Submit the absolute instant so the server does not reinterpret the wall clock in its own zone. */}
-          <input type="hidden" name="date" value={date ? new Date(date).toISOString() : ""} />
+          {/* Mandamos el instante absoluto: el servidor corre en UTC y no debe reinterpretar la hora. */}
+          <input type="hidden" name="date" value={date ? parseInput(date).toISOString() : ""} />
         </div>
         {type !== "TRANSFER" && (
           <div>

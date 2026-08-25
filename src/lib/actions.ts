@@ -7,21 +7,13 @@ import { prisma } from "./prisma";
 import { requireUserId } from "./auth";
 import { supabaseServer } from "./supabase";
 import { storeAttachment, removeStored } from "./storage";
+import { addMonths, civil, fromCivil, parseInput } from "./tz";
 
 const num = z.coerce.number();
 
-/**
- * "YYYY-MM-DD" from a date input, anchored at local noon.
- * `new Date("2026-06-15")` would parse as UTC midnight and land on the 14th in ART.
- */
-function parseDateOnly(value: string): Date {
-  const [y, m, d] = value.split("T")[0].split("-").map(Number);
-  if (!y || !m || !d) throw new Error("Fecha inválida");
-  return new Date(y, m - 1, d, 12, 0, 0);
-}
 const optInt = z.preprocess((v) => (v === "" || v == null ? null : Number(v)), z.number().int().nullable());
 const optNum = z.preprocess((v) => (v === "" || v == null ? null : Number(v)), z.number().nullable());
-const optDate = z.preprocess((v) => (v === "" || v == null ? null : parseDateOnly(String(v))), z.date().nullable());
+const optDate = z.preprocess((v) => (v === "" || v == null ? null : parseInput(String(v).split("T")[0])), z.date().nullable());
 
 /** One call invalidates the whole authenticated tree — cheaper than touching each route. */
 const refresh = () => revalidatePath("/", "layout");
@@ -171,7 +163,7 @@ function splitAmount(total: number, n: number) {
   return Array.from({ length: n }, (_, i) => (i === n - 1 ? Math.round((total - each * (n - 1)) * 100) / 100 : each));
 }
 
-const addMonths = (d: Date, n: number) => new Date(d.getFullYear(), d.getMonth() + n, d.getDate(), d.getHours(), d.getMinutes());
+
 
 async function assertOwned(userId: string, d: { accountId: number; toAccountId?: number | null; categoryId?: number | null }, tagIds: number[]) {
   const account = await prisma.account.findFirst({ where: { id: d.accountId, userId } });
@@ -322,7 +314,7 @@ export async function updatePlan(fd: FormData) {
   const plan = await prisma.installmentPlan.findFirst({ where: { id, userId }, include: { transactions: { orderBy: { installmentNo: "asc" } } } });
   if (!plan) throw new Error("El plan no existe");
   const account = await assertOwned(userId, d, []);
-  const start = parseDateOnly(d.startDate);
+  const start = parseInput(d.startDate);
   const parts = splitAmount(d.totalAmount, d.installments);
 
   await prisma.$transaction([
@@ -373,7 +365,7 @@ export async function savePlanned(fd: FormData) {
   const userId = await requireUserId();
   const id = fd.get("id") ? Number(fd.get("id")) : null;
   const d = plannedSchema.parse(Object.fromEntries(fd));
-  const data = { ...d, dueDate: parseDateOnly(d.dueDate), userId, lastNotifiedOn: null };
+  const data = { ...d, dueDate: parseInput(d.dueDate), userId, lastNotifiedOn: null };
   if (id) await prisma.planned.update({ where: { id, userId }, data });
   else await prisma.planned.create({ data });
   refresh();
@@ -409,13 +401,13 @@ export async function confirmPlanned(id: number) {
   if (p.recurrence === "NONE") {
     await prisma.planned.update({ where: { id }, data: { done: true } });
   } else {
-    const d = p.dueDate;
+    const c = civil(p.dueDate);
     const next =
       p.recurrence === "WEEKLY"
-        ? new Date(d.getFullYear(), d.getMonth(), d.getDate() + 7)
+        ? fromCivil(c.y, c.m, c.d + 7, 12)
         : p.recurrence === "MONTHLY"
-          ? new Date(d.getFullYear(), d.getMonth() + 1, d.getDate())
-          : new Date(d.getFullYear() + 1, d.getMonth(), d.getDate());
+          ? fromCivil(c.y, c.m + 1, c.d, 12)
+          : fromCivil(c.y + 1, c.m, c.d, 12);
     await prisma.planned.update({ where: { id }, data: { dueDate: next, lastNotifiedOn: null } });
   }
   refresh();

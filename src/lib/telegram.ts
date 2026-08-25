@@ -1,6 +1,7 @@
 import { prisma } from "./prisma";
 import { storeAttachment } from "./storage";
 import { money, fmtDate, fmtDayMonth } from "./format";
+import { APP_TZ, addDays, civil as civilOf, fromCivil, startOfDay } from "./tz";
 
 const api = (method: string) => `https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/${method}`;
 
@@ -88,7 +89,7 @@ export async function handleUpdate(update: TgUpdate) {
   }
 
   if (/^\/proximos/i.test(text)) {
-    const until = new Date(Date.now() + 30 * 86400000);
+    const until = addDays(startOfDay(), 30);
     const items = await prisma.planned.findMany({ where: { userId: user.id, done: false, dueDate: { lte: until } }, orderBy: { dueDate: "asc" }, take: 15 });
     if (!items.length) return reply("No tenés pagos ni ingresos planificados para los próximos 30 días.");
     const lines = items.map((p) => `${p.type === "INCOME" ? "🟢" : "🔴"} ${fmtDayMonth(p.dueDate)} · ${p.description}: <b>${money(p.amount, p.currency)}</b>`);
@@ -128,7 +129,8 @@ export async function handleUpdate(update: TgUpdate) {
 
 /* ---------- Daily reminders ---------- */
 
-const sameDay = (a: Date | null, b: Date) => !!a && a.toDateString() === b.toDateString();
+const dayKey = (d: Date) => new Intl.DateTimeFormat("en-CA", { timeZone: APP_TZ }).format(d);
+const sameDay = (a: Date | null, b: Date) => !!a && dayKey(a) === dayKey(b);
 
 /** Warns about planned payments/income and credit card due dates. Idempotent per day. */
 export async function runReminders() {
@@ -143,7 +145,7 @@ export async function runReminders() {
 
   let sent = 0;
   for (const user of users) {
-    const limit = new Date(today.getFullYear(), today.getMonth(), today.getDate() + user.notifyDays, 23, 59);
+    const limit = addDays(startOfDay(today), user.notifyDays + 1);
     const lines: string[] = [];
     const touchedPlanned: number[] = [];
     const touchedCards: number[] = [];
@@ -158,8 +160,9 @@ export async function runReminders() {
 
     for (const card of user.accounts) {
       if (!card.dueDay || sameDay(card.lastNotifiedOn, today)) continue;
-      let due = new Date(today.getFullYear(), today.getMonth(), card.dueDay);
-      if (due < today) due = new Date(today.getFullYear(), today.getMonth() + 1, card.dueDay);
+      const c = civilOf(today);
+      let due = fromCivil(c.y, c.m, card.dueDay, 12);
+      if (due < today) due = fromCivil(c.y, c.m + 1, card.dueDay, 12);
       const days = Math.ceil((due.getTime() - today.getTime()) / 86400000);
       if (days > user.notifyDays) continue;
       lines.push(`💳 <b>${card.name}</b> ${days <= 0 ? "vence hoy" : days === 1 ? "vence mañana" : `vence el ${fmtDayMonth(due)}`}`);
