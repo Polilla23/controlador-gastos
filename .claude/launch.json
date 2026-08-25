@@ -9,6 +9,15 @@
         "dev"
       ],
       "port": 3132
+    },
+    {
+      "name": "prod",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "start"
+      ],
+      "port": 3133
     }
   ]
 }

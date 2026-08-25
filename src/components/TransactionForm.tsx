@@ -3,11 +3,11 @@
 import { useState } from "react";
 import clsx from "clsx";
 import ActionForm from "./ActionForm";
+import CategorySelect, { type CategoryOpt } from "./CategorySelect";
 import { saveTransaction } from "@/lib/actions";
-import { toInputDate, money } from "@/lib/format";
+import { toInputDateTime, toInputDate, money } from "@/lib/format";
 
 export type AccountOpt = { id: number; name: string; currency: string; color: string };
-export type CategoryOpt = { id: number; name: string; kind: string; color: string };
 export type TagOpt = { id: number; name: string; color: string };
 
 export type TxInitial = {
@@ -15,6 +15,8 @@ export type TxInitial = {
   type: string;
   amount: number;
   date: Date;
+  dueDate: Date | null;
+  paid: boolean;
   description: string;
   note: string;
   accountId: number;
@@ -45,7 +47,7 @@ function TagPicker({ tags, initial }: { tags: TagOpt[]; initial: number[] }) {
             key={t.id}
             type="button"
             onClick={() => toggle(t.id)}
-            className={clsx("chip border transition", on ? "border-transparent text-white" : "border-gray-200 text-gray-600")}
+            className={clsx("chip border transition", on ? "border-transparent text-white" : "border-line text-muted")}
             style={on ? { background: t.color } : undefined}
           >
             #{t.name}
@@ -74,11 +76,12 @@ export default function TransactionForm({
   const [toAccountId, setToAccountId] = useState(initial?.toAccountId ?? accounts[1]?.id ?? accounts[0]?.id ?? 0);
   const [amount, setAmount] = useState(initial?.amount?.toString() ?? "");
   const [installments, setInstallments] = useState(1);
+  const [hasDue, setHasDue] = useState(!!initial?.dueDate);
+  const [date, setDate] = useState(toInputDateTime(initial?.date ?? new Date()));
 
   const account = accounts.find((a) => a.id === accountId);
   const toAccount = accounts.find((a) => a.id === toAccountId);
   const crossCurrency = type === "TRANSFER" && account && toAccount && account.currency !== toAccount.currency;
-  const cats = categories.filter((c) => c.kind === type);
   const per = Number(amount) > 0 && installments > 1 ? Number(amount) / installments : null;
 
   return (
@@ -87,16 +90,13 @@ export default function TransactionForm({
       <input type="hidden" name="type" value={type} />
 
       {!initial && (
-        <div className="grid grid-cols-3 gap-1 rounded-xl bg-gray-100 p-1">
+        <div className="grid grid-cols-3 gap-1 rounded-xl bg-subtle p-1">
           {TYPES.map((t) => (
             <button
               key={t.key}
               type="button"
               onClick={() => setType(t.key)}
-              className={clsx(
-                "rounded-lg py-1.5 text-sm font-semibold transition",
-                type === t.key ? `${t.cls} text-white shadow` : "text-gray-600 hover:bg-white",
-              )}
+              className={clsx("rounded-lg py-1.5 text-sm font-semibold transition", type === t.key ? `${t.cls} text-white shadow` : "text-muted hover:bg-card")}
             >
               {t.label}
             </button>
@@ -104,7 +104,7 @@ export default function TransactionForm({
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div>
           <label className="label">{type === "TRANSFER" ? "Desde" : "Cuenta"}</label>
           <select name="accountId" className="input" value={accountId} onChange={(e) => setAccountId(Number(e.target.value))}>
@@ -117,12 +117,23 @@ export default function TransactionForm({
         </div>
         <div>
           <label className="label">Monto {account ? `(${account.currency})` : ""}</label>
-          <input name="amount" type="number" step="0.01" min="0" required className="input" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0,00" />
+          <input
+            name="amount"
+            type="number"
+            step="0.01"
+            min="0"
+            required
+            className="input"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            placeholder="0,00"
+            inputMode="decimal"
+          />
         </div>
       </div>
 
       {type === "TRANSFER" && (
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
             <label className="label">Hacia</label>
             <select name="toAccountId" className="input" value={toAccountId} onChange={(e) => setToAccountId(Number(e.target.value))}>
@@ -144,22 +155,17 @@ export default function TransactionForm({
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div>
-          <label className="label">Fecha</label>
-          <input name="date" type="date" required className="input" defaultValue={toInputDate(initial?.date ?? new Date())} />
+          <label className="label">Fecha y hora</label>
+          <input type="datetime-local" required className="input" value={date} onChange={(e) => setDate(e.target.value)} />
+          {/* Submit the absolute instant so the server does not reinterpret the wall clock in its own zone. */}
+          <input type="hidden" name="date" value={date ? new Date(date).toISOString() : ""} />
         </div>
         {type !== "TRANSFER" && (
           <div>
             <label className="label">Categoría</label>
-            <select name="categoryId" className="input" defaultValue={initial?.categoryId ?? ""}>
-              <option value="">Sin categoría</option>
-              {cats.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
+            <CategorySelect categories={categories} kind={type} defaultValue={initial?.categoryId} />
           </div>
         )}
       </div>
@@ -169,30 +175,47 @@ export default function TransactionForm({
         <input name="description" className="input" defaultValue={initial?.description ?? ""} placeholder="Ej: Supermercado Coto" />
       </div>
 
+      {type === "EXPENSE" && (
+        <div className="rounded-xl border border-dashed border-line p-3">
+          <label className="flex cursor-pointer items-center gap-2 text-sm font-medium">
+            <input type="checkbox" checked={hasDue} onChange={(e) => setHasDue(e.target.checked)} className="h-4 w-4 accent-[var(--color-brand-500)]" />
+            Tiene fecha de vencimiento
+          </label>
+          {hasDue && (
+            <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div>
+                <label className="label">Vence el</label>
+                <input name="dueDate" type="date" className="input" defaultValue={initial?.dueDate ? toInputDate(new Date(initial.dueDate)) : ""} />
+              </div>
+              <label className="flex items-end gap-2 pb-2 text-sm">
+                <input type="checkbox" name="paid" defaultChecked={initial?.paid ?? true} className="h-4 w-4 accent-[var(--color-brand-500)]" />
+                Ya está pagado
+              </label>
+            </div>
+          )}
+        </div>
+      )}
+
       {type === "EXPENSE" && !initial && (
-        <div className="rounded-xl border border-dashed border-gray-200 p-3">
-          <div className="flex items-center gap-3">
+        <div className="rounded-xl border border-dashed border-line p-3">
+          <div className="flex flex-wrap items-center gap-3">
             <label className="label mb-0">Cuotas</label>
             <input
               name="installments"
               type="number"
               min={1}
-              max={60}
+              max={120}
               className="input w-24"
               value={installments}
               onChange={(e) => setInstallments(Math.max(1, Number(e.target.value) || 1))}
             />
             {per && account && (
-              <span className="text-sm text-gray-500">
+              <span className="text-sm text-muted">
                 {installments} × <b>{money(per, account.currency)}</b> por mes
               </span>
             )}
           </div>
-          {installments > 1 && (
-            <p className="mt-2 text-xs text-gray-400">
-              Se van a crear {installments} registros, uno por mes a partir de la fecha elegida.
-            </p>
-          )}
+          {installments > 1 && <p className="mt-2 text-xs text-muted">Se crean {installments} registros, uno por mes desde la fecha elegida. Después los podés editar juntos desde Cuotas.</p>}
         </div>
       )}
 

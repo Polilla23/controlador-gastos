@@ -13,14 +13,18 @@ model User {
   id             String            @id
   email          String            @unique
   name           String            @default("")
-  whatsappPhone  String?           @unique // E.164 digits only, e.g. 5491155551234
-  whatsappCode   String?           @unique // one-time code used to link the phone
+  telegramChatId String?           @unique
+  telegramCode   String?           @unique // one-time code used to link the chat
+  notifyDays     Int               @default(3) // days before a due date to warn
+  notifyHour     Int               @default(9) // local hour for the daily digest
+  dashboard      Json? // { cards: [{id, size}], accountIds: [] }
   createdAt      DateTime          @default(now())
   accounts       Account[]
   categories     Category[]
   tags           Tag[]
   transactions   Transaction[]
   plans          InstallmentPlan[]
+  planned        Planned[]
 }
 
 model Account {
@@ -32,11 +36,18 @@ model Account {
   currency       String // ARS | USD | ...
   color          String            @default("#1A9D76")
   initialBalance Float             @default(0)
+  sortOrder      Int               @default(0)
+  includeInStats Boolean           @default(true) // counts towards dashboard KPIs
   archived       Boolean           @default(false)
+  creditLimit    Float? // CREDIT_CARD only
+  closingDay     Int? // CREDIT_CARD: statement closing day of month
+  dueDay         Int? // CREDIT_CARD: payment due day of month
+  lastNotifiedOn DateTime? // dedupes the card due-date reminder
   createdAt      DateTime          @default(now())
   transactions   Transaction[]     @relation("AccountTx")
   transfersIn    Transaction[]     @relation("ToAccountTx")
   installments   InstallmentPlan[]
+  planned        Planned[]
 
   @@index([userId])
 }
@@ -49,10 +60,17 @@ model Category {
   kind         String // INCOME | EXPENSE
   color        String            @default("#6B7280")
   icon         String            @default("tag")
+  nature       String            @default("NEED") // MUST | NEED | WANT (expense nature)
+  sortOrder    Int               @default(0)
+  parentId     Int? // one level of nesting: parent categories group subcategories
+  parent       Category?         @relation("Subcategories", fields: [parentId], references: [id], onDelete: Cascade)
+  children     Category[]        @relation("Subcategories")
   transactions Transaction[]
   installments InstallmentPlan[]
+  planned      Planned[]
 
-  @@unique([userId, name])
+  @@unique([userId, name, parentId])
+  @@index([userId])
 }
 
 model Tag {
@@ -73,7 +91,9 @@ model Transaction {
   type          String // INCOME | EXPENSE | TRANSFER
   amount        Float
   currency      String
-  date          DateTime
+  date          DateTime // includes time of day
+  dueDate       DateTime? // optional payment deadline (e.g. a bill)
+  paid          Boolean          @default(true)
   description   String           @default("")
   note          String           @default("")
   accountId     Int
@@ -92,6 +112,7 @@ model Transaction {
 
   @@index([userId, date])
   @@index([accountId])
+  @@index([userId, dueDate])
 }
 
 model InstallmentPlan {
@@ -112,12 +133,35 @@ model InstallmentPlan {
   @@index([userId])
 }
 
+/// Future money: expected income (salary, refunds) and upcoming bills.
+model Planned {
+  id             Int       @id @default(autoincrement())
+  userId         String
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type           String // INCOME | EXPENSE
+  description    String
+  amount         Float
+  currency       String
+  dueDate        DateTime
+  recurrence     String    @default("NONE") // NONE | WEEKLY | MONTHLY | YEARLY
+  accountId      Int?
+  account        Account?  @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  categoryId     Int?
+  category       Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  notify         Boolean   @default(true)
+  done           Boolean   @default(false)
+  lastNotifiedOn DateTime?
+  createdAt      DateTime  @default(now())
+
+  @@index([userId, dueDate])
+}
+
 model Attachment {
   id            Int         @id @default(autoincrement())
   transactionId Int
   transaction   Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
   storagePath   String // path inside the Supabase Storage bucket
   mimeType      String
-  source        String      @default("WEB") // WEB | WHATSAPP
+  source        String      @default("WEB") // WEB | TELEGRAM
   createdAt     DateTime    @default(now())
 }

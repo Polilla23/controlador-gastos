@@ -1,61 +1,74 @@
-import { Plus, Pencil, Trash2 } from "lucide-react";
+import { Pencil, Plus, Trash2 } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { requireUserId } from "@/lib/auth";
-import { saveTag, deleteTag } from "@/lib/actions";
+import { deleteTag, saveTag } from "@/lib/actions";
 import PageHeader from "@/components/PageHeader";
 import Modal from "@/components/Modal";
 import ActionForm from "@/components/ActionForm";
 import ConfirmButton from "@/components/ConfirmButton";
-
-export const dynamic = "force-dynamic";
-
-function TagForm({ initial, onDone }: { initial?: { id: number; name: string; color: string }; onDone?: () => void }) {
-  return (
-    <ActionForm action={saveTag} onDone={onDone}>
-      {initial && <input type="hidden" name="id" value={initial.id} />}
-      <div className="grid grid-cols-3 gap-3">
-        <div className="col-span-2">
-          <label className="label">Nombre</label>
-          <input name="name" required className="input" defaultValue={initial?.name} placeholder="Ej: vacaciones" />
-        </div>
-        <div>
-          <label className="label">Color</label>
-          <input name="color" type="color" className="input h-10 p-1" defaultValue={initial?.color ?? "#24C092"} />
-        </div>
-      </div>
-    </ActionForm>
-  );
-}
+import { ColorPicker } from "@/components/ui";
 
 export default async function EtiquetasPage() {
   const userId = await requireUserId();
-  const tags = await prisma.tag.findMany({ where: { userId }, orderBy: { name: "asc" }, include: { _count: { select: { transactions: true } } } });
+  const tags = await prisma.tag.findMany({
+    where: { userId },
+    orderBy: { name: "asc" },
+    include: { _count: { select: { transactions: true } } },
+  });
+
   return (
     <>
-      <PageHeader title="Etiquetas" subtitle="Marcá movimientos con etiquetas libres (viaje, regalo, trabajo…)">
-        <Modal title="Nueva etiqueta" trigger={<><Plus size={16} /> Nueva etiqueta</>}>
-          <TagForm />
+      <PageHeader title="Etiquetas" subtitle="Marcá movimientos con etiquetas libres (vacaciones, trabajo, regalos…)">
+        <Modal title="Nueva etiqueta" trigger={<><Plus size={16} /> Nueva</>}>
+          <ActionForm action={saveTag}>
+            <div>
+              <label className="label">Nombre</label>
+              <input name="name" required className="input" placeholder="Ej: vacaciones" />
+            </div>
+            <div>
+              <label className="label">Color</label>
+              <ColorPicker name="color" defaultValue="#24C092" />
+            </div>
+          </ActionForm>
         </Modal>
       </PageHeader>
+
       <div className="card">
-        {tags.length === 0 && <p className="text-sm text-gray-400">Todavía no creaste etiquetas.</p>}
-        <ul className="divide-y divide-gray-100">
+        {tags.length === 0 && <p className="py-8 text-center text-sm text-muted">Todavía no creaste etiquetas.</p>}
+        <ul className="space-y-1">
           {tags.map((t) => (
-            <li key={t.id} className="flex items-center justify-between py-2">
-              <div className="flex items-center gap-3">
-                <span className="chip text-white" style={{ background: t.color }}>
+            <li key={t.id} className="flex items-center justify-between gap-2 rounded-xl border border-line px-3 py-2.5">
+              <span className="flex min-w-0 items-center gap-3">
+                <span className="chip shrink-0 text-white" style={{ background: t.color }}>
                   #{t.name}
                 </span>
-                <span className="text-xs text-gray-400">{t._count.transactions} mov.</span>
-              </div>
-              <div className="flex gap-1">
-                <Modal title="Editar etiqueta" triggerClassName="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100" trigger={<Pencil size={14} />}>
-                  <TagForm initial={t} />
+                <span className="truncate text-xs text-muted">{t._count.transactions} movimientos</span>
+              </span>
+              <span className="flex shrink-0 items-center gap-1">
+                <Modal title={`Editar #${t.name}`} triggerClassName="btn-icon" trigger={<Pencil size={15} />}>
+                  <ActionForm action={saveTag}>
+                    <input type="hidden" name="id" value={t.id} />
+                    <div>
+                      <label className="label">Nombre</label>
+                      <input name="name" required className="input" defaultValue={t.name} />
+                    </div>
+                    <div>
+                      <label className="label">Color</label>
+                      <ColorPicker name="color" defaultValue={t.color} />
+                    </div>
+                  </ActionForm>
                 </Modal>
-                <ConfirmButton action={deleteTag.bind(null, t.id)} className="rounded-lg p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-500">
-                  <Trash2 size={14} />
+                <ConfirmButton
+                  action={async () => {
+                    "use server";
+                    await deleteTag(t.id);
+                  }}
+                  className="btn-icon hover:text-red-500"
+                  message={`¿Eliminar la etiqueta "${t.name}"?`}
+                >
+                  <Trash2 size={15} />
                 </ConfirmButton>
-              </div>
+              </span>
             </li>
           ))}
         </ul>

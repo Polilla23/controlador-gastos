@@ -1,6 +1,6 @@
 # Mis Finanzas — controlador de gastos
 
-App multiusuario para controlar gastos: cuentas en varias monedas, categorías y etiquetas propias, compras en cuotas automáticas y comprobantes adjuntados por WhatsApp. Cada usuario ve solo sus datos.
+App multiusuario para controlar gastos: cuentas en varias monedas, categorías con subcategorías, compras en cuotas, vencimientos que avisan por Telegram y un resumen con tarjetas que cada persona arma a su gusto. Cada usuario ve solo sus datos.
 
 ## Stack (todo en planes gratuitos)
 
@@ -8,57 +8,60 @@ App multiusuario para controlar gastos: cuentas en varias monedas, categorías y
 | --- | --- | --- |
 | App | **Vercel** (Hobby) | Next.js 16 + TypeScript + Tailwind 4 |
 | Base de datos | **Supabase** Postgres | Prisma 6 |
-| Login | **Supabase Auth** | email + contraseña, sesiones por cookie |
+| Login | **Supabase Auth** | email + contraseña, sesión por cookie |
 | Archivos | **Supabase Storage** | bucket privado `comprobantes`, enlaces firmados |
-| WhatsApp | **Meta Cloud API** | webhook en `/api/whatsapp`, sin proceso 24/7 |
+| Bot | **Telegram Bot API** | webhook en `/api/telegram`, sin proceso 24/7 |
+| Avisos | **Vercel Cron** | `/api/cron/recordatorios`, una vez por día |
 
 ## 1. Supabase
 
 1. Creá un proyecto en [supabase.com](https://supabase.com) (región South America).
-2. **Project Settings → Database → Connection string**: copiá la URI en modo *Transaction* (puerto 6543) como `DATABASE_URL` (agregale `?pgbouncer=true`) y la de modo *Session* (puerto 5432) como `DIRECT_URL`.
-3. **Project Settings → API**: copiá `Project URL`, `anon public` y `service_role` a las variables correspondientes.
+2. **Connect → ORMs → Prisma**: copiá las dos cadenas a `DATABASE_URL` (puerto 6543) y `DIRECT_URL` (5432), reemplazando `[YOUR-PASSWORD]`.
+3. **Project Settings → API**: `Project URL` (sin `/rest/v1`), `anon public` y `service_role`.
 4. **Storage → New bucket**: nombre `comprobantes`, **privado**.
-5. **Authentication → Providers → Email**: dejá habilitado. Si no querés que cada amigo tenga que confirmar el email, desactivá *Confirm email*.
+5. **Authentication → Providers → Email**: si no querés que cada amigo confirme el mail, desactivá *Confirm email*.
 
 ## 2. Correr en local
 
 ```bash
 npm install
 cp .env.example .env     # completá las variables
-npm run db:push          # crea las tablas en Supabase
+npm run db:push          # crea las tablas
 npm run dev              # http://localhost:3132
 ```
 
-Entrá a `/login`, creá tu usuario: se generan categorías por defecto y una cuenta "Efectivo".
-
 ## 3. Vercel
 
-1. Subí el repo a GitHub y en [vercel.com](https://vercel.com) importalo (framework Next.js, sin cambios).
-2. En **Settings → Environment Variables** pegá todas las variables de `.env.example`.
-3. Deploy. Cada `git push` a `main` redeploya solo.
+1. Importá el repo de GitHub en [vercel.com](https://vercel.com).
+2. **Settings → Environment Variables**: pegá todas las de `.env.example` (incluida `TZ`).
+3. Deploy. El cron de recordatorios queda activo solo (ver `vercel.json`).
 
-## 4. WhatsApp (Meta Cloud API)
+## 4. Bot de Telegram
 
-Necesitás un número que **no esté registrado en WhatsApp** para que sea el número del bot. Para probar, Meta te da un número de prueba gratis que puede chatear con hasta 5 números que vos registres.
+1. En Telegram hablale a [@BotFather](https://t.me/BotFather) → `/newbot` → elegí nombre y usuario.
+2. Copiá el token a `TELEGRAM_BOT_TOKEN` y el usuario (sin `@`) a `NEXT_PUBLIC_TELEGRAM_BOT`.
+3. Inventá un `TELEGRAM_WEBHOOK_SECRET` y registrá el webhook una sola vez, abriendo esta URL en el navegador:
 
-1. En [developers.facebook.com](https://developers.facebook.com) creá una app de tipo **Business** y agregale el producto **WhatsApp**.
-2. **WhatsApp → API Setup**: copiá el *Phone number ID* a `WHATSAPP_PHONE_NUMBER_ID`. El token temporal sirve para probar; para producción creá un *System User* en Business Settings con permiso `whatsapp_business_messaging` y generá un token permanente → `WHATSAPP_TOKEN`.
-3. **App settings → Basic → App secret** → `WHATSAPP_APP_SECRET`.
-4. Inventá una frase para `WHATSAPP_VERIFY_TOKEN`.
-5. **WhatsApp → Configuration → Webhook**: URL `https://TU-APP.vercel.app/api/whatsapp`, el mismo verify token, y suscribite al campo `messages`.
-6. Poné el número del bot (solo dígitos, con código de país) en `NEXT_PUBLIC_WHATSAPP_BOT_NUMBER` para que la app se lo muestre a los usuarios.
+```
+https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://TU-APP.vercel.app/api/telegram&secret_token=<TELEGRAM_WEBHOOK_SECRET>
+```
 
 ### Cómo lo usa cada persona
 
-1. En **Perfil** genera su código de vinculación y se lo manda al número del bot por WhatsApp. El bot confirma.
-2. Crea un registro en la app y mira su ID (columna `#` en Transacciones).
-3. Le manda al bot la foto o PDF con el texto `#123`. El bot lo guarda en Storage, lo adjunta al registro y responde confirmando. Si manda solo el ID, el bot describe el registro.
+1. En **Perfil** genera su código y se lo manda al bot (o toca *Abrir y vincular*).
+2. Crea un registro en la app y mira su número (columna `#` en Transacciones).
+3. Le manda al bot la foto o PDF con el texto `#123` y queda adjuntado.
+4. Comandos: `/saldo` (saldos por cuenta) y `/proximos` (vencimientos de 30 días).
+
+Todos los días el cron revisa los vencimientos planificados y las tarjetas de crédito con día de vencimiento, y avisa por Telegram con la anticipación que cada uno elija en Perfil.
 
 ## Funcionalidades
 
-- **Cuentas** con tipo, moneda y color; la moneda de cada registro sale de la cuenta.
-- **Registros**: ingreso, egreso y transferencia entre cuentas (con monto recibido si cambian de moneda).
-- **Cuotas**: N registros mensuales automáticos agrupados en un plan con progreso.
-- **Categorías** por tipo y **etiquetas** libres, editables.
-- **Resumen** mensual: patrimonio por moneda, ingresos vs. egresos, torta por categoría, tendencia de 6 meses.
-- **Adjuntos** por web o WhatsApp, privados por usuario.
+- **Resumen configurable**: 18 tarjetas (saldo, flujo de caja, pronóstico, estructura de gastos, naturaleza del gasto, uso de tarjetas, libro de ingresos y gastos…). Se eligen, se reordenan arrastrando y se filtra qué cuentas suman a los indicadores.
+- **Filtros de período**: día, semana, mes, año o rango libre, con comparación contra el período anterior.
+- **Cuentas** con tipo, moneda, color libre y orden arrastrable. Las tarjetas de crédito guardan límite, cierre y vencimiento.
+- **Categorías con subcategorías**: los gráficos suman por categoría madre y al hacer clic se abre el detalle.
+- **Registros** con fecha y hora, vencimiento opcional, adjuntos, etiquetas y edición en bloque de varios a la vez.
+- **Cuotas**: se generan solas y el plan entero se puede editar (montos, fechas, cantidad de cuotas) actualizando todos los registros.
+- **Planificados**: vencimientos e ingresos futuros, con repetición semanal, mensual o anual.
+- **Modo oscuro** y diseño pensado para el celular.

@@ -9,18 +9,28 @@ import { supabaseServer } from "./supabase";
 import { storeAttachment, removeStored } from "./storage";
 
 const num = z.coerce.number();
-const optInt = z.preprocess((v) => (v === "" || v == null ? null : Number(v)), z.number().int().nullable());
-const optNum = z.preprocess((v) => (v === "" || v == null ? null : Number(v)), z.number().positive().nullable());
 
-function revalidateAll() {
-  for (const p of ["/", "/cuentas", "/transacciones", "/cuotas", "/categorias", "/etiquetas", "/perfil"]) revalidatePath(p);
+/**
+ * "YYYY-MM-DD" from a date input, anchored at local noon.
+ * `new Date("2026-06-15")` would parse as UTC midnight and land on the 14th in ART.
+ */
+function parseDateOnly(value: string): Date {
+  const [y, m, d] = value.split("T")[0].split("-").map(Number);
+  if (!y || !m || !d) throw new Error("Fecha inválida");
+  return new Date(y, m - 1, d, 12, 0, 0);
 }
+const optInt = z.preprocess((v) => (v === "" || v == null ? null : Number(v)), z.number().int().nullable());
+const optNum = z.preprocess((v) => (v === "" || v == null ? null : Number(v)), z.number().nullable());
+const optDate = z.preprocess((v) => (v === "" || v == null ? null : parseDateOnly(String(v))), z.date().nullable());
+
+/** One call invalidates the whole authenticated tree — cheaper than touching each route. */
+const refresh = () => revalidatePath("/", "layout");
 
 /* ---------- Auth ---------- */
-const credsSchema = z.object({ email: z.string().email("Email inválido"), password: z.string().min(6, "Mínimo 6 caracteres") });
+const creds = z.object({ email: z.string().email("Email inválido"), password: z.string().min(6, "Mínimo 6 caracteres") });
 
 export async function signIn(fd: FormData) {
-  const { email, password } = credsSchema.parse(Object.fromEntries(fd));
+  const { email, password } = creds.parse(Object.fromEntries(fd));
   const supabase = await supabaseServer();
   const { error } = await supabase.auth.signInWithPassword({ email, password });
   if (error) throw new Error("Email o contraseña incorrectos");
@@ -28,7 +38,7 @@ export async function signIn(fd: FormData) {
 }
 
 export async function signUp(fd: FormData) {
-  const { email, password } = credsSchema.parse(Object.fromEntries(fd));
+  const { email, password } = creds.parse(Object.fromEntries(fd));
   const name = String(fd.get("name") ?? "");
   const supabase = await supabaseServer();
   const { data, error } = await supabase.auth.signUp({ email, password, options: { data: { name } } });
@@ -50,81 +60,135 @@ const accountSchema = z.object({
   currency: z.string().length(3),
   color: z.string(),
   initialBalance: num.default(0),
+  creditLimit: optNum,
+  closingDay: optInt,
+  dueDay: optInt,
 });
 
 export async function saveAccount(fd: FormData) {
   const userId = await requireUserId();
   const id = fd.get("id") ? Number(fd.get("id")) : null;
-  const data = accountSchema.parse(Object.fromEntries(fd));
+  const d = accountSchema.parse(Object.fromEntries(fd));
+  const data = d.type === "CREDIT_CARD" ? d : { ...d, creditLimit: null, closingDay: null, dueDay: null };
   if (id) await prisma.account.update({ where: { id, userId }, data });
-  else await prisma.account.create({ data: { ...data, userId } });
-  revalidateAll();
+  else {
+    const last = await prisma.account.aggregate({ where: { userId }, _max: { sortOrder: true } });
+    await prisma.account.create({ data: { ...data, userId, sortOrder: (last._max.sortOrder ?? 0) + 1 } });
+  }
+  refresh();
 }
 
 export async function deleteAccount(id: number) {
   const userId = await requireUserId();
   await prisma.account.delete({ where: { id, userId } });
-  revalidateAll();
+  refresh();
 }
 
-/* ---------- Categories & tags ---------- */
-const categorySchema = z.object({ name: z.string().min(1), kind: z.string(), color: z.string() });
+export async function reorderAccounts(ids: number[]) {
+  const userId = await requireUserId();
+  await prisma.$transaction(ids.map((id, i) => prisma.account.updateMany({ where: { id, userId }, data: { sortOrder: i } })));
+  refresh();
+}
+
+export async function toggleAccountStats(id: number, includeInStats: boolean) {
+  const userId = await requireUserId();
+  await prisma.account.updateMany({ where: { id, userId }, data: { includeInStats } });
+  refresh();
+}
+
+/* ---------- Categories ---------- */
+const categorySchema = z.object({
+  name: z.string().min(1),
+  kind: z.string(),
+  color: z.string(),
+  nature: z.string().default("NEED"),
+  parentId: optInt,
+});
 
 export async function saveCategory(fd: FormData) {
   const userId = await requireUserId();
   const id = fd.get("id") ? Number(fd.get("id")) : null;
-  const data = categorySchema.parse(Object.fromEntries(fd));
-  if (id) await prisma.category.update({ where: { id, userId }, data });
-  else await prisma.category.create({ data: { ...data, userId } });
-  revalidateAll();
+  const d = categorySchema.parse(Object.fromEntries(fd));
+  if (d.parentId) {
+    const parent = await prisma.category.findFirst({ where: { id: d.parentId, userId } });
+    if (!parent) throw new Error("La categoría padre no existe");
+    if (parent.parentId) throw new Error("Sólo se permite un nivel de subcategorías");
+    if (id === d.parentId) throw new Error("Una categoría no puede ser su propia madre");
+  }
+  if (id) {
+    const hasChildren = await prisma.category.count({ where: { parentId: id } });
+    if (hasChildren && d.parentId) throw new Error("Esta categoría ya tiene subcategorías, no puede depender de otra");
+    await prisma.category.update({ where: { id, userId }, data: d });
+  } else {
+    await prisma.category.create({ data: { ...d, userId } });
+  }
+  refresh();
 }
+
 export async function deleteCategory(id: number) {
   const userId = await requireUserId();
   await prisma.category.delete({ where: { id, userId } });
-  revalidateAll();
+  refresh();
 }
 
+/* ---------- Tags ---------- */
 const tagSchema = z.object({ name: z.string().min(1), color: z.string() });
+
 export async function saveTag(fd: FormData) {
   const userId = await requireUserId();
   const id = fd.get("id") ? Number(fd.get("id")) : null;
   const data = tagSchema.parse(Object.fromEntries(fd));
   if (id) await prisma.tag.update({ where: { id, userId }, data });
   else await prisma.tag.create({ data: { ...data, userId } });
-  revalidateAll();
+  refresh();
 }
+
 export async function deleteTag(id: number) {
   const userId = await requireUserId();
   await prisma.tag.delete({ where: { id, userId } });
-  revalidateAll();
+  refresh();
 }
 
 /* ---------- Transactions ---------- */
 const txSchema = z.object({
   type: z.enum(["INCOME", "EXPENSE", "TRANSFER"]),
   amount: num.positive(),
-  date: z.string(),
+  date: z.string().min(1),
+  dueDate: optDate,
+  paid: z.preprocess((v) => v === "on" || v === "true" || v == null, z.boolean()),
   description: z.string().default(""),
   note: z.string().default(""),
   accountId: num.int(),
   toAccountId: optInt,
   toAmount: optNum,
   categoryId: optInt,
-  installments: z.coerce.number().int().min(1).default(1),
+  installments: z.coerce.number().int().min(1).max(120).default(1),
 });
+
+/** Per-installment amounts; the last one absorbs the rounding remainder. */
+function splitAmount(total: number, n: number) {
+  const each = Math.round((total / n) * 100) / 100;
+  return Array.from({ length: n }, (_, i) => (i === n - 1 ? Math.round((total - each * (n - 1)) * 100) / 100 : each));
+}
+
+const addMonths = (d: Date, n: number) => new Date(d.getFullYear(), d.getMonth() + n, d.getDate(), d.getHours(), d.getMinutes());
+
+async function assertOwned(userId: string, d: { accountId: number; toAccountId?: number | null; categoryId?: number | null }, tagIds: number[]) {
+  const account = await prisma.account.findFirst({ where: { id: d.accountId, userId } });
+  if (!account) throw new Error("Cuenta inválida");
+  if (d.categoryId && !(await prisma.category.findFirst({ where: { id: d.categoryId, userId } }))) throw new Error("Categoría inválida");
+  if (tagIds.length && (await prisma.tag.count({ where: { id: { in: tagIds }, userId } })) !== tagIds.length) throw new Error("Etiqueta inválida");
+  return account;
+}
 
 export async function saveTransaction(fd: FormData) {
   const userId = await requireUserId();
   const id = fd.get("id") ? Number(fd.get("id")) : null;
   const d = txSchema.parse(Object.fromEntries(fd));
   const tagIds = fd.getAll("tagIds").map(Number).filter(Boolean);
-  const account = await prisma.account.findUniqueOrThrow({ where: { id: d.accountId, userId } });
-  const date = new Date(d.date + "T12:00:00");
-
-  // Ownership checks for every referenced row.
-  if (d.categoryId) await prisma.category.findUniqueOrThrow({ where: { id: d.categoryId, userId } });
-  if (tagIds.length && (await prisma.tag.count({ where: { id: { in: tagIds }, userId } })) !== tagIds.length)
-    throw new Error("Etiqueta inválida");
+  const account = await assertOwned(userId, d, tagIds);
+  const date = new Date(d.date);
+  if (Number.isNaN(date.getTime())) throw new Error("Fecha inválida");
 
   const base = {
     userId,
@@ -132,6 +196,8 @@ export async function saveTransaction(fd: FormData) {
     currency: account.currency,
     description: d.description,
     note: d.note,
+    dueDate: d.type === "EXPENSE" ? d.dueDate : null,
+    paid: d.type === "EXPENSE" ? d.paid : true,
     accountId: d.accountId,
     toAccountId: d.type === "TRANSFER" ? d.toAccountId : null,
     toAmount: d.type === "TRANSFER" ? d.toAmount : null,
@@ -140,7 +206,8 @@ export async function saveTransaction(fd: FormData) {
 
   if (d.type === "TRANSFER") {
     if (!d.toAccountId) throw new Error("Falta la cuenta destino");
-    const to = await prisma.account.findUniqueOrThrow({ where: { id: d.toAccountId, userId } });
+    const to = await prisma.account.findFirst({ where: { id: d.toAccountId, userId } });
+    if (!to) throw new Error("Cuenta destino inválida");
     if (to.currency === account.currency) base.toAmount = d.amount;
     else if (!d.toAmount) throw new Error("Indicá el monto recibido en la moneda destino");
   }
@@ -148,7 +215,7 @@ export async function saveTransaction(fd: FormData) {
   if (id) {
     await prisma.transaction.update({
       where: { id, userId },
-      data: { ...base, amount: d.amount, date, tags: { set: tagIds.map((id) => ({ id })) } },
+      data: { ...base, amount: d.amount, date, tags: { set: tagIds.map((t) => ({ id: t })) } },
     });
   } else if (d.type === "EXPENSE" && d.installments > 1) {
     const plan = await prisma.installmentPlan.create({
@@ -162,40 +229,196 @@ export async function saveTransaction(fd: FormData) {
         categoryId: d.categoryId,
       },
     });
-    const each = Math.round((d.amount / d.installments) * 100) / 100;
-    for (let i = 0; i < d.installments; i++) {
-      const due = new Date(date.getFullYear(), date.getMonth() + i, date.getDate(), 12);
-      const isLast = i === d.installments - 1;
-      await prisma.transaction.create({
-        data: {
-          ...base,
-          amount: isLast ? Math.round((d.amount - each * (d.installments - 1)) * 100) / 100 : each,
-          date: due,
-          description: `${d.description || "Compra en cuotas"} (${i + 1}/${d.installments})`,
-          planId: plan.id,
-          installmentNo: i + 1,
-          tags: { connect: tagIds.map((id) => ({ id })) },
-        },
-      });
-    }
+    const parts = splitAmount(d.amount, d.installments);
+    await prisma.$transaction(
+      parts.map((amount, i) =>
+        prisma.transaction.create({
+          data: {
+            ...base,
+            amount,
+            date: addMonths(date, i),
+            description: `${d.description || "Compra en cuotas"} (${i + 1}/${d.installments})`,
+            planId: plan.id,
+            installmentNo: i + 1,
+            tags: { connect: tagIds.map((t) => ({ id: t })) },
+          },
+        }),
+      ),
+    );
   } else {
-    await prisma.transaction.create({
-      data: { ...base, amount: d.amount, date, tags: { connect: tagIds.map((id) => ({ id })) } },
-    });
+    await prisma.transaction.create({ data: { ...base, amount: d.amount, date, tags: { connect: tagIds.map((t) => ({ id: t })) } } });
   }
-  revalidateAll();
+  refresh();
 }
 
 export async function deleteTransaction(id: number) {
   const userId = await requireUserId();
   await prisma.transaction.delete({ where: { id, userId } });
-  revalidateAll();
+  refresh();
+}
+
+/** Bulk edit: applies only the fields that were filled in. */
+export async function bulkUpdateTransactions(fd: FormData) {
+  const userId = await requireUserId();
+  const ids = fd.getAll("ids").map(Number).filter(Boolean);
+  if (!ids.length) throw new Error("No seleccionaste ningún registro");
+
+  const categoryId = fd.get("categoryId");
+  const accountId = fd.get("accountId");
+  const addTags = fd.getAll("addTagIds").map(Number).filter(Boolean);
+  const data: { categoryId?: number | null; accountId?: number; currency?: string } = {};
+
+  if (categoryId === "none") data.categoryId = null;
+  else if (categoryId) {
+    const cat = await prisma.category.findFirst({ where: { id: Number(categoryId), userId } });
+    if (!cat) throw new Error("Categoría inválida");
+    data.categoryId = cat.id;
+  }
+  if (accountId) {
+    const acc = await prisma.account.findFirst({ where: { id: Number(accountId), userId } });
+    if (!acc) throw new Error("Cuenta inválida");
+    data.accountId = acc.id;
+    data.currency = acc.currency; // the record's currency always follows its account
+  }
+
+  const owned = await prisma.transaction.findMany({ where: { id: { in: ids }, userId }, select: { id: true } });
+  const ownedIds = owned.map((t) => t.id);
+  if (!ownedIds.length) throw new Error("No se encontraron los registros");
+
+  if (Object.keys(data).length) await prisma.transaction.updateMany({ where: { id: { in: ownedIds } }, data });
+  if (addTags.length) {
+    if ((await prisma.tag.count({ where: { id: { in: addTags }, userId } })) !== addTags.length) throw new Error("Etiqueta inválida");
+    await prisma.$transaction(
+      ownedIds.map((id) => prisma.transaction.update({ where: { id }, data: { tags: { connect: addTags.map((t) => ({ id: t })) } } })),
+    );
+  }
+  refresh();
+}
+
+export async function bulkDeleteTransactions(ids: number[]) {
+  const userId = await requireUserId();
+  await prisma.transaction.deleteMany({ where: { id: { in: ids }, userId } });
+  refresh();
+}
+
+/* ---------- Installment plans ---------- */
+const planSchema = z.object({
+  description: z.string().min(1),
+  totalAmount: num.positive(),
+  installments: z.coerce.number().int().min(1).max(120),
+  startDate: z.string().min(1),
+  accountId: num.int(),
+  categoryId: optInt,
+});
+
+/**
+ * Rewrites every instalment of a plan. Existing rows are updated in place (so their
+ * attachments survive); extra ones are created or removed when the count changes.
+ */
+export async function updatePlan(fd: FormData) {
+  const userId = await requireUserId();
+  const id = Number(fd.get("id"));
+  const d = planSchema.parse(Object.fromEntries(fd));
+  const plan = await prisma.installmentPlan.findFirst({ where: { id, userId }, include: { transactions: { orderBy: { installmentNo: "asc" } } } });
+  if (!plan) throw new Error("El plan no existe");
+  const account = await assertOwned(userId, d, []);
+  const start = parseDateOnly(d.startDate);
+  const parts = splitAmount(d.totalAmount, d.installments);
+
+  await prisma.$transaction([
+    prisma.installmentPlan.update({
+      where: { id },
+      data: { description: d.description, totalAmount: d.totalAmount, installments: d.installments, startDate: start, accountId: d.accountId, categoryId: d.categoryId },
+    }),
+    ...parts.map((amount, i) => {
+      const existing = plan.transactions[i];
+      const data = {
+        amount,
+        date: addMonths(start, i),
+        description: `${d.description} (${i + 1}/${d.installments})`,
+        accountId: d.accountId,
+        categoryId: d.categoryId,
+        currency: account.currency,
+        installmentNo: i + 1,
+      };
+      return existing
+        ? prisma.transaction.update({ where: { id: existing.id }, data })
+        : prisma.transaction.create({ data: { ...data, userId, type: "EXPENSE", planId: id } });
+    }),
+    ...plan.transactions.slice(d.installments).map((t) => prisma.transaction.delete({ where: { id: t.id } })),
+  ]);
+  refresh();
 }
 
 export async function deletePlan(id: number) {
   const userId = await requireUserId();
   await prisma.installmentPlan.delete({ where: { id, userId } });
-  revalidateAll();
+  refresh();
+}
+
+/* ---------- Planned money (future income & upcoming bills) ---------- */
+const plannedSchema = z.object({
+  type: z.enum(["INCOME", "EXPENSE"]),
+  description: z.string().min(1),
+  amount: num.positive(),
+  currency: z.string().length(3),
+  dueDate: z.string().min(1),
+  recurrence: z.enum(["NONE", "WEEKLY", "MONTHLY", "YEARLY"]).default("NONE"),
+  accountId: optInt,
+  categoryId: optInt,
+  notify: z.preprocess((v) => v === "on" || v === "true", z.boolean()).default(true),
+});
+
+export async function savePlanned(fd: FormData) {
+  const userId = await requireUserId();
+  const id = fd.get("id") ? Number(fd.get("id")) : null;
+  const d = plannedSchema.parse(Object.fromEntries(fd));
+  const data = { ...d, dueDate: parseDateOnly(d.dueDate), userId, lastNotifiedOn: null };
+  if (id) await prisma.planned.update({ where: { id, userId }, data });
+  else await prisma.planned.create({ data });
+  refresh();
+}
+
+export async function deletePlanned(id: number) {
+  const userId = await requireUserId();
+  await prisma.planned.delete({ where: { id, userId } });
+  refresh();
+}
+
+/** Turns a planned item into a real record; recurring ones roll over to the next date. */
+export async function confirmPlanned(id: number) {
+  const userId = await requireUserId();
+  const p = await prisma.planned.findFirst({ where: { id, userId } });
+  if (!p) throw new Error("No existe");
+  const accountId = p.accountId ?? (await prisma.account.findFirst({ where: { userId }, orderBy: { sortOrder: "asc" } }))?.id;
+  if (!accountId) throw new Error("Creá una cuenta antes de confirmar el movimiento");
+
+  await prisma.transaction.create({
+    data: {
+      userId,
+      type: p.type,
+      amount: p.amount,
+      currency: p.currency,
+      date: new Date(),
+      description: p.description,
+      accountId,
+      categoryId: p.categoryId,
+    },
+  });
+
+  if (p.recurrence === "NONE") {
+    await prisma.planned.update({ where: { id }, data: { done: true } });
+  } else {
+    const d = p.dueDate;
+    const next =
+      p.recurrence === "WEEKLY"
+        ? new Date(d.getFullYear(), d.getMonth(), d.getDate() + 7)
+        : p.recurrence === "MONTHLY"
+          ? new Date(d.getFullYear(), d.getMonth() + 1, d.getDate())
+          : new Date(d.getFullYear() + 1, d.getMonth(), d.getDate());
+    await prisma.planned.update({ where: { id }, data: { dueDate: next, lastNotifiedOn: null } });
+  }
+  refresh();
 }
 
 /* ---------- Attachments ---------- */
@@ -205,31 +428,44 @@ export async function uploadAttachment(fd: FormData) {
   const file = fd.get("file") as File | null;
   if (!file || file.size === 0) return;
   if (file.size > 10 * 1024 * 1024) throw new Error("El archivo supera los 10 MB");
-  await prisma.transaction.findUniqueOrThrow({ where: { id: transactionId, userId } });
+  if (!(await prisma.transaction.findFirst({ where: { id: transactionId, userId } }))) throw new Error("Registro inválido");
   const storagePath = await storeAttachment(userId, transactionId, await file.arrayBuffer(), file.type);
   await prisma.attachment.create({ data: { transactionId, storagePath, mimeType: file.type, source: "WEB" } });
-  revalidateAll();
+  refresh();
 }
 
 export async function deleteAttachment(id: number) {
   const userId = await requireUserId();
-  const a = await prisma.attachment.findUniqueOrThrow({ where: { id }, include: { transaction: { select: { userId: true } } } });
-  if (a.transaction.userId !== userId) throw new Error("No autorizado");
+  const a = await prisma.attachment.findUnique({ where: { id }, include: { transaction: { select: { userId: true } } } });
+  if (!a || a.transaction.userId !== userId) throw new Error("No autorizado");
   await prisma.attachment.delete({ where: { id } });
   await removeStored(a.storagePath).catch(() => {});
-  revalidateAll();
+  refresh();
 }
 
-/* ---------- WhatsApp linking ---------- */
-export async function regenerateWhatsappCode() {
+/* ---------- Profile, Telegram & dashboard layout ---------- */
+export async function regenerateTelegramCode() {
   const userId = await requireUserId();
   const code = Math.random().toString(36).slice(2, 8).toUpperCase();
-  await prisma.user.update({ where: { id: userId }, data: { whatsappCode: code } });
+  await prisma.user.update({ where: { id: userId }, data: { telegramCode: code } });
   revalidatePath("/perfil");
 }
 
-export async function unlinkWhatsapp() {
+export async function unlinkTelegram() {
   const userId = await requireUserId();
-  await prisma.user.update({ where: { id: userId }, data: { whatsappPhone: null } });
+  await prisma.user.update({ where: { id: userId }, data: { telegramChatId: null } });
   revalidatePath("/perfil");
+}
+
+export async function saveNotificationPrefs(fd: FormData) {
+  const userId = await requireUserId();
+  const notifyDays = Math.min(30, Math.max(0, Number(fd.get("notifyDays") ?? 3)));
+  await prisma.user.update({ where: { id: userId }, data: { notifyDays } });
+  revalidatePath("/perfil");
+}
+
+export async function saveDashboard(cards: string[], accountIds: number[]) {
+  const userId = await requireUserId();
+  await prisma.user.update({ where: { id: userId }, data: { dashboard: { cards, accountIds } } });
+  refresh();
 }
