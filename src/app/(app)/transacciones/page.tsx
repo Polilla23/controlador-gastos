@@ -9,6 +9,7 @@ import Modal from "@/components/Modal";
 import TransactionForm from "@/components/TransactionForm";
 import TransactionsTable from "@/components/TransactionsTable";
 import CategorySelect from "@/components/CategorySelect";
+import SavedFilters from "@/components/SavedFilters";
 
 type SP = Record<string, string | undefined>;
 
@@ -24,7 +25,7 @@ export default async function TransaccionesPage({ searchParams }: { searchParams
   if (sp.etiqueta) where.tags = { some: { id: Number(sp.etiqueta) } };
   if (sp.q) where.OR = [{ description: { contains: sp.q, mode: "insensitive" } }, { note: { contains: sp.q, mode: "insensitive" } }];
 
-  const [rows, accounts, categories, tags, previos] = await Promise.all([
+  const [rows, accounts, categories, tags, filtros, previos] = await Promise.all([
     prisma.transaction.findMany({
       where,
       orderBy: [{ date: "desc" }, { id: "desc" }],
@@ -34,6 +35,7 @@ export default async function TransaccionesPage({ searchParams }: { searchParams
     prisma.account.findMany({ where: { userId, archived: false }, orderBy: [{ sortOrder: "asc" }, { id: "asc" }] }),
     prisma.category.findMany({ where: { userId }, orderBy: { name: "asc" } }),
     prisma.tag.findMany({ where: { userId }, orderBy: { name: "asc" } }),
+    prisma.savedFilter.findMany({ where: { userId, scope: "TX" }, orderBy: { name: "asc" } }),
     prisma.transaction.findMany({
       where: { userId, counterparty: { not: "" } },
       distinct: ["counterparty"],
@@ -55,6 +57,7 @@ export default async function TransaccionesPage({ searchParams }: { searchParams
     <>
       <PageHeader title="Transacciones" subtitle={`${rows.length} registros · ${range.label}`}>
         <RangePicker range={range} />
+        <SavedFilters filtros={filtros.map((f) => ({ id: f.id, name: f.name, query: f.query as Record<string, string> }))} scope="TX" />
         <Modal title="Nuevo registro" trigger={<><Plus size={16} /> <span className="hidden sm:inline">Nuevo</span></>}>
           <TransactionForm accounts={accounts} categories={categories} tags={tags} counterparties={counterparties} />
         </Modal>

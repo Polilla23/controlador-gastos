@@ -14,6 +14,7 @@ import {
   UserCircle,
   Wallet,
   CalendarPlus,
+  Target,
   X,
 } from "lucide-react";
 import clsx from "clsx";
@@ -25,6 +26,7 @@ const ITEMS = [
   { href: "/transacciones", label: "Transacciones", icon: ArrowLeftRight },
   { href: "/cuentas", label: "Cuentas", icon: Wallet },
   { href: "/planificados", label: "Planificados", icon: CalendarPlus },
+  { href: "/presupuestos", label: "Presupuestos y metas", icon: Target },
   { href: "/cuotas", label: "Cuotas", icon: CalendarClock },
   { href: "/categorias", label: "Categorías", icon: Shapes },
   { href: "/etiquetas", label: "Etiquetas", icon: Tags },

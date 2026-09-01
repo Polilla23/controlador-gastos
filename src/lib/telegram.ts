@@ -2,6 +2,7 @@ import { prisma } from "./prisma";
 import { storeAttachment } from "./storage";
 import { money, fmtDate, fmtDayMonth } from "./format";
 import { APP_TZ, addDays, civil as civilOf, fromCivil, startOfDay } from "./tz";
+import { cargarPresupuestos } from "./presupuestos";
 
 const api = (method: string) => `https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/${method}`;
 
@@ -194,8 +195,22 @@ export async function runReminders() {
       touchedCards.push(card.id);
     }
 
+    // Presupuestos pasados de rosca: se avisa una sola vez por período.
+    const presupuestos = await cargarPresupuestos(user.id);
+    const excedidos = presupuestos.filter((b) => b.excedido);
+    const marcarPresupuestos: { id: number; periodo: string }[] = [];
+    for (const b of excedidos) {
+      const periodo = b.desde.toISOString().slice(0, 10);
+      if (b.warnedFor === periodo) continue;
+      lines.push(
+        `📊 Te pasaste del presupuesto <b>${b.name}</b>: llevás ${money(b.gastado, b.currency)} de ${money(b.amount, b.currency)}`,
+      );
+      marcarPresupuestos.push({ id: b.id, periodo });
+    }
+
     if (!lines.length) continue;
     await sendText(user.telegramChatId!, `<b>Recordatorio</b>\n${lines.join("\n")}`);
+    for (const m of marcarPresupuestos) await prisma.budget.update({ where: { id: m.id }, data: { warnedFor: m.periodo } });
     sent++;
     if (touchedPlanned.length) await prisma.planned.updateMany({ where: { id: { in: touchedPlanned } }, data: { lastNotifiedOn: today } });
     if (touchedCards.length) await prisma.account.updateMany({ where: { id: { in: touchedCards } }, data: { lastNotifiedOn: today } });

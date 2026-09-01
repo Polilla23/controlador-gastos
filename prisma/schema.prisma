@@ -26,6 +26,8 @@ model User {
   plans          InstallmentPlan[]
   planned        Planned[]
   filters        SavedFilter[]
+  budgets        Budget[]
+  goals          Goal[]
 }
 
 model Account {
@@ -50,6 +52,7 @@ model Account {
   transfersIn    Transaction[]     @relation("ToAccountTx")
   installments   InstallmentPlan[]
   planned        Planned[]
+  budgets        Budget[]
 
   @@index([userId])
 }
@@ -70,6 +73,7 @@ model Category {
   transactions Transaction[]
   installments InstallmentPlan[]
   planned      Planned[]
+  budgets      Budget[]
 
   @@unique([userId, name, parentId])
   @@index([userId])
@@ -85,6 +89,7 @@ model Tag {
   sortOrder    Int           @default(0)
   transactions Transaction[]
   planned      Planned[]
+  budgets      Budget[]
 
   @@unique([userId, name])
 }
@@ -180,6 +185,61 @@ model SavedFilter {
 
   @@unique([userId, scope, name])
   @@index([userId, scope])
+}
+
+/// Cuánto pienso gastar en un período, y en qué.
+model Budget {
+  id         Int        @id @default(autoincrement())
+  userId     String
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name       String
+  period     String     @default("MONTHLY") // ONCE | WEEKLY | MONTHLY | YEARLY
+  amount     Float
+  currency   String     @default("ARS")
+  startDate  DateTime
+  endDate    DateTime? // sólo para los de una vez
+  note       String     @default("")
+  color      String     @default("#1A9D76")
+  icon       String?
+  archived   Boolean    @default(false)
+  /// Último período en el que ya avisamos que se pasó ("YYYY-MM-DD" del inicio).
+  warnedFor  String?
+  categories Category[]
+  accounts   Account[]
+  tags       Tag[]
+  createdAt  DateTime   @default(now())
+
+  @@index([userId, archived])
+}
+
+/// Un objetivo de ahorro, con los aportes que se le van haciendo.
+model Goal {
+  id            Int                @id @default(autoincrement())
+  userId        String
+  user          User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name          String
+  targetAmount  Float
+  currency      String             @default("ARS")
+  targetDate    DateTime?
+  status        String             @default("ACTIVE") // ACTIVE | PAUSED | REACHED
+  color         String             @default("#22C55E")
+  icon          String?
+  note          String             @default("")
+  createdAt     DateTime           @default(now())
+  contributions GoalContribution[]
+
+  @@index([userId, status])
+}
+
+model GoalContribution {
+  id     Int      @id @default(autoincrement())
+  goalId Int
+  goal   Goal     @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  amount Float // negativo si se retira plata del objetivo
+  date   DateTime @default(now())
+  note   String   @default("")
+
+  @@index([goalId, date])
 }
 
 model Attachment {
