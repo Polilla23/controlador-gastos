@@ -41,7 +41,7 @@ model Account {
   user           User              @relation(fields: [userId], references: [id], onDelete: Cascade)
   name           String
   icon           String? // ícono elegido en el selector (ej "mdi:bank")
-  type           String // CASH | BANK | CREDIT_CARD | WALLET | SAVINGS
+  type           String // CASH | BANK | CREDIT_CARD | WALLET | SAVINGS | INVESTMENT
   currency       String // ARS | USD | ...
   color          String            @default("#1A9D76")
   initialBalance Float             @default(0)
@@ -405,6 +405,9 @@ model Holding {
   /// Datos propios de renta fija: tasa anual y vencimiento.
   rate      Float?
   maturity  DateTime?
+  /// Último precio conocido, cargado a mano (no hay API gratuita de CEDEARs).
+  lastPrice Float?
+  priceAt   DateTime?
   note      String       @default("")
   createdAt DateTime     @default(now())
   moves     InvestMove[]

@@ -82,6 +82,13 @@ El bucket `comprobantes` es privado y los archivos se sirven sólo con enlaces f
 - **Registros** con fecha y hora, vencimiento opcional, adjuntos, etiquetas y edición en bloque de varios a la vez.
 - **Cuotas**: se generan solas y el plan entero se puede editar (montos, fechas, cantidad de cuotas) actualizando todos los registros.
 - **Planificados**: vencimientos e ingresos futuros, con repetición semanal, mensual o anual.
+- **Presupuestos y metas**: techos de gasto por período con aviso al excederse, y objetivos de ahorro que estiman cuándo se llegan.
+- **Gastos compartidos**: grupos con integrantes, reparto en partes iguales, montos exactos o porcentajes, y liquidación sugerida de quién le paga a quién.
+- **Deudas**: plata prestada o pedida, con devoluciones parciales y aviso por Telegram.
+- **Inversiones**: cuentas de bróker con CEDEARs, FCI, plazos fijos, bonos y demás, con efectivo, tenencias y rendimiento.
+- **Monedas**: cotización del dólar desde dolarapi.com, con cotización manual por registro.
+- **Reglas de automatización**: clasifican solos los registros que se repiten.
+- **Filtros guardados** en Registros y Resumen.
 - **Modo oscuro** y diseño pensado para el celular.
 - **Instalable como app (PWA)**: desde Perfil, cada uno la agrega a la pantalla de inicio y queda con ícono propio, a pantalla completa y sin barra del navegador. Se actualiza sola en cada deploy.
 - **Montos con separador de miles** mientras se escriben.

@@ -18,6 +18,8 @@ import {
   HandCoins,
   Coins,
   Wand2,
+  Users,
+  LineChart,
   X,
 } from "lucide-react";
 import clsx from "clsx";
@@ -30,6 +32,8 @@ const ITEMS = [
   { href: "/cuentas", label: "Cuentas", icon: Wallet },
   { href: "/planificados", label: "Planificados", icon: CalendarPlus },
   { href: "/presupuestos", label: "Presupuestos y metas", icon: Target },
+  { href: "/inversiones", label: "Inversiones", icon: LineChart },
+  { href: "/compartidos", label: "Gastos compartidos", icon: Users },
   { href: "/deudas", label: "Deudas", icon: HandCoins },
   { href: "/cuotas", label: "Cuotas", icon: CalendarClock },
   { href: "/categorias", label: "Categorías", icon: Shapes },

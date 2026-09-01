@@ -7,6 +7,7 @@ export const ACCOUNT_TYPES: Record<string, string> = {
   CREDIT_CARD: "Tarjeta de crédito",
   WALLET: "Billetera virtual",
   SAVINGS: "Ahorros",
+  INVESTMENT: "Cuenta de inversión",
 };
 export const TX_TYPES: Record<string, string> = {
   INCOME: "Ingreso",
