@@ -1,8 +1,9 @@
 import { prisma } from "./prisma";
 import { monthKey, monthLabel, previousRange, type Range } from "./format";
 import { addDays, fromCivil, civil, startOfDay, startOfMonth } from "./tz";
+import { icono } from "./iconos";
 
-export type Slice = { id: string; name: string; value: number; color: string; children: Slice[] };
+export type Slice = { id: string; name: string; value: number; color: string; iconBody: string | null; children: Slice[] };
 
 const M = (d: Date) => monthKey(d);
 const shortMonth = (ym: string) => monthLabel(ym).slice(0, 3);
@@ -30,7 +31,7 @@ export async function loadDashboard(userId: string, range: Range, accountIds?: n
         accountId: true,
         toAccountId: true,
         planId: true,
-        category: { select: { id: true, name: true, color: true, nature: true, kind: true, parentId: true, parent: { select: { id: true, name: true, color: true } } } },
+        category: { select: { id: true, name: true, color: true, icon: true, nature: true, kind: true, parentId: true, parent: { select: { id: true, name: true, color: true, icon: true } } } },
         account: { select: { name: true, color: true } },
       },
       orderBy: [{ date: "desc" }, { id: "desc" }],
@@ -113,16 +114,16 @@ export async function loadDashboard(userId: string, range: Range, accountIds?: n
     const c = t.category;
     const p = c?.parent ?? c;
     const pid = p ? `c${p.id}` : "none";
-    const slice = parents.get(pid) ?? { id: pid, name: p?.name ?? "Sin categoría", value: 0, color: p?.color ?? "#9CA3AF", children: [] };
+    const slice = parents.get(pid) ?? { id: pid, name: p?.name ?? "Sin categoría", value: 0, color: p?.color ?? "#9CA3AF", iconBody: icono(p?.icon)?.body ?? null, children: [] };
     slice.value += t.amount;
     if (c && c.parentId) {
       const kid = slice.children.find((k) => k.id === `c${c.id}`);
       if (kid) kid.value += t.amount;
-      else slice.children.push({ id: `c${c.id}`, name: c.name, value: t.amount, color: c.color, children: [] });
+      else slice.children.push({ id: `c${c.id}`, name: c.name, value: t.amount, color: c.color, iconBody: icono(c.icon)?.body ?? null, children: [] });
     } else {
       const own = slice.children.find((k) => k.id === "self");
       if (own) own.value += t.amount;
-      else slice.children.push({ id: "self", name: c ? "Directo en la categoría" : "Sin categoría", value: t.amount, color: p?.color ?? "#9CA3AF", children: [] });
+      else slice.children.push({ id: "self", name: c ? "Directo en la categoría" : "Sin categoría", value: t.amount, color: p?.color ?? "#9CA3AF", iconBody: icono(p?.icon)?.body ?? null, children: [] });
     }
     parents.set(pid, slice);
   }
@@ -134,7 +135,7 @@ export async function loadDashboard(userId: string, range: Range, accountIds?: n
     const c = t.category;
     const p = c?.parent ?? c;
     const pid = p ? `c${p.id}` : "none";
-    const slice = incomeParents.get(pid) ?? { id: pid, name: p?.name ?? "Sin categoría", value: 0, color: p?.color ?? "#9CA3AF", children: [] };
+    const slice = incomeParents.get(pid) ?? { id: pid, name: p?.name ?? "Sin categoría", value: 0, color: p?.color ?? "#9CA3AF", iconBody: icono(p?.icon)?.body ?? null, children: [] };
     slice.value += t.amount;
     incomeParents.set(pid, slice);
   }

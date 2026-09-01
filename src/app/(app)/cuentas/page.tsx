@@ -1,12 +1,14 @@
 import { requireUserId } from "@/lib/auth";
 import { accountBalances } from "@/lib/balances";
+import { icono } from "@/lib/iconos";
 import { money } from "@/lib/format";
 import PageHeader from "@/components/PageHeader";
 import AccountsBoard from "@/components/AccountsBoard";
 
 export default async function CuentasPage() {
   const userId = await requireUserId();
-  const accounts = await accountBalances(userId);
+  const cuentas = await accountBalances(userId);
+  const accounts = cuentas.map((a) => ({ ...a, iconBody: icono(a.icon)?.body ?? null }));
   const totals = accounts.reduce<Record<string, number>>((acc, a) => {
     acc[a.currency] = (acc[a.currency] ?? 0) + a.balance;
     return acc;

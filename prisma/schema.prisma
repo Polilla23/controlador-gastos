@@ -33,6 +33,7 @@ model Account {
   userId         String
   user           User              @relation(fields: [userId], references: [id], onDelete: Cascade)
   name           String
+  icon           String? // ícono elegido en el selector (ej "mdi:bank")
   type           String // CASH | BANK | CREDIT_CARD | WALLET | SAVINGS
   currency       String // ARS | USD | ...
   color          String            @default("#1A9D76")

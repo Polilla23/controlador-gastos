@@ -7,14 +7,18 @@ import Modal from "@/components/Modal";
 import ActionForm from "@/components/ActionForm";
 import ConfirmButton from "@/components/ConfirmButton";
 import { ColorPicker } from "@/components/ui";
+import IconPicker from "@/components/IconPicker";
+import Icono from "@/components/Icono";
+import { icono } from "@/lib/iconos";
 
 export default async function EtiquetasPage() {
   const userId = await requireUserId();
-  const tags = await prisma.tag.findMany({
+  const filas = await prisma.tag.findMany({
     where: { userId },
     orderBy: { name: "asc" },
     include: { _count: { select: { transactions: true } } },
   });
+  const tags = filas.map((t) => ({ ...t, iconBody: icono(t.icon)?.body ?? null }));
 
   return (
     <>
@@ -25,9 +29,15 @@ export default async function EtiquetasPage() {
               <label className="label">Nombre</label>
               <input name="name" required className="input" placeholder="Ej: vacaciones" />
             </div>
-            <div>
-              <label className="label">Color</label>
-              <ColorPicker name="color" defaultValue="#24C092" />
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div>
+                <label className="label">Color</label>
+                <ColorPicker name="color" defaultValue="#24C092" />
+              </div>
+              <div>
+                <label className="label">Ícono</label>
+                <IconPicker name="icon" />
+              </div>
             </div>
           </ActionForm>
         </Modal>
@@ -39,8 +49,8 @@ export default async function EtiquetasPage() {
           {tags.map((t) => (
             <li key={t.id} className="flex items-center justify-between gap-2 rounded-xl border border-line px-3 py-2.5">
               <span className="flex min-w-0 items-center gap-3">
-                <span className="chip shrink-0 text-white" style={{ background: t.color }}>
-                  #{t.name}
+                <span className="chip shrink-0 gap-1 text-white" style={{ background: t.color }}>
+                  {t.iconBody && <Icono body={t.iconBody} size={12} />}#{t.name}
                 </span>
                 <span className="truncate text-xs text-muted">{t._count.transactions} movimientos</span>
               </span>
@@ -52,9 +62,15 @@ export default async function EtiquetasPage() {
                       <label className="label">Nombre</label>
                       <input name="name" required className="input" defaultValue={t.name} />
                     </div>
-                    <div>
-                      <label className="label">Color</label>
-                      <ColorPicker name="color" defaultValue={t.color} />
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <div>
+                        <label className="label">Color</label>
+                        <ColorPicker name="color" defaultValue={t.color} />
+                      </div>
+                      <div>
+                        <label className="label">Ícono</label>
+                        <IconPicker name="icon" defaultValue={t.icon} defaultBody={t.iconBody} />
+                      </div>
                     </div>
                   </ActionForm>
                 </Modal>

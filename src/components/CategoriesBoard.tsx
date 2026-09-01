@@ -5,6 +5,8 @@ import ActionForm from "./ActionForm";
 import Modal from "./Modal";
 import ConfirmButton from "./ConfirmButton";
 import { ColorPicker } from "./ui";
+import IconPicker from "./IconPicker";
+import Icono from "./Icono";
 import { deleteCategory, saveCategory } from "@/lib/actions";
 import { NATURES } from "@/lib/format";
 
@@ -16,6 +18,8 @@ export type CategoryRow = {
   nature: string;
   parentId: number | null;
   count: number;
+  icon: string | null;
+  iconBody: string | null;
 };
 
 function Fields({ category, parents, kind, parentId }: { category?: CategoryRow; parents: CategoryRow[]; kind?: string; parentId?: number }) {
@@ -54,9 +58,15 @@ function Fields({ category, parents, kind, parentId }: { category?: CategoryRow;
           <p className="mt-1 text-xs text-muted">Se usa en el gráfico &quot;Naturaleza del gasto&quot; y en los gastos fijos.</p>
         </div>
       )}
-      <div>
-        <label className="label">Color</label>
-        <ColorPicker name="color" defaultValue={category?.color ?? "#6B7280"} />
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div>
+          <label className="label">Color</label>
+          <ColorPicker name="color" defaultValue={category?.color ?? "#6B7280"} />
+        </div>
+        <div>
+          <label className="label">Ícono</label>
+          <IconPicker name="icon" defaultValue={category?.icon} defaultBody={category?.iconBody} />
+        </div>
       </div>
     </>
   );
@@ -103,7 +113,9 @@ export default function CategoriesBoard({ categories, kind, title }: { categorie
           <li key={p.id}>
             <div className="flex items-center justify-between gap-2 rounded-xl border border-line px-3 py-2.5">
               <div className="flex min-w-0 items-center gap-3">
-                <span className="h-7 w-7 shrink-0 rounded-lg" style={{ background: p.color }} />
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-white" style={{ background: p.color }}>
+                  {p.iconBody && <Icono body={p.iconBody} size={15} />}
+                </span>
                 <div className="min-w-0">
                   <div className="truncate text-sm font-semibold">{p.name}</div>
                   {kind === "EXPENSE" && <div className="text-xs text-muted">{NATURES[p.nature] ?? p.nature}</div>}
@@ -125,7 +137,9 @@ export default function CategoriesBoard({ categories, kind, title }: { categorie
                   <li key={c.id} className="flex items-center justify-between gap-2 rounded-xl border border-line px-3 py-2">
                     <div className="flex min-w-0 items-center gap-2">
                       <CornerDownRight size={14} className="shrink-0 text-muted" />
-                      <span className="h-5 w-5 shrink-0 rounded" style={{ background: c.color }} />
+                      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-white" style={{ background: c.color }}>
+                        {c.iconBody && <Icono body={c.iconBody} size={12} />}
+                      </span>
                       <span className="truncate text-sm">{c.name}</span>
                       {kind === "EXPENSE" && <span className="hidden shrink-0 text-xs text-muted sm:inline">· {NATURES[c.nature] ?? c.nature}</span>}
                     </div>

@@ -50,6 +50,7 @@ export async function signOut() {
 /* ---------- Accounts ---------- */
 const accountSchema = z.object({
   name: z.string().min(1),
+  icon: z.string().optional().transform((v) => v || null),
   type: z.string(),
   currency: z.string().length(3),
   color: z.string(),
@@ -95,6 +96,7 @@ const categorySchema = z.object({
   name: z.string().min(1),
   kind: z.string(),
   color: z.string(),
+  icon: z.string().optional().transform((v) => v || "tag"),
   nature: z.string().default("NEED"),
   parentId: optInt,
 });
@@ -126,7 +128,11 @@ export async function deleteCategory(id: number) {
 }
 
 /* ---------- Tags ---------- */
-const tagSchema = z.object({ name: z.string().min(1), color: z.string() });
+const tagSchema = z.object({
+  name: z.string().min(1),
+  color: z.string(),
+  icon: z.string().optional().transform((v) => v || null),
+});
 
 export async function saveTag(fd: FormData) {
   const userId = await requireUserId();

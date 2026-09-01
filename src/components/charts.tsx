@@ -21,6 +21,7 @@ import { ChevronRight, X } from "lucide-react";
 import type { Slice } from "@/lib/stats";
 import { money } from "@/lib/format";
 import { ChartTooltip, Empty, axisNumber } from "./ui";
+import Icono from "./Icono";
 
 /**
  * Todo lo que depende de Recharts vive acá: DashboardCards lo carga con
@@ -125,7 +126,9 @@ export function CategoryDonut({ slices, currency, empty }: { slices: Slice[]; cu
             <li key={c.id}>
               <button type="button" onClick={() => setOpen(c)} className="flex w-full items-center justify-between gap-2 rounded-lg px-1.5 py-1 text-left transition hover:bg-subtle">
                 <span className="flex min-w-0 items-center gap-2">
-                  <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: c.color }} />
+                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-white" style={{ background: c.color }}>
+                    {c.iconBody ? <Icono body={c.iconBody} size={12} /> : null}
+                  </span>
                   <span className="truncate">{c.name}</span>
                 </span>
                 <span className="flex shrink-0 items-center gap-1 text-muted">
@@ -142,11 +145,18 @@ export function CategoryDonut({ slices, currency, empty }: { slices: Slice[]; cu
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setOpen(null)}>
           <div className="w-full max-w-md rounded-2xl border border-line bg-card p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
             <div className="mb-3 flex items-start justify-between">
+              <div className="flex items-center gap-2">
+                {open.iconBody && (
+                  <span className="flex h-8 w-8 items-center justify-center rounded-lg text-white" style={{ background: open.color }}>
+                    <Icono body={open.iconBody} size={18} />
+                  </span>
+                )}
               <div>
                 <h3 className="font-bold">{open.name}</h3>
                 <p className="text-sm text-muted">
                   {money(open.value, currency)} · {Math.round((open.value / total) * 100)}% del total
                 </p>
+              </div>
               </div>
               <button type="button" onClick={() => setOpen(null)} className="btn-icon">
                 <X size={18} />
@@ -170,7 +180,9 @@ export function CategoryDonut({ slices, currency, empty }: { slices: Slice[]; cu
                   {open.children.map((c) => (
                     <li key={c.id} className="flex items-center justify-between py-2">
                       <span className="flex items-center gap-2">
-                        <span className="h-2.5 w-2.5 rounded-full" style={{ background: c.color }} />
+                        <span className="flex h-5 w-5 items-center justify-center rounded-full text-white" style={{ background: c.color }}>
+                          {c.iconBody ? <Icono body={c.iconBody} size={12} /> : null}
+                        </span>
                         {c.name}
                       </span>
                       <b>{money(c.value, currency)}</b>

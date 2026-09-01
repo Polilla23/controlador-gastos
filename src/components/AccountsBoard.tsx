@@ -7,6 +7,8 @@ import Modal from "./Modal";
 import ConfirmButton from "./ConfirmButton";
 import { ColorPicker, Sortable } from "./ui";
 import MoneyInput from "./MoneyInput";
+import IconPicker from "./IconPicker";
+import Icono from "./Icono";
 import { deleteAccount, reorderAccounts, saveAccount, toggleAccountStats } from "@/lib/actions";
 import { ACCOUNT_TYPES, CURRENCIES, money } from "@/lib/format";
 
@@ -22,6 +24,8 @@ export type AccountRow = {
   closingDay: number | null;
   dueDay: number | null;
   balance: number;
+  icon: string | null;
+  iconBody: string | null;
 };
 
 function AccountFields({ account }: { account?: AccountRow }) {
@@ -83,9 +87,15 @@ function AccountFields({ account }: { account?: AccountRow }) {
         </div>
       )}
 
-      <div>
-        <label className="label">Color</label>
-        <ColorPicker name="color" defaultValue={account?.color ?? "#1A9D76"} />
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div>
+          <label className="label">Color</label>
+          <ColorPicker name="color" defaultValue={account?.color ?? "#1A9D76"} />
+        </div>
+        <div>
+          <label className="label">Ícono</label>
+          <IconPicker name="icon" defaultValue={account?.icon} defaultBody={account?.iconBody} />
+        </div>
       </div>
     </>
   );
@@ -113,7 +123,9 @@ export default function AccountsBoard({ accounts }: { accounts: AccountRow[] }) 
         {(a) => (
           <div className="flex items-center justify-between gap-2 rounded-xl border border-line px-3 py-2.5">
             <div className="flex min-w-0 items-center gap-3">
-              <span className="h-9 w-9 shrink-0 rounded-lg" style={{ background: a.color }} />
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-white" style={{ background: a.color }}>
+                {a.iconBody && <Icono body={a.iconBody} size={18} />}
+              </span>
               <div className="min-w-0">
                 <div className="truncate text-sm font-semibold">{a.name}</div>
                 <div className="truncate text-xs text-muted">

@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { requireUserId } from "@/lib/auth";
 import PageHeader from "@/components/PageHeader";
 import CategoriesBoard from "@/components/CategoriesBoard";
+import { icono } from "@/lib/iconos";
 
 export default async function CategoriasPage() {
   const userId = await requireUserId();
@@ -10,7 +11,7 @@ export default async function CategoriasPage() {
     prisma.transaction.groupBy({ by: ["categoryId"], where: { userId }, _count: { _all: true } }),
   ]);
   const byCat = new Map(counts.map((c) => [c.categoryId, c._count._all]));
-  const rows = categories.map((c) => ({ ...c, count: byCat.get(c.id) ?? 0 }));
+  const rows = categories.map((c) => ({ ...c, count: byCat.get(c.id) ?? 0, iconBody: icono(c.icon)?.body ?? null }));
 
   return (
     <>
