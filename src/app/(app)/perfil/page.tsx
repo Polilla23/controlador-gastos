@@ -1,4 +1,4 @@
-import { Bell, MessageCircle, RefreshCw, Send, Smartphone, Unlink } from "lucide-react";
+import { Bell, MessageCircle, RefreshCw, Send, Smartphone, Trash2, Unlink } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { regenerateTelegramCode, saveNotificationPrefs, unlinkTelegram } from "@/lib/actions";
@@ -7,6 +7,7 @@ import PageHeader from "@/components/PageHeader";
 import ConfirmButton from "@/components/ConfirmButton";
 import ActionForm from "@/components/ActionForm";
 import InstallApp from "@/components/InstallApp";
+import DangerZone from "@/components/DangerZone";
 
 export default async function PerfilPage() {
   const user = await requireUser();
@@ -119,6 +120,16 @@ export default async function PerfilPage() {
           Podés dejarla como una app más: ícono en la pantalla de inicio, pantalla completa y sin barra del navegador. Se actualiza sola, no hay que bajar nada de ninguna tienda.
         </p>
         <InstallApp />
+      </section>
+
+      <section className="card mt-4 border-red-500/30">
+        <h2 className="mb-1 flex items-center gap-2 font-bold text-red-500">
+          <Trash2 size={18} /> Zona de peligro
+        </h2>
+        <p className="mb-3 text-sm text-muted">
+          Borrar todos tus datos deja la cuenta vacía, como el primer día. Tu usuario, tu correo y tu vínculo con Telegram se conservan.
+        </p>
+        <DangerZone />
       </section>
 
       <section className="card mt-4">

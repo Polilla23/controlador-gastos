@@ -22,7 +22,7 @@ export default function RangePicker({ range }: { range: Range }) {
   const go = (qs: string) => router.push(`${path}?${qs}`);
 
   return (
-    <div className="flex flex-wrap items-center gap-2">
+    <div className="flex w-full flex-wrap items-center justify-center gap-2 sm:w-auto sm:justify-start">
       <div className="flex items-center gap-0.5 rounded-xl border border-line bg-card p-1">
         {PRESETS.map((p) => (
           <button

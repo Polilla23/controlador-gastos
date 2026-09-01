@@ -25,6 +25,7 @@ model User {
   transactions   Transaction[]
   plans          InstallmentPlan[]
   planned        Planned[]
+  filters        SavedFilter[]
 }
 
 model Account {
@@ -79,7 +80,10 @@ model Tag {
   user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   name         String
   color        String        @default("#24C092")
+  icon         String? // nombre del ícono elegido en el selector
+  sortOrder    Int           @default(0)
   transactions Transaction[]
+  planned      Planned[]
 
   @@unique([userId, name])
 }
@@ -96,6 +100,10 @@ model Transaction {
   paid          Boolean          @default(true)
   description   String           @default("")
   note          String           @default("")
+  counterparty  String           @default("") // quién me pagó o a quién le pagué
+  warrantyMonths Int? // garantía del producto, en meses
+  splitGroup    String? // agrupa los registros nacidos de dividir uno solo
+  statementMonth String? // "YYYY-MM": resumen de tarjeta en el que cae el consumo
   accountId     Int
   account       Account          @relation("AccountTx", fields: [accountId], references: [id], onDelete: Cascade)
   toAccountId   Int?
@@ -113,6 +121,8 @@ model Transaction {
   @@index([userId, date])
   @@index([accountId])
   @@index([userId, dueDate])
+  @@index([userId, counterparty])
+  @@index([splitGroup])
 }
 
 model InstallmentPlan {
@@ -148,12 +158,27 @@ model Planned {
   account        Account?  @relation(fields: [accountId], references: [id], onDelete: SetNull)
   categoryId     Int?
   category       Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  tags           Tag[]
   notify         Boolean   @default(true)
   done           Boolean   @default(false)
   lastNotifiedOn DateTime?
   createdAt      DateTime  @default(now())
 
   @@index([userId, dueDate])
+}
+
+/// Filtros guardados por el usuario, reutilizables en Registros y Resumen.
+model SavedFilter {
+  id        Int      @id @default(autoincrement())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  scope     String   @default("TX") // TX (registros) | DASHBOARD (resumen)
+  query     Json // los parámetros de búsqueda tal cual van en la URL
+  createdAt DateTime @default(now())
+
+  @@unique([userId, scope, name])
+  @@index([userId, scope])
 }
 
 model Attachment {

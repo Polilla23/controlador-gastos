@@ -6,10 +6,11 @@ import PlannedBoard from "@/components/PlannedBoard";
 
 export default async function PlanificadosPage() {
   const userId = await requireUserId();
-  const [items, accounts, categories] = await Promise.all([
-    prisma.planned.findMany({ where: { userId, done: false }, orderBy: { dueDate: "asc" }, include: { category: true } }),
+  const [items, accounts, categories, tags] = await Promise.all([
+    prisma.planned.findMany({ where: { userId, done: false }, orderBy: { dueDate: "asc" }, include: { category: true, tags: true } }),
     prisma.account.findMany({ where: { userId, archived: false }, orderBy: [{ sortOrder: "asc" }, { id: "asc" }] }),
     prisma.category.findMany({ where: { userId }, orderBy: { name: "asc" } }),
+    prisma.tag.findMany({ where: { userId }, orderBy: { name: "asc" } }),
   ]);
 
   const in30 = daysFromNow(30);
@@ -42,6 +43,7 @@ export default async function PlanificadosPage() {
           items={items}
           accounts={accounts}
           categories={categories}
+          tags={tags}
           type="EXPENSE"
           title="Pagos y vencimientos"
           emptyText="No tenés vencimientos cargados. Agregá el alquiler, las expensas o la factura de luz."
@@ -50,6 +52,7 @@ export default async function PlanificadosPage() {
           items={items}
           accounts={accounts}
           categories={categories}
+          tags={tags}
           type="INCOME"
           title="Ingresos previstos"
           emptyText="Cargá tu sueldo o un reintegro que estés esperando."

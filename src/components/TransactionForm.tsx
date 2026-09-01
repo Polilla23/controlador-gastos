@@ -21,6 +21,8 @@ export type TxInitial = {
   paid: boolean;
   description: string;
   note: string;
+  counterparty: string;
+  warrantyMonths: number | null;
   accountId: number;
   toAccountId: number | null;
   toAmount: number | null;
@@ -66,12 +68,15 @@ export default function TransactionForm({
   tags,
   initial,
   onDone,
+  counterparties = [],
 }: {
   accounts: AccountOpt[];
   categories: CategoryOpt[];
   tags: TagOpt[];
   initial?: TxInitial;
   onDone?: () => void;
+  /** Nombres ya usados antes, para sugerir mientras se escribe. */
+  counterparties?: string[];
 }) {
   const [type, setType] = useState(initial?.type ?? "EXPENSE");
   const [accountId, setAccountId] = useState(initial?.accountId ?? accounts[0]?.id ?? 0);
@@ -161,9 +166,29 @@ export default function TransactionForm({
         )}
       </div>
 
-      <div>
-        <label className="label">Descripción</label>
-        <input name="description" className="input" defaultValue={initial?.description ?? ""} placeholder="Ej: Supermercado Coto" />
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div>
+          <label className="label">Descripción</label>
+          <input name="description" className="input" defaultValue={initial?.description ?? ""} placeholder="Ej: Supermercado Coto" />
+        </div>
+        {type !== "TRANSFER" && (
+          <div>
+            <label className="label">{type === "INCOME" ? "Quién me pagó" : "A quién le pagué"}</label>
+            <input
+              name="counterparty"
+              className="input"
+              list="contrapartes"
+              autoComplete="off"
+              defaultValue={initial?.counterparty ?? ""}
+              placeholder="Ej: Leandro Vizzolini"
+            />
+            <datalist id="contrapartes">
+              {counterparties.map((c) => (
+                <option key={c} value={c} />
+              ))}
+            </datalist>
+          </div>
+        )}
       </div>
 
       {type === "EXPENSE" && (
@@ -184,6 +209,25 @@ export default function TransactionForm({
               </label>
             </div>
           )}
+        </div>
+      )}
+
+      {type === "EXPENSE" && (
+        <div className="rounded-xl border border-dashed border-line p-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <label className="label mb-0">Garantía</label>
+            <input
+              name="warrantyMonths"
+              type="number"
+              min={0}
+              max={240}
+              className="input w-24"
+              defaultValue={initial?.warrantyMonths ?? ""}
+              placeholder="0"
+            />
+            <span className="text-sm text-muted">meses</span>
+          </div>
+          <p className="mt-2 text-xs text-muted">Cargá los meses de garantía del producto y adjuntá la factura desde el clip del registro.</p>
         </div>
       )}
 

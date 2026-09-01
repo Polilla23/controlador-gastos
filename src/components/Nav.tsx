@@ -62,7 +62,7 @@ export default function Nav({ userLabel }: { userLabel: string }) {
     <>
       {/* Desktop sidebar */}
       <aside className="sticky top-0 hidden h-screen w-60 shrink-0 flex-col border-r border-line bg-card px-4 py-6 md:flex">
-        <div className="mb-8 flex items-center gap-2 px-2">
+        <Link href="/" className="mb-8 flex items-center gap-2 rounded-xl px-2 py-1 transition hover:bg-subtle">
           <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-500 text-white">
             <Wallet size={18} />
           </div>
@@ -70,7 +70,7 @@ export default function Nav({ userLabel }: { userLabel: string }) {
             <div className="text-sm font-bold">Mis Finanzas</div>
             <div className="truncate text-xs text-muted">{userLabel}</div>
           </div>
-        </div>
+        </Link>
         <nav className="flex flex-1 flex-col gap-1">{ITEMS.map((i) => link(i))}</nav>
         <div className="mt-2 space-y-1 border-t border-line pt-2">
           <ThemeToggle full />
@@ -86,12 +86,12 @@ export default function Nav({ userLabel }: { userLabel: string }) {
 
       {/* Mobile top bar */}
       <header className="sticky top-0 z-30 flex items-center justify-between border-b border-line bg-card px-4 py-3 md:hidden">
-        <div className="flex items-center gap-2">
+        <Link href="/" className="flex items-center gap-2">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-500 text-white">
             <Wallet size={16} />
           </div>
           <span className="font-bold">Mis Finanzas</span>
-        </div>
+        </Link>
         <div className="flex items-center gap-1">
           <ThemeToggle />
           <button type="button" onClick={() => setOpen(true)} className="btn-icon" aria-label="Abrir menú">

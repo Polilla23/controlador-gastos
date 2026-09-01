@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { Check, Pencil, Plus, Repeat, Trash2 } from "lucide-react";
 import ActionForm from "./ActionForm";
 import Modal from "./Modal";
@@ -8,7 +9,7 @@ import CategorySelect, { type CategoryOpt } from "./CategorySelect";
 import MoneyInput from "./MoneyInput";
 import { confirmPlanned, deletePlanned, savePlanned } from "@/lib/actions";
 import { CURRENCIES, RECURRENCES, fmtDate, money, toInputDate } from "@/lib/format";
-import type { AccountOpt } from "./TransactionForm";
+import type { AccountOpt, TagOpt } from "./TransactionForm";
 
 export type PlannedRow = {
   id: number;
@@ -22,9 +23,35 @@ export type PlannedRow = {
   categoryId: number | null;
   notify: boolean;
   category: { name: string; color: string } | null;
+  tags: { id: number; name: string; color: string }[];
 };
 
-function Fields({ item, type, accounts, categories }: { item?: PlannedRow; type: string; accounts: AccountOpt[]; categories: CategoryOpt[] }) {
+function TagPicker({ tags, initial }: { tags: TagOpt[]; initial: number[] }) {
+  const [sel, setSel] = useState<number[]>(initial);
+  return (
+    <div className="flex flex-wrap gap-2">
+      {sel.map((id) => (
+        <input key={id} type="hidden" name="tagIds" value={id} />
+      ))}
+      {tags.map((t) => {
+        const on = sel.includes(t.id);
+        return (
+          <button
+            key={t.id}
+            type="button"
+            onClick={() => setSel((s) => (on ? s.filter((x) => x !== t.id) : [...s, t.id]))}
+            className={`chip border transition ${on ? "border-transparent text-white" : "border-line text-muted"}`}
+            style={on ? { background: t.color } : undefined}
+          >
+            #{t.name}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function Fields({ item, type, accounts, categories, tags }: { item?: PlannedRow; type: string; accounts: AccountOpt[]; categories: CategoryOpt[]; tags: TagOpt[] }) {
   const kind = item?.type ?? type;
   return (
     <>
@@ -83,6 +110,12 @@ function Fields({ item, type, accounts, categories }: { item?: PlannedRow; type:
           <CategorySelect categories={categories} kind={kind} defaultValue={item?.categoryId} />
         </div>
       </div>
+      {tags.length > 0 && (
+        <div>
+          <label className="label">Etiquetas</label>
+          <TagPicker tags={tags} initial={item?.tags.map((t) => t.id) ?? []} />
+        </div>
+      )}
       <label className="flex items-center gap-2 text-sm">
         <input type="checkbox" name="notify" defaultChecked={item?.notify ?? true} className="h-4 w-4 accent-[var(--color-brand-500)]" />
         Avisarme por Telegram antes del vencimiento
@@ -95,6 +128,7 @@ export default function PlannedBoard({
   items,
   accounts,
   categories,
+  tags,
   type,
   title,
   emptyText,
@@ -102,6 +136,7 @@ export default function PlannedBoard({
   items: PlannedRow[];
   accounts: AccountOpt[];
   categories: CategoryOpt[];
+  tags: TagOpt[];
   type: "INCOME" | "EXPENSE";
   title: string;
   emptyText: string;
@@ -114,7 +149,7 @@ export default function PlannedBoard({
         <h2 className="font-bold">{title}</h2>
         <Modal title={type === "INCOME" ? "Nuevo ingreso previsto" : "Nuevo vencimiento"} triggerClassName="btn-ghost" trigger={<><Plus size={16} /> Nuevo</>}>
           <ActionForm action={savePlanned}>
-            <Fields type={type} accounts={accounts} categories={categories} />
+            <Fields type={type} accounts={accounts} categories={categories} tags={tags} />
           </ActionForm>
         </Modal>
       </div>
@@ -125,8 +160,8 @@ export default function PlannedBoard({
         {rows.map((p) => {
           const late = new Date(p.dueDate) < today;
           return (
-            <li key={p.id} className="flex items-center justify-between gap-2 rounded-xl border border-line px-3 py-2.5">
-              <div className="flex min-w-0 items-center gap-3">
+            <li key={p.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-line px-3 py-2.5">
+              <div className="flex min-w-0 flex-1 items-center gap-3">
                 <span className="h-9 w-9 shrink-0 rounded-lg" style={{ background: `${p.category?.color ?? (type === "INCOME" ? "#1A9D76" : "#F59E0B")}22`, border: `2px solid ${p.category?.color ?? (type === "INCOME" ? "#1A9D76" : "#F59E0B")}` }} />
                 <div className="min-w-0">
                   <div className="truncate text-sm font-semibold">{p.description}</div>
@@ -141,7 +176,7 @@ export default function PlannedBoard({
                   </div>
                 </div>
               </div>
-              <div className="flex shrink-0 items-center gap-0.5">
+              <div className="flex shrink-0 items-center gap-0.5 max-sm:w-full max-sm:justify-end">
                 <b className={`mr-1 text-sm ${type === "INCOME" ? "text-brand-500" : "text-red-500"}`}>{money(p.amount, p.currency)}</b>
                 <ConfirmButton
                   action={async () => confirmPlanned(p.id)}
@@ -152,7 +187,7 @@ export default function PlannedBoard({
                 </ConfirmButton>
                 <Modal title={`Editar ${p.description}`} triggerClassName="btn-icon" trigger={<Pencil size={15} />}>
                   <ActionForm action={savePlanned}>
-                    <Fields item={p} type={type} accounts={accounts} categories={categories} />
+                    <Fields item={p} type={type} accounts={accounts} categories={categories} tags={tags} />
                   </ActionForm>
                 </Modal>
                 <ConfirmButton action={async () => deletePlanned(p.id)} className="btn-icon hover:text-red-500" message="¿Eliminar este planificado?">

@@ -6,6 +6,7 @@ import { fmtDate, money } from "@/lib/format";
 import PageHeader from "@/components/PageHeader";
 import ConfirmButton from "@/components/ConfirmButton";
 import PlanEditor from "@/components/PlanEditor";
+import InstallmentAmount from "@/components/InstallmentAmount";
 
 export default async function CuotasPage() {
   const userId = await requireUserId();
@@ -106,11 +107,14 @@ export default async function CuotasPage() {
                 <summary className="cursor-pointer text-sm font-medium text-brand-500">Ver las {plan.installments} cuotas</summary>
                 <ul className="mt-2 divide-y divide-line text-sm">
                   {plan.transactions.map((t) => (
-                    <li key={t.id} className="flex items-center justify-between py-1.5">
+                    <li key={t.id} className="flex items-center justify-between gap-2 py-1.5">
                       <span className={t.date <= now ? "text-muted line-through" : ""}>
                         Cuota {t.installmentNo} · {fmtDate(t.date)}
                       </span>
-                      <b>{money(t.amount, plan.account.currency)}</b>
+                      <span className="flex items-center gap-1">
+                        <b>{money(t.amount, plan.account.currency)}</b>
+                        <InstallmentAmount id={t.id} no={t.installmentNo} amount={t.amount} currency={plan.account.currency} />
+                      </span>
                     </li>
                   ))}
                 </ul>

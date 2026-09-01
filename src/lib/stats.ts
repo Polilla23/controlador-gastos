@@ -11,14 +11,14 @@ const shortMonth = (ym: string) => monthLabel(ym).slice(0, 3);
  * Everything the dashboard cards need, computed in one pass.
  * `accountIds` restricts which accounts count towards the KPIs.
  */
-export async function loadDashboard(userId: string, range: Range, accountIds?: number[]) {
+export async function loadDashboard(userId: string, range: Range, accountIds?: number[], tagId?: number) {
   const now = new Date();
   const prev = previousRange(range);
 
   const [allAccounts, txs, planned, plans] = await Promise.all([
     prisma.account.findMany({ where: { userId, archived: false }, orderBy: [{ sortOrder: "asc" }, { id: "asc" }] }),
     prisma.transaction.findMany({
-      where: { userId },
+      where: tagId ? { userId, tags: { some: { id: tagId } } } : { userId },
       select: {
         id: true,
         type: true,

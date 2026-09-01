@@ -24,7 +24,7 @@ export default async function TransaccionesPage({ searchParams }: { searchParams
   if (sp.etiqueta) where.tags = { some: { id: Number(sp.etiqueta) } };
   if (sp.q) where.OR = [{ description: { contains: sp.q, mode: "insensitive" } }, { note: { contains: sp.q, mode: "insensitive" } }];
 
-  const [rows, accounts, categories, tags] = await Promise.all([
+  const [rows, accounts, categories, tags, previos] = await Promise.all([
     prisma.transaction.findMany({
       where,
       orderBy: [{ date: "desc" }, { id: "desc" }],
@@ -34,7 +34,15 @@ export default async function TransaccionesPage({ searchParams }: { searchParams
     prisma.account.findMany({ where: { userId, archived: false }, orderBy: [{ sortOrder: "asc" }, { id: "asc" }] }),
     prisma.category.findMany({ where: { userId }, orderBy: { name: "asc" } }),
     prisma.tag.findMany({ where: { userId }, orderBy: { name: "asc" } }),
+    prisma.transaction.findMany({
+      where: { userId, counterparty: { not: "" } },
+      distinct: ["counterparty"],
+      select: { counterparty: true },
+      orderBy: { counterparty: "asc" },
+      take: 200,
+    }),
   ]);
+  const counterparties = previos.map((p) => p.counterparty);
 
   const totals = rows.reduce<Record<string, { income: number; expense: number }>>((acc, t) => {
     if (t.type === "TRANSFER") return acc;
@@ -48,7 +56,7 @@ export default async function TransaccionesPage({ searchParams }: { searchParams
       <PageHeader title="Transacciones" subtitle={`${rows.length} registros · ${range.label}`}>
         <RangePicker range={range} />
         <Modal title="Nuevo registro" trigger={<><Plus size={16} /> <span className="hidden sm:inline">Nuevo</span></>}>
-          <TransactionForm accounts={accounts} categories={categories} tags={tags} />
+          <TransactionForm accounts={accounts} categories={categories} tags={tags} counterparties={counterparties} />
         </Modal>
       </PageHeader>
 

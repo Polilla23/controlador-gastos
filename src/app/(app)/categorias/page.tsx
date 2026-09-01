@@ -6,7 +6,7 @@ import CategoriesBoard from "@/components/CategoriesBoard";
 export default async function CategoriasPage() {
   const userId = await requireUserId();
   const [categories, counts] = await Promise.all([
-    prisma.category.findMany({ where: { userId }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }] }),
+    prisma.category.findMany({ where: { userId }, orderBy: { name: "asc" } }),
     prisma.transaction.groupBy({ by: ["categoryId"], where: { userId }, _count: { _all: true } }),
   ]);
   const byCat = new Map(counts.map((c) => [c.categoryId, c._count._all]));

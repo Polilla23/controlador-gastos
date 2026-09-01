@@ -89,11 +89,36 @@ export async function handleUpdate(update: TgUpdate) {
   }
 
   if (/^\/proximos/i.test(text)) {
-    const until = addDays(startOfDay(), 30);
-    const items = await prisma.planned.findMany({ where: { userId: user.id, done: false, dueDate: { lte: until } }, orderBy: { dueDate: "asc" }, take: 15 });
-    if (!items.length) return reply("No tenés pagos ni ingresos planificados para los próximos 30 días.");
-    const lines = items.map((p) => `${p.type === "INCOME" ? "🟢" : "🔴"} ${fmtDayMonth(p.dueDate)} · ${p.description}: <b>${money(p.amount, p.currency)}</b>`);
-    return reply(`<b>Próximos 30 días</b>\n${lines.join("\n")}`);
+    const hoy = startOfDay();
+    const until = addDays(hoy, 30);
+    const [items, cards] = await Promise.all([
+      prisma.planned.findMany({ where: { userId: user.id, done: false, dueDate: { lte: until } }, orderBy: { dueDate: "asc" }, take: 15 }),
+      prisma.account.findMany({ where: { userId: user.id, type: "CREDIT_CARD", archived: false, dueDay: { not: null } } }),
+    ]);
+
+    type Fila = { fecha: Date; texto: string };
+    const filas: Fila[] = items.map((p) => ({
+      fecha: p.dueDate,
+      texto: `${p.type === "INCOME" ? "🟢" : "🔴"} ${fmtDayMonth(p.dueDate)} · ${p.description}: <b>${money(p.amount, p.currency)}</b>`,
+    }));
+
+    // Vencimiento de cada tarjeta, con el saldo que se debe hasta hoy.
+    for (const card of cards) {
+      const c = civilOf(hoy);
+      let due = fromCivil(c.y, c.m, card.dueDay!, 12);
+      if (due < hoy) due = fromCivil(c.y, c.m + 1, card.dueDay!, 12);
+      if (due > until) continue;
+      const txs = await prisma.transaction.findMany({
+        where: { userId: user.id, accountId: card.id, date: { lte: new Date() } },
+        select: { type: true, amount: true },
+      });
+      const usado = txs.reduce((s, t) => s + (t.type === "EXPENSE" ? t.amount : -t.amount), 0) - card.initialBalance;
+      filas.push({ fecha: due, texto: `💳 ${fmtDayMonth(due)} · ${card.name}: <b>${money(Math.max(0, usado), card.currency)}</b>` });
+    }
+
+    if (!filas.length) return reply("No tenés pagos, ingresos ni vencimientos de tarjeta para los próximos 30 días.");
+    filas.sort((a, b) => a.fecha.getTime() - b.fecha.getTime());
+    return reply(`<b>Próximos 30 días</b>\n${filas.map((f) => f.texto).join("\n")}`);
   }
 
   /* ---------- Attachments ---------- */

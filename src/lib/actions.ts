@@ -3,11 +3,13 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
+import { Prisma } from "@prisma/client";
 import { prisma } from "./prisma";
 import { requireUserId } from "./auth";
 import { supabaseServer } from "./supabase";
 import { storeAttachment, removeStored } from "./storage";
 import { addMonths, civil, fromCivil, parseInput } from "./tz";
+import { statementMonthFor } from "./tarjetas";
 
 const num = z.coerce.number();
 
@@ -154,6 +156,8 @@ const txSchema = z.object({
   toAccountId: optInt,
   toAmount: optNum,
   categoryId: optInt,
+  counterparty: z.string().default(""),
+  warrantyMonths: optInt,
   installments: z.coerce.number().int().min(1).max(120).default(1),
 });
 
@@ -196,6 +200,9 @@ export async function saveTransaction(fd: FormData) {
     currency: account.currency,
     description: d.description,
     note: d.note,
+    counterparty: d.counterparty.trim(),
+    warrantyMonths: d.type === "EXPENSE" ? d.warrantyMonths : null,
+    statementMonth: account.type === "CREDIT_CARD" ? statementMonthFor(date, account.closingDay, account.dueDay) : null,
     dueDate: d.type === "EXPENSE" ? d.dueDate : null,
     paid: d.type === "EXPENSE" ? d.paid : true,
     accountId: d.accountId,
@@ -465,5 +472,161 @@ export async function saveNotificationPrefs(fd: FormData) {
 export async function saveDashboard(cards: string[], accountIds: number[]) {
   const userId = await requireUserId();
   await prisma.user.update({ where: { id: userId }, data: { dashboard: { cards, accountIds } } });
+  refresh();
+}
+
+
+/* ---------- Dividir y clonar registros ---------- */
+
+/**
+ * Divide un registro en varias partes (por ejemplo 20.000: 10.000 en efectivo y
+ * 10.000 en Mercado Pago). Las partes quedan unidas por splitGroup y los
+ * comprobantes se conservan en la primera.
+ */
+export async function splitTransaction(fd: FormData) {
+  const userId = await requireUserId();
+  const id = Number(fd.get("id"));
+  const original = await prisma.transaction.findFirst({ where: { id, userId }, include: { tags: true } });
+  if (!original) throw new Error("El registro no existe");
+  if (original.planId) throw new Error("Las cuotas de un plan no se dividen; editá el plan.");
+
+  const amounts = fd.getAll("amount").map((v) => Number(String(v)));
+  const accountIds = fd.getAll("accountId").map(Number);
+  if (amounts.length < 2 || amounts.length !== accountIds.length) throw new Error("Cargá al menos dos partes");
+  if (amounts.some((a) => !(a > 0))) throw new Error("Todos los montos tienen que ser mayores a cero");
+
+  const total = Math.round(amounts.reduce((s, a) => s + a, 0) * 100) / 100;
+  if (total !== Math.round(original.amount * 100) / 100) {
+    throw new Error("Las partes suman " + total + " y el registro es de " + original.amount);
+  }
+
+  const accounts = await prisma.account.findMany({ where: { id: { in: accountIds }, userId } });
+  if (accounts.length !== new Set(accountIds).size) throw new Error("Alguna cuenta no es tuya");
+  const cur = (accId: number) => accounts.find((a) => a.id === accId)!.currency;
+
+  const group = original.splitGroup ?? "s" + original.id + "-" + original.createdAt.getTime();
+  const tagIds = original.tags.map((t) => t.id);
+
+  await prisma.$transaction([
+    // La primera parte reutiliza el registro original: así conserva los adjuntos.
+    prisma.transaction.update({
+      where: { id: original.id },
+      data: { amount: amounts[0], accountId: accountIds[0], currency: cur(accountIds[0]), splitGroup: group },
+    }),
+    ...amounts.slice(1).map((amount, i) =>
+      prisma.transaction.create({
+        data: {
+          userId,
+          type: original.type,
+          amount,
+          currency: cur(accountIds[i + 1]),
+          date: original.date,
+          dueDate: original.dueDate,
+          paid: original.paid,
+          description: original.description,
+          note: original.note,
+          counterparty: original.counterparty,
+          warrantyMonths: original.warrantyMonths,
+          accountId: accountIds[i + 1],
+          categoryId: original.categoryId,
+          splitGroup: group,
+          tags: { connect: tagIds.map((t) => ({ id: t })) },
+        },
+      }),
+    ),
+  ]);
+  refresh();
+}
+
+/** Copia un registro con la fecha de hoy, sin los adjuntos. */
+export async function cloneTransaction(id: number) {
+  const userId = await requireUserId();
+  const t = await prisma.transaction.findFirst({ where: { id, userId }, include: { tags: true } });
+  if (!t) throw new Error("El registro no existe");
+  const account = await prisma.account.findUniqueOrThrow({ where: { id: t.accountId } });
+  const now = new Date();
+  await prisma.transaction.create({
+    data: {
+      userId,
+      type: t.type,
+      amount: t.amount,
+      currency: t.currency,
+      date: now,
+      description: t.description,
+      note: t.note,
+      counterparty: t.counterparty,
+      warrantyMonths: t.warrantyMonths,
+      accountId: t.accountId,
+      toAccountId: t.toAccountId,
+      toAmount: t.toAmount,
+      categoryId: t.categoryId,
+      statementMonth: account.type === "CREDIT_CARD" ? statementMonthFor(now, account.closingDay, account.dueDay) : null,
+      tags: { connect: t.tags.map((g) => ({ id: g.id })) },
+    },
+  });
+  refresh();
+}
+
+/** Ajusta una sola cuota (por redondeo, por ejemplo) y recalcula el total del plan. */
+export async function updateInstallment(fd: FormData) {
+  const userId = await requireUserId();
+  const id = Number(fd.get("id"));
+  const amount = Number(String(fd.get("amount")));
+  if (!(amount > 0)) throw new Error("El monto tiene que ser mayor a cero");
+
+  const tx = await prisma.transaction.findFirst({ where: { id, userId }, select: { id: true, planId: true } });
+  if (!tx?.planId) throw new Error("Ese registro no pertenece a un plan de cuotas");
+
+  await prisma.transaction.update({ where: { id }, data: { amount } });
+  const rows = await prisma.transaction.findMany({ where: { planId: tx.planId }, select: { amount: true } });
+  const total = Math.round(rows.reduce((s, r) => s + r.amount, 0) * 100) / 100;
+  await prisma.installmentPlan.update({ where: { id: tx.planId }, data: { totalAmount: total } });
+  refresh();
+}
+
+/* ---------- Filtros guardados ---------- */
+
+export async function saveFilter(fd: FormData) {
+  const userId = await requireUserId();
+  const name = String(fd.get("name") ?? "").trim();
+  const scope = String(fd.get("scope") ?? "TX");
+  const query = String(fd.get("query") ?? "");
+  if (!name) throw new Error("Ponele un nombre al filtro");
+  const params = Object.fromEntries(new URLSearchParams(query));
+  await prisma.savedFilter.upsert({
+    where: { userId_scope_name: { userId, scope, name } },
+    create: { userId, name, scope, query: params },
+    update: { query: params },
+  });
+  refresh();
+}
+
+export async function deleteFilter(id: number) {
+  const userId = await requireUserId();
+  await prisma.savedFilter.deleteMany({ where: { id, userId } });
+  refresh();
+}
+
+/* ---------- Borrar todos los datos ---------- */
+
+/**
+ * Vacía la cuenta: cuentas, registros, categorías, etiquetas, planes,
+ * planificados y filtros. El usuario y la sesión se conservan.
+ */
+export async function deleteAllData(fd: FormData) {
+  const userId = await requireUserId();
+  if (String(fd.get("confirm") ?? "").trim().toUpperCase() !== "BORRAR TODO") {
+    throw new Error("Escribí exactamente BORRAR TODO para confirmar");
+  }
+  await prisma.$transaction([
+    prisma.transaction.deleteMany({ where: { userId } }),
+    prisma.installmentPlan.deleteMany({ where: { userId } }),
+    prisma.planned.deleteMany({ where: { userId } }),
+    prisma.savedFilter.deleteMany({ where: { userId } }),
+    prisma.tag.deleteMany({ where: { userId } }),
+    prisma.category.deleteMany({ where: { userId } }),
+    prisma.account.deleteMany({ where: { userId } }),
+    prisma.user.update({ where: { id: userId }, data: { dashboard: Prisma.DbNull } }),
+  ]);
   refresh();
 }
