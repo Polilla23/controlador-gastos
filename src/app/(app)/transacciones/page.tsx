@@ -10,6 +10,7 @@ import TransactionForm from "@/components/TransactionForm";
 import TransactionsTable from "@/components/TransactionsTable";
 import CategorySelect from "@/components/CategorySelect";
 import SavedFilters from "@/components/SavedFilters";
+import { cotizaciones } from "@/lib/cotizaciones";
 
 type SP = Record<string, string | undefined>;
 
@@ -46,6 +47,11 @@ export default async function TransaccionesPage({ searchParams }: { searchParams
   ]);
   const counterparties = previos.map((p) => p.counterparty);
 
+  // Cotización de referencia para los cambios de moneda (no bloquea la página si falla).
+  const { lista: quotes } = await cotizaciones();
+  const ref = quotes.find((q) => q.code === "blue") ?? quotes.find((q) => q.code === "oficial");
+  const dolar = ref?.sell ? { nombre: ref.name.toLowerCase(), valor: ref.sell } : null;
+
   const totals = rows.reduce<Record<string, { income: number; expense: number }>>((acc, t) => {
     if (t.type === "TRANSFER") return acc;
     acc[t.currency] ??= { income: 0, expense: 0 };
@@ -59,7 +65,7 @@ export default async function TransaccionesPage({ searchParams }: { searchParams
         <RangePicker range={range} />
         <SavedFilters filtros={filtros.map((f) => ({ id: f.id, name: f.name, query: f.query as Record<string, string> }))} scope="TX" />
         <Modal title="Nuevo registro" trigger={<><Plus size={16} /> <span className="hidden sm:inline">Nuevo</span></>}>
-          <TransactionForm accounts={accounts} categories={categories} tags={tags} counterparties={counterparties} />
+          <TransactionForm accounts={accounts} categories={categories} tags={tags} counterparties={counterparties} dolar={dolar} />
         </Modal>
       </PageHeader>
 

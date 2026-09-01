@@ -92,9 +92,10 @@ export async function handleUpdate(update: TgUpdate) {
   if (/^\/proximos/i.test(text)) {
     const hoy = startOfDay();
     const until = addDays(hoy, 30);
-    const [items, cards] = await Promise.all([
+    const [items, cards, deudas] = await Promise.all([
       prisma.planned.findMany({ where: { userId: user.id, done: false, dueDate: { lte: until } }, orderBy: { dueDate: "asc" }, take: 15 }),
       prisma.account.findMany({ where: { userId: user.id, type: "CREDIT_CARD", archived: false, dueDay: { not: null } } }),
+      prisma.debt.findMany({ where: { userId: user.id, status: "OPEN", dueDate: { not: null, lte: until } }, include: { payments: true } }),
     ]);
 
     type Fila = { fecha: Date; texto: string };
@@ -117,7 +118,16 @@ export async function handleUpdate(update: TgUpdate) {
       filas.push({ fecha: due, texto: `💳 ${fmtDayMonth(due)} · ${card.name}: <b>${money(Math.max(0, usado), card.currency)}</b>` });
     }
 
-    if (!filas.length) return reply("No tenés pagos, ingresos ni vencimientos de tarjeta para los próximos 30 días.");
+    for (const d of deudas) {
+      const falta = d.amount - d.payments.reduce((s, p) => s + p.amount, 0);
+      if (falta <= 0 || !d.dueDate) continue;
+      filas.push({
+        fecha: d.dueDate,
+        texto: `🤝 ${fmtDayMonth(d.dueDate)} · ${d.direction === "I_LENT" ? `${d.counterparty} te devuelve` : `Le devolvés a ${d.counterparty}`}: <b>${money(falta, d.currency)}</b>`,
+      });
+    }
+
+    if (!filas.length) return reply("No tenés pagos, ingresos, tarjetas ni deudas para los próximos 30 días.");
     filas.sort((a, b) => a.fecha.getTime() - b.fecha.getTime());
     return reply(`<b>Próximos 30 días</b>\n${filas.map((f) => f.texto).join("\n")}`);
   }
@@ -195,6 +205,23 @@ export async function runReminders() {
       touchedCards.push(card.id);
     }
 
+    // Deudas con vencimiento cerca.
+    const deudas = await prisma.debt.findMany({ where: { userId: user.id, status: "OPEN", notify: true, dueDate: { not: null } }, include: { payments: true } });
+    const marcarDeudas: number[] = [];
+    for (const d of deudas) {
+      if (!d.dueDate || d.dueDate > limit || sameDay(d.lastNotifiedOn, today)) continue;
+      const falta = d.amount - d.payments.reduce((s, p) => s + p.amount, 0);
+      if (falta <= 0) continue;
+      const dias = Math.ceil((d.dueDate.getTime() - today.getTime()) / 86400000);
+      const cuando = dias <= 0 ? "vence hoy" : dias === 1 ? "vence mañana" : `vence el ${fmtDayMonth(d.dueDate)}`;
+      lines.push(
+        d.direction === "I_LENT"
+          ? `🤝 <b>${d.counterparty}</b> te tiene que devolver ${money(falta, d.currency)} y ${cuando}`
+          : `🤝 Le tenés que devolver ${money(falta, d.currency)} a <b>${d.counterparty}</b> y ${cuando}`,
+      );
+      marcarDeudas.push(d.id);
+    }
+
     // Presupuestos pasados de rosca: se avisa una sola vez por período.
     const presupuestos = await cargarPresupuestos(user.id);
     const excedidos = presupuestos.filter((b) => b.excedido);
@@ -211,6 +238,7 @@ export async function runReminders() {
     if (!lines.length) continue;
     await sendText(user.telegramChatId!, `<b>Recordatorio</b>\n${lines.join("\n")}`);
     for (const m of marcarPresupuestos) await prisma.budget.update({ where: { id: m.id }, data: { warnedFor: m.periodo } });
+    if (marcarDeudas.length) await prisma.debt.updateMany({ where: { id: { in: marcarDeudas } }, data: { lastNotifiedOn: today } });
     sent++;
     if (touchedPlanned.length) await prisma.planned.updateMany({ where: { id: { in: touchedPlanned } }, data: { lastNotifiedOn: today } });
     if (touchedCards.length) await prisma.account.updateMany({ where: { id: { in: touchedCards } }, data: { lastNotifiedOn: today } });

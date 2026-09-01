@@ -28,6 +28,11 @@ model User {
   filters        SavedFilter[]
   budgets        Budget[]
   goals          Goal[]
+  debts          Debt[]
+  rules          Rule[]
+  groups         ShareGroup[]
+  holdings       Holding[]
+  investMoves    InvestMove[]
 }
 
 model Account {
@@ -53,6 +58,9 @@ model Account {
   installments   InstallmentPlan[]
   planned        Planned[]
   budgets        Budget[]
+  debts          Debt[]
+  holdings       Holding[]
+  investMoves    InvestMove[]
 
   @@index([userId])
 }
@@ -74,6 +82,7 @@ model Category {
   installments InstallmentPlan[]
   planned      Planned[]
   budgets      Budget[]
+  rules        Rule[]
 
   @@unique([userId, name, parentId])
   @@index([userId])
@@ -90,6 +99,7 @@ model Tag {
   transactions Transaction[]
   planned      Planned[]
   budgets      Budget[]
+  rules        Rule[]
 
   @@unique([userId, name])
 }
@@ -109,6 +119,7 @@ model Transaction {
   counterparty  String           @default("") // quién me pagó o a quién le pagué
   warrantyMonths Int? // garantía del producto, en meses
   splitGroup    String? // agrupa los registros nacidos de dividir uno solo
+  fxRate        Float? // cotización usada para convertir a la moneda principal
   statementMonth String? // "YYYY-MM": resumen de tarjeta en el que cae el consumo
   accountId     Int
   account       Account          @relation("AccountTx", fields: [accountId], references: [id], onDelete: Cascade)
@@ -240,6 +251,187 @@ model GoalContribution {
   note   String   @default("")
 
   @@index([goalId, date])
+}
+
+/* ---------- Deudas ---------- */
+
+/// Plata prestada o pedida prestada, fuera del circuito de gastos.
+model Debt {
+  id             Int           @id @default(autoincrement())
+  userId         String
+  user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  direction      String // I_LENT (le presté) | I_OWE (me prestaron)
+  counterparty   String // a quién / quién
+  description    String        @default("")
+  amount         Float
+  currency       String        @default("ARS")
+  date           DateTime // cuándo se hizo
+  dueDate        DateTime? // cuándo hay que devolverla
+  accountId      Int?
+  account        Account?      @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  status         String        @default("OPEN") // OPEN | CLOSED
+  notify         Boolean       @default(true)
+  lastNotifiedOn DateTime?
+  createdAt      DateTime      @default(now())
+  payments       DebtPayment[]
+
+  @@index([userId, status])
+}
+
+/// Cada devolución parcial o total de una deuda.
+model DebtPayment {
+  id            Int      @id @default(autoincrement())
+  debtId        Int
+  debt          Debt     @relation(fields: [debtId], references: [id], onDelete: Cascade)
+  amount        Float
+  date          DateTime @default(now())
+  transactionId Int? // el movimiento que generó, si se registró
+  note          String   @default("")
+
+  @@index([debtId])
+}
+
+/* ---------- Cotizaciones ---------- */
+
+/// Última cotización conocida de cada tipo de dólar, cacheada de dolarapi.com.
+model Quote {
+  id        Int      @id @default(autoincrement())
+  code      String   @unique // oficial | blue | bolsa | contadoconliqui | tarjeta | cripto | mayorista
+  name      String
+  buy       Float?
+  sell      Float?
+  fetchedAt DateTime @default(now())
+  quotedAt  DateTime?
+}
+
+/* ---------- Reglas de automatización ---------- */
+
+/// Aplica categoría, etiquetas y descripción a los registros que coinciden.
+model Rule {
+  id              Int       @id @default(autoincrement())
+  userId          String
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name            String
+  active          Boolean   @default(true)
+  sortOrder       Int       @default(0)
+  /// Palabras separadas por coma; se buscan en descripción, contraparte y nota.
+  keywords        String    @default("")
+  matchType       String    @default("ANY") // ANY | INCOME | EXPENSE | TRANSFER
+  matchAccountId  Int?
+  matchToAccountId Int?
+  setCategoryId   Int?
+  setCategory     Category? @relation(fields: [setCategoryId], references: [id], onDelete: SetNull)
+  setDescription  String    @default("")
+  setCounterparty String    @default("")
+  setTags         Tag[]
+  createdAt       DateTime  @default(now())
+
+  @@index([userId, active])
+}
+
+/* ---------- Gastos compartidos ---------- */
+
+model ShareGroup {
+  id        Int            @id @default(autoincrement())
+  userId    String // quien lo creó
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  currency  String         @default("ARS")
+  note      String         @default("")
+  archived  Boolean        @default(false)
+  createdAt DateTime       @default(now())
+  members   ShareMember[]
+  expenses  ShareExpense[]
+
+  @@index([userId, archived])
+}
+
+model ShareMember {
+  id        Int            @id @default(autoincrement())
+  groupId   Int
+  group     ShareGroup     @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  name      String
+  email     String         @default("")
+  /// Si es el propio dueño del grupo, para saber qué saldo es "mío".
+  isMe      Boolean        @default(false)
+  paid      ShareExpense[] @relation("PagadoPor")
+  splits    ShareSplit[]
+
+  @@index([groupId])
+}
+
+model ShareExpense {
+  id          Int          @id @default(autoincrement())
+  groupId     Int
+  group       ShareGroup   @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  description String
+  amount      Float
+  date        DateTime
+  paidById    Int
+  paidBy      ShareMember  @relation("PagadoPor", fields: [paidById], references: [id], onDelete: Cascade)
+  categoryId  Int?
+  note        String       @default("")
+  createdAt   DateTime     @default(now())
+  splits      ShareSplit[]
+
+  @@index([groupId, date])
+}
+
+/// Cuánto de un gasto le toca a cada integrante.
+model ShareSplit {
+  id        Int          @id @default(autoincrement())
+  expenseId Int
+  expense   ShareExpense @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  memberId  Int
+  member    ShareMember  @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  amount    Float
+
+  @@index([expenseId])
+}
+
+/* ---------- Inversiones ---------- */
+
+/// Una tenencia dentro de una cuenta de inversión (un CEDEAR, un FCI, un plazo fijo…).
+model Holding {
+  id        Int          @id @default(autoincrement())
+  userId    String
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accountId Int
+  account   Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  kind      String // CEDEAR | ACCION | BONO | LETRA | FCI | PLAZO_FIJO | CAUCION | ON | CRIPTO | OTRO
+  ticker    String       @default("")
+  name      String
+  currency  String       @default("ARS")
+  /// Datos propios de renta fija: tasa anual y vencimiento.
+  rate      Float?
+  maturity  DateTime?
+  note      String       @default("")
+  createdAt DateTime     @default(now())
+  moves     InvestMove[]
+
+  @@index([userId, accountId])
+}
+
+/// Compras, ventas, aportes y rentas dentro de una cuenta de inversión.
+model InvestMove {
+  id        Int      @id @default(autoincrement())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accountId Int
+  account   Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  holdingId Int?
+  holding   Holding? @relation(fields: [holdingId], references: [id], onDelete: Cascade)
+  type      String // BUY | SELL | DEPOSIT | WITHDRAW | INCOME (renta) | FEE
+  quantity  Float? // nominales, cuotapartes…
+  price     Float? // precio unitario
+  amount    Float // plata que entra o sale de la cuenta
+  currency  String   @default("ARS")
+  date      DateTime
+  note      String   @default("")
+  createdAt DateTime @default(now())
+
+  @@index([userId, date])
+  @@index([accountId])
 }
 
 model Attachment {

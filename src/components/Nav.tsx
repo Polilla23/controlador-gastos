@@ -15,6 +15,9 @@ import {
   Wallet,
   CalendarPlus,
   Target,
+  HandCoins,
+  Coins,
+  Wand2,
   X,
 } from "lucide-react";
 import clsx from "clsx";
@@ -27,9 +30,12 @@ const ITEMS = [
   { href: "/cuentas", label: "Cuentas", icon: Wallet },
   { href: "/planificados", label: "Planificados", icon: CalendarPlus },
   { href: "/presupuestos", label: "Presupuestos y metas", icon: Target },
+  { href: "/deudas", label: "Deudas", icon: HandCoins },
   { href: "/cuotas", label: "Cuotas", icon: CalendarClock },
   { href: "/categorias", label: "Categorías", icon: Shapes },
   { href: "/etiquetas", label: "Etiquetas", icon: Tags },
+  { href: "/monedas", label: "Monedas", icon: Coins },
+  { href: "/reglas", label: "Reglas", icon: Wand2 },
   { href: "/perfil", label: "Perfil y Telegram", icon: UserCircle },
 ];
 

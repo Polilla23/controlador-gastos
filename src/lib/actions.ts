@@ -10,6 +10,7 @@ import { supabaseServer } from "./supabase";
 import { storeAttachment, removeStored } from "./storage";
 import { addMonths, civil, fromCivil, parseInput } from "./tz";
 import { statementMonthFor } from "./tarjetas";
+import { aplicarAlCrear } from "./reglas";
 
 const num = z.coerce.number();
 
@@ -257,7 +258,16 @@ export async function saveTransaction(fd: FormData) {
       ),
     );
   } else {
-    await prisma.transaction.create({ data: { ...base, amount: d.amount, date, tags: { connect: tagIds.map((t) => ({ id: t })) } } });
+    const creado = await prisma.transaction.create({ data: { ...base, amount: d.amount, date, tags: { connect: tagIds.map((t) => ({ id: t })) } } });
+    // Las reglas de automatización corren sobre lo recién creado.
+    await aplicarAlCrear(userId, creado.id, {
+      type: d.type,
+      description: d.description,
+      counterparty: base.counterparty,
+      note: d.note,
+      accountId: d.accountId,
+      toAccountId: base.toAccountId,
+    });
   }
   refresh();
 }

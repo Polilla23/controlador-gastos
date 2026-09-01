@@ -69,6 +69,7 @@ export default function TransactionForm({
   initial,
   onDone,
   counterparties = [],
+  dolar,
 }: {
   accounts: AccountOpt[];
   categories: CategoryOpt[];
@@ -77,6 +78,8 @@ export default function TransactionForm({
   onDone?: () => void;
   /** Nombres ya usados antes, para sugerir mientras se escribe. */
   counterparties?: string[];
+  /** Cotización de referencia del dólar, para sugerirla en cambios de moneda. */
+  dolar?: { nombre: string; valor: number } | null;
 }) {
   const [type, setType] = useState(initial?.type ?? "EXPENSE");
   const [accountId, setAccountId] = useState(initial?.accountId ?? accounts[0]?.id ?? 0);
@@ -85,6 +88,7 @@ export default function TransactionForm({
   const [installments, setInstallments] = useState(1);
   const [hasDue, setHasDue] = useState(!!initial?.dueDate);
   const [date, setDate] = useState(toInputDateTime(initial?.date ?? new Date()));
+  const [toAmount, setToAmount] = useState(initial?.toAmount?.toString() ?? "");
 
   const account = accounts.find((a) => a.id === accountId);
   const toAccount = accounts.find((a) => a.id === toAccountId);
@@ -145,8 +149,44 @@ export default function TransactionForm({
           {crossCurrency && (
             <div>
               <label className="label">Monto recibido ({toAccount?.currency})</label>
-              <MoneyInput name="toAmount" required defaultValue={initial?.toAmount} />
+              <MoneyInput key={`to-${toAmount}`} name="toAmount" required defaultValue={toAmount || initial?.toAmount} onValueChange={setToAmount} />
             </div>
+          )}
+        </div>
+      )}
+
+      {crossCurrency && (
+        <div className="rounded-xl border border-dashed border-line p-3 text-sm">
+          {Number(amount) > 0 && Number(toAmount) > 0 ? (
+            <p className="text-muted">
+              Cotización de este cambio:{" "}
+              <b className="text-fg">
+                {money(
+                  account!.currency === "ARS" ? Number(amount) / Number(toAmount) : Number(toAmount) / Number(amount),
+                  "ARS",
+                )}
+              </b>{" "}
+              por {account!.currency === "ARS" ? toAccount!.currency : account!.currency}
+            </p>
+          ) : (
+            <p className="text-muted">Escribí los dos montos y te muestro a cuánto te quedó el cambio.</p>
+          )}
+          {dolar && Number(amount) > 0 && (
+            <button
+              type="button"
+              className="btn-ghost mt-2"
+              onClick={() => {
+                const v = account!.currency === "ARS" ? Number(amount) / dolar.valor : Number(amount) * dolar.valor;
+                setToAmount(String(Math.round(v * 100) / 100));
+              }}
+            >
+              Usar dólar {dolar.nombre} ({money(dolar.valor, "ARS")})
+            </button>
+          )}
+          {dolar && (
+            <p className="mt-1 text-xs text-muted">
+              Si cambiaste a otro valor, escribí el monto recibido a mano: ese registro queda con tu cotización.
+            </p>
           )}
         </div>
       )}
