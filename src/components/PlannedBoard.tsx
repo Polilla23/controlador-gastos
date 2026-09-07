@@ -10,6 +10,7 @@ import MoneyInput from "./MoneyInput";
 import { confirmPlanned, deletePlanned, savePlanned } from "@/lib/actions";
 import { CURRENCIES, RECURRENCES, fmtDate, money, toInputDate } from "@/lib/format";
 import type { AccountOpt, TagOpt } from "./TransactionForm";
+import Icono from "./Icono";
 
 export type PlannedRow = {
   id: number;
@@ -21,8 +22,10 @@ export type PlannedRow = {
   recurrence: string;
   accountId: number | null;
   categoryId: number | null;
+  note: string;
+  autoConfirm: boolean;
   notify: boolean;
-  category: { name: string; color: string } | null;
+  category: { name: string; color: string; iconBody: string | null } | null;
   tags: { id: number; name: string; color: string }[];
 };
 
@@ -116,9 +119,17 @@ function Fields({ item, type, accounts, categories, tags }: { item?: PlannedRow;
           <TagPicker tags={tags} initial={item?.tags.map((t) => t.id) ?? []} />
         </div>
       )}
+      <div>
+        <label className="label">Notas</label>
+        <textarea name="note" className="input" rows={2} defaultValue={item?.note} placeholder="Notas opcionales" />
+      </div>
       <label className="flex items-center gap-2 text-sm">
         <input type="checkbox" name="notify" defaultChecked={item?.notify ?? true} className="h-4 w-4 accent-[var(--color-brand-500)]" />
         Avisarme por Telegram antes del vencimiento
+      </label>
+      <label className="flex items-center gap-2 text-sm">
+        <input type="checkbox" name="autoConfirm" defaultChecked={item?.autoConfirm ?? false} className="h-4 w-4 accent-[var(--color-brand-500)]" />
+        Generar el movimiento automáticamente al vencer (ej. débito automático)
       </label>
     </>
   );
@@ -162,7 +173,15 @@ export default function PlannedBoard({
           return (
             <li key={p.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-line px-3 py-2.5">
               <div className="flex min-w-0 flex-1 items-center gap-3">
-                <span className="h-9 w-9 shrink-0 rounded-lg" style={{ background: `${p.category?.color ?? (type === "INCOME" ? "#1A9D76" : "#F59E0B")}22`, border: `2px solid ${p.category?.color ?? (type === "INCOME" ? "#1A9D76" : "#F59E0B")}` }} />
+                <span
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg"
+                  style={{
+                    background: `${p.category?.color ?? (type === "INCOME" ? "#1A9D76" : "#F59E0B")}22`,
+                    border: `2px solid ${p.category?.color ?? (type === "INCOME" ? "#1A9D76" : "#F59E0B")}`,
+                  }}
+                >
+                  {p.category?.iconBody && <Icono body={p.category.iconBody} size={16} className="text-fg" />}
+                </span>
                 <div className="min-w-0">
                   <div className="truncate text-sm font-semibold">{p.description}</div>
                   <div className={`flex items-center gap-1 truncate text-xs ${late ? "text-red-500" : "text-muted"}`}>

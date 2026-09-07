@@ -1,42 +1,43 @@
 import { prisma } from "@/lib/prisma";
 import { requireUserId } from "@/lib/auth";
-import { daysFromNow, money } from "@/lib/format";
+import { daysFromNow } from "@/lib/format";
+import { cotizaciones } from "@/lib/cotizaciones";
+import { icono } from "@/lib/iconos";
 import PageHeader from "@/components/PageHeader";
 import PlannedBoard from "@/components/PlannedBoard";
+import PlannedTotals from "@/components/PlannedTotals";
 
 export default async function PlanificadosPage() {
   const userId = await requireUserId();
-  const [items, accounts, categories, tags] = await Promise.all([
+  const [rows, accounts, categories, tags, { lista: quotes }] = await Promise.all([
     prisma.planned.findMany({ where: { userId, done: false }, orderBy: { dueDate: "asc" }, include: { category: true, tags: true } }),
     prisma.account.findMany({ where: { userId, archived: false }, orderBy: [{ sortOrder: "asc" }, { id: "asc" }] }),
     prisma.category.findMany({ where: { userId }, orderBy: { name: "asc" } }),
     prisma.tag.findMany({ where: { userId }, orderBy: { name: "asc" } }),
+    cotizaciones(),
   ]);
+  const items = rows.map((p) => ({
+    ...p,
+    category: p.category ? { ...p.category, iconBody: icono(p.category.icon)?.body ?? null } : null,
+  }));
 
   const in30 = daysFromNow(30);
   const soon = items.filter((i) => i.dueDate <= in30);
-  const totalIn = soon.filter((i) => i.type === "INCOME").reduce((s, i) => s + i.amount, 0);
-  const totalOut = soon.filter((i) => i.type === "EXPENSE").reduce((s, i) => s + i.amount, 0);
-  const cur = soon[0]?.currency ?? "ARS";
+  const buckets = Object.values(
+    soon.reduce<Record<string, { currency: string; totalIn: number; totalOut: number }>>((acc, i) => {
+      acc[i.currency] ??= { currency: i.currency, totalIn: 0, totalOut: 0 };
+      acc[i.currency][i.type === "INCOME" ? "totalIn" : "totalOut"] += i.amount;
+      return acc;
+    }, {}),
+  );
 
   return (
     <>
       <PageHeader title="Planificados" subtitle="Vencimientos que tenés que pagar e ingresos que sabés que van a entrar" />
 
-      <div className="mb-4 grid gap-3 sm:grid-cols-3">
-        <div className="card">
-          <div className="kpi-label">A cobrar (30 días)</div>
-          <div className="kpi-value text-brand-500">{money(totalIn, cur)}</div>
-        </div>
-        <div className="card">
-          <div className="kpi-label">A pagar (30 días)</div>
-          <div className="kpi-value text-red-500">{money(totalOut, cur)}</div>
-        </div>
-        <div className="card">
-          <div className="kpi-label">Diferencia</div>
-          <div className={`kpi-value ${totalIn - totalOut < 0 ? "text-red-500" : ""}`}>{money(totalIn - totalOut, cur)}</div>
-        </div>
-      </div>
+      {buckets.length > 0 && (
+        <PlannedTotals buckets={buckets} quotes={quotes.map((q) => ({ code: q.code, name: q.name, sell: q.sell }))} />
+      )}
 
       <div className="grid gap-4 lg:grid-cols-2">
         <PlannedBoard

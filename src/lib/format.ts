@@ -23,6 +23,12 @@ export const RECURRENCES: Record<string, string> = {
   YEARLY: "Cada año",
 };
 
+/** "Mercado Pago" o, si hay otra cuenta con el mismo nombre, "Mercado Pago (USD)". */
+export function accountLabel(account: { name: string; currency: string }, all: { name: string }[]): string {
+  const dup = all.filter((a) => a.name === account.name).length > 1;
+  return dup ? `${account.name} (${account.currency})` : account.name;
+}
+
 export function money(amount: number, currency: string) {
   return new Intl.NumberFormat("es-AR", { style: "currency", currency, maximumFractionDigits: 2 }).format(amount);
 }

@@ -2,13 +2,15 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ArrowDownLeft, ArrowUpRight, Coins, LineChart, Pencil, Plus, Tag, Trash2 } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, Coins, HelpCircle, LineChart, Pencil, Plus, Receipt, Tag, Trash2 } from "lucide-react";
 import ActionForm from "./ActionForm";
 import Modal from "./Modal";
 import ConfirmButton from "./ConfirmButton";
 import MoneyInput from "./MoneyInput";
-import { deleteHolding, deleteInvestMove, saveHolding, saveInvestMove, setHoldingPrice } from "@/lib/actions-inversiones";
-import { CURRENCIES, fmtDate, money, toInputDate } from "@/lib/format";
+import LinkTransaction from "./LinkTransaction";
+import { deleteHolding, deleteInvestMove, liquidarCaucion, saveHolding, saveInvestMove, setHoldingPrice } from "@/lib/actions-inversiones";
+import { CURRENCIES, accountLabel, fmtDate, money, toInputDate } from "@/lib/format";
+import type { AccountOpt } from "./TransactionForm";
 
 const INSTRUMENTOS: Record<string, string> = {
   ACCION: "Acciones",
@@ -62,6 +64,7 @@ export type CuentaInversion = {
   currency: string;
   color: string;
   efectivo: number;
+  invertido: number;
   valorCartera: number;
   total: number;
   conPrecio: boolean;
@@ -74,7 +77,9 @@ export type Cartera = {
   cuentas: CuentaInversion[];
   total: number;
   efectivoTotal: number;
+  invertidoTotal: number;
   carteraTotal: number;
+  porMoneda: { currency: string; efectivo: number; invertido: number; cartera: number; total: number }[];
   porInstrumento: { kind: string; nombre: string; valor: number }[];
 };
 
@@ -137,11 +142,13 @@ function InstrumentoForm({ cuenta, h }: { cuenta: CuentaInversion; h?: Tenencia 
   );
 }
 
-function MovimientoForm({ cuenta, m }: { cuenta: CuentaInversion; m?: Movimiento }) {
+function MovimientoForm({ cuenta, accounts, m }: { cuenta: CuentaInversion; accounts: AccountOpt[]; m?: Movimiento }) {
   const [type, setType] = useState(m?.type ?? "BUY");
   const [cantidad, setCantidad] = useState(m?.quantity?.toString() ?? "");
   const [precio, setPrecio] = useState(m?.price?.toString() ?? "");
   const conInstrumento = type === "BUY" || type === "SELL";
+  const esMovimientoDeCaja = type === "DEPOSIT" || type === "WITHDRAW";
+  const otrasCuentas = accounts.filter((a) => a.id !== cuenta.id);
   const calculado = Number(cantidad) > 0 && Number(precio) > 0 ? Math.round(Number(cantidad) * Number(precio) * 100) / 100 : null;
 
   return (
@@ -201,6 +208,24 @@ function MovimientoForm({ cuenta, m }: { cuenta: CuentaInversion; m?: Movimiento
       </div>
 
       <input type="hidden" name="currency" value={cuenta.currency} />
+
+      {esMovimientoDeCaja && !m && (
+        <>
+          <div>
+            <label className="label">{type === "DEPOSIT" ? "De qué cuenta sale" : "A qué cuenta entra"}</label>
+            <select name="otherAccountId" className="input" defaultValue="">
+              <option value="">Sin definir</option>
+              {otrasCuentas.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {accountLabel(a, accounts)}
+                </option>
+              ))}
+            </select>
+          </div>
+          <LinkTransaction newLabel={type === "DEPOSIT" ? "Crear la transferencia en Transacciones" : "Crear la transferencia en Transacciones"} />
+        </>
+      )}
+
       <div>
         <label className="label">Nota</label>
         <input name="note" className="input" defaultValue={m?.note} />
@@ -209,7 +234,53 @@ function MovimientoForm({ cuenta, m }: { cuenta: CuentaInversion; m?: Movimiento
   );
 }
 
-export default function InvestmentsBoard({ cartera }: { cartera: Cartera }) {
+/** Boleto de liquidación de una caución: bruto, arancel, IVA y derecho de mercado → neto. */
+function LiquidarCaucionForm({ holding }: { holding: Tenencia }) {
+  const [bruto, setBruto] = useState("");
+  const [arancel, setArancel] = useState("");
+  const [iva, setIva] = useState("");
+  const [derecho, setDerecho] = useState("");
+  const neto = Number(bruto) > 0 ? Math.max(0, Number(bruto) - (Number(arancel) || 0) - (Number(iva) || 0) - (Number(derecho) || 0)) : null;
+
+  return (
+    <ActionForm action={liquidarCaucion} submitLabel="Registrar liquidación">
+      <input type="hidden" name="holdingId" value={holding.id} />
+      <div>
+        <label className="label">Bruto ({holding.currency})</label>
+        <MoneyInput name="bruto" required onValueChange={setBruto} />
+      </div>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div>
+          <label className="label">Arancel</label>
+          <MoneyInput name="arancel" onValueChange={setArancel} />
+        </div>
+        <div>
+          <label className="label">IVA</label>
+          <MoneyInput name="iva" onValueChange={setIva} />
+        </div>
+        <div>
+          <label className="label">Derecho de mercado</label>
+          <MoneyInput name="derechoMercado" onValueChange={setDerecho} />
+        </div>
+      </div>
+      <div>
+        <label className="label">Fecha de liquidación</label>
+        <input name="date" type="date" required className="input" defaultValue={toInputDate(new Date())} />
+      </div>
+      {neto != null && (
+        <p className="rounded-lg bg-subtle px-3 py-2 text-sm">
+          Neto a acreditar: <b>{money(neto, holding.currency)}</b>
+        </p>
+      )}
+      <div>
+        <label className="label">Nota (opcional)</label>
+        <input name="note" className="input" placeholder="Ej: Boleto #9.856.865" />
+      </div>
+    </ActionForm>
+  );
+}
+
+export default function InvestmentsBoard({ cartera, accounts }: { cartera: Cartera; accounts: AccountOpt[] }) {
   if (cartera.cuentas.length === 0) {
     return (
       <div className="card py-10 text-center text-sm text-muted">
@@ -226,19 +297,37 @@ export default function InvestmentsBoard({ cartera }: { cartera: Cartera }) {
 
   return (
     <>
-      <div className="mb-5 grid gap-3 sm:grid-cols-3">
-        <div className="card">
-          <div className="kpi-label">Total invertido</div>
-          <div className="kpi-value">{money(cartera.total, cartera.cuentas[0].currency)}</div>
-        </div>
-        <div className="card">
-          <div className="kpi-label">Efectivo disponible</div>
-          <div className="kpi-value">{money(cartera.efectivoTotal, cartera.cuentas[0].currency)}</div>
-        </div>
-        <div className="card">
-          <div className="kpi-label">Valor del portafolio</div>
-          <div className="kpi-value text-brand-500">{money(cartera.carteraTotal, cartera.cuentas[0].currency)}</div>
-        </div>
+      <div className="mb-5 space-y-3">
+        {cartera.porMoneda.map((m) => (
+          <div key={m.currency} className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="card">
+              <div className="kpi-label">Patrimonio total ({m.currency})</div>
+              <div className="kpi-value">{money(m.total, m.currency)}</div>
+              <p className="mt-1 text-xs text-muted">Efectivo + valor del portafolio.</p>
+            </div>
+            <div className="card">
+              <div className="kpi-label flex items-center gap-1">
+                Invertido ({m.currency})
+                <HelpCircle size={12} className="text-muted" aria-label="Costo de lo que sigue en el mercado (lo que pusiste, menos lo que ya vendiste)." />
+              </div>
+              <div className="kpi-value">{money(m.invertido, m.currency)}</div>
+              <p className="mt-1 text-xs text-muted">Lo que pusiste y sigue en el mercado (costo, no valor actual).</p>
+            </div>
+            <div className="card">
+              <div className="kpi-label flex items-center gap-1">
+                Valor del portafolio ({m.currency})
+                <HelpCircle size={12} className="text-muted" aria-label="Precio actual de tus tenencias (o el costo, si todavía no cargaste un precio)." />
+              </div>
+              <div className="kpi-value text-brand-500">{money(m.cartera, m.currency)}</div>
+              <p className="mt-1 text-xs text-muted">Cuánto valen hoy tus tenencias al precio que cargaste.</p>
+            </div>
+            <div className="card">
+              <div className="kpi-label">Efectivo disponible ({m.currency})</div>
+              <div className="kpi-value">{money(m.efectivo, m.currency)}</div>
+              <p className="mt-1 text-xs text-muted">Plata sin invertir, dentro de la cuenta de inversión.</p>
+            </div>
+          </div>
+        ))}
       </div>
 
       {cartera.porInstrumento.length > 0 && (
@@ -281,7 +370,7 @@ export default function InvestmentsBoard({ cartera }: { cartera: Cartera }) {
                   <InstrumentoForm cuenta={c} />
                 </Modal>
                 <Modal title={`Nuevo movimiento en ${c.name}`} trigger={<><Plus size={15} /> Movimiento</>}>
-                  <MovimientoForm cuenta={c} />
+                  <MovimientoForm cuenta={c} accounts={accounts} />
                 </Modal>
               </div>
             </div>
@@ -320,6 +409,11 @@ export default function InvestmentsBoard({ cartera }: { cartera: Cartera }) {
                             </div>
                           )}
                         </div>
+                        {h.kind === "CAUCION" && (
+                          <Modal title={`Liquidar ${h.name}`} triggerClassName="btn-ghost" trigger={<><Receipt size={15} /> Liquidar</>}>
+                            <LiquidarCaucionForm holding={h} />
+                          </Modal>
+                        )}
                         <Modal title={`Precio de ${h.name}`} triggerClassName="btn-ghost" trigger={<Coins size={15} />}>
                           <ActionForm action={setHoldingPrice} submitLabel="Guardar precio">
                             <input type="hidden" name="id" value={h.id} />
@@ -373,7 +467,7 @@ export default function InvestmentsBoard({ cartera }: { cartera: Cartera }) {
                             {money(m.amount, m.currency)}
                           </b>
                           <Modal title="Editar movimiento" triggerClassName="btn-icon" trigger={<Pencil size={14} />}>
-                            <MovimientoForm cuenta={c} m={m} />
+                            <MovimientoForm cuenta={c} accounts={accounts} m={m} />
                           </Modal>
                           <ConfirmButton action={async () => deleteInvestMove(m.id)} className="btn-icon hover:text-red-500" message="¿Eliminar este movimiento?">
                             <Trash2 size={14} />

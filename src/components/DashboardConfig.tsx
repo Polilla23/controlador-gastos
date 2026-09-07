@@ -8,20 +8,24 @@ import { Sortable } from "./ui";
 
 type AccountOpt = { id: number; name: string; currency: string; color: string; selected: boolean };
 
-/** Lets the user pick which cards appear on the dashboard, in what order, and which accounts feed them. */
-export default function DashboardConfig({ cards, accounts }: { cards: string[]; accounts: AccountOpt[] }) {
+/** Lets the user pick which cards appear on the dashboard, in what order, and which accounts feed them. Web y celular se ordenan por separado. */
+export default function DashboardConfig({ cards, cardsMobile, accounts }: { cards: string[]; cardsMobile: string[]; accounts: AccountOpt[] }) {
   const [open, setOpen] = useState(false);
+  const [tab, setTab] = useState<"desktop" | "mobile">("desktop");
   const [sel, setSel] = useState(cards);
+  const [selMobile, setSelMobile] = useState(cardsMobile);
   const [accs, setAccs] = useState(accounts.filter((a) => a.selected).map((a) => a.id));
   const [pending, start] = useTransition();
 
   const byId = new Map(CARDS.map((c) => [c.id, c]));
-  const chosen = sel.map((id) => byId.get(id)).filter(Boolean) as typeof CARDS;
-  const available = CARDS.filter((c) => !sel.includes(c.id));
+  const activeSel = tab === "desktop" ? sel : selMobile;
+  const setActiveSel = tab === "desktop" ? setSel : setSelMobile;
+  const chosen = activeSel.map((id) => byId.get(id)).filter(Boolean) as typeof CARDS;
+  const available = CARDS.filter((c) => !activeSel.includes(c.id));
 
   const save = () =>
     start(async () => {
-      await saveDashboard(sel, accs);
+      await saveDashboard(sel, accs, selMobile);
       setOpen(false);
     });
 
@@ -32,7 +36,7 @@ export default function DashboardConfig({ cards, accounts }: { cards: string[]; 
       </button>
 
       {open && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center sm:p-4" onClick={() => setOpen(false)}>
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center sm:p-4">
           <div className="max-h-[92vh] w-full overflow-y-auto rounded-t-2xl border border-line bg-card p-5 shadow-xl sm:max-w-2xl sm:rounded-2xl" onClick={(e) => e.stopPropagation()}>
             <div className="mb-4 flex items-center justify-between">
               <h2 className="text-lg font-bold">Personalizar resumen</h2>
@@ -63,16 +67,26 @@ export default function DashboardConfig({ cards, accounts }: { cards: string[]; 
             </section>
 
             <section className="mb-5">
-              <h3 className="label">Tarjetas del resumen · arrastrá para ordenar</h3>
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <h3 className="label mb-0">Tarjetas del resumen · arrastrá para ordenar</h3>
+                <div className="flex gap-1 rounded-lg border border-line p-0.5 text-xs">
+                  <button type="button" onClick={() => setTab("desktop")} className={`rounded-md px-2 py-1 font-medium ${tab === "desktop" ? "bg-subtle" : "text-muted"}`}>
+                    Web
+                  </button>
+                  <button type="button" onClick={() => setTab("mobile")} className={`rounded-md px-2 py-1 font-medium ${tab === "mobile" ? "bg-subtle" : "text-muted"}`}>
+                    Celular
+                  </button>
+                </div>
+              </div>
               {chosen.length === 0 && <p className="text-sm text-muted">No hay tarjetas elegidas.</p>}
-              <Sortable items={chosen} onReorder={(ids) => setSel(ids.map(String))}>
+              <Sortable items={chosen} onReorder={(ids) => setActiveSel(ids.map(String))}>
                 {(c) => (
                   <div className="flex items-center justify-between gap-2 rounded-xl border border-line px-3 py-2">
                     <div className="min-w-0">
                       <div className="truncate text-sm font-semibold">{c.title}</div>
                       <div className="truncate text-xs text-muted">{c.question}</div>
                     </div>
-                    <button type="button" onClick={() => setSel((s) => s.filter((x) => x !== c.id))} className="btn-icon shrink-0 hover:text-red-500" aria-label="Quitar">
+                    <button type="button" onClick={() => setActiveSel((s) => s.filter((x) => x !== c.id))} className="btn-icon shrink-0 hover:text-red-500" aria-label="Quitar">
                       <Trash2 size={15} />
                     </button>
                   </div>
@@ -85,7 +99,7 @@ export default function DashboardConfig({ cards, accounts }: { cards: string[]; 
                 <h3 className="label">Agregar tarjeta</h3>
                 <div className="flex flex-wrap gap-2">
                   {available.map((c) => (
-                    <button key={c.id} type="button" onClick={() => setSel((s) => [...s, c.id])} className="chip border border-line px-3 py-1.5 text-muted transition hover:border-brand-400 hover:text-brand-500">
+                    <button key={c.id} type="button" onClick={() => setActiveSel((s) => [...s, c.id])} className="chip border border-line px-3 py-1.5 text-muted transition hover:border-brand-400 hover:text-brand-500">
                       <Plus size={12} /> {c.title}
                     </button>
                   ))}

@@ -62,6 +62,8 @@ function TagPicker({ tags, initial }: { tags: TagOpt[]; initial: number[] }) {
   );
 }
 
+export type QuoteOpt = { code: string; name: string; sell: number | null };
+
 export default function TransactionForm({
   accounts,
   categories,
@@ -69,7 +71,7 @@ export default function TransactionForm({
   initial,
   onDone,
   counterparties = [],
-  dolar,
+  quotes = [],
 }: {
   accounts: AccountOpt[];
   categories: CategoryOpt[];
@@ -78,8 +80,8 @@ export default function TransactionForm({
   onDone?: () => void;
   /** Nombres ya usados antes, para sugerir mientras se escribe. */
   counterparties?: string[];
-  /** Cotización de referencia del dólar, para sugerirla en cambios de moneda. */
-  dolar?: { nombre: string; valor: number } | null;
+  /** Cotizaciones cacheadas (Monedas), para elegir con qué convertir en un cambio de moneda. */
+  quotes?: QuoteOpt[];
 }) {
   const [type, setType] = useState(initial?.type ?? "EXPENSE");
   const [accountId, setAccountId] = useState(initial?.accountId ?? accounts[0]?.id ?? 0);
@@ -89,11 +91,23 @@ export default function TransactionForm({
   const [hasDue, setHasDue] = useState(!!initial?.dueDate);
   const [date, setDate] = useState(toInputDateTime(initial?.date ?? new Date()));
   const [toAmount, setToAmount] = useState(initial?.toAmount?.toString() ?? "");
+  const [rateSource, setRateSource] = useState("manual");
 
   const account = accounts.find((a) => a.id === accountId);
   const toAccount = accounts.find((a) => a.id === toAccountId);
   const crossCurrency = type === "TRANSFER" && account && toAccount && account.currency !== toAccount.currency;
   const per = Number(amount) > 0 && installments > 1 ? Number(amount) / installments : null;
+  const usableQuotes = quotes.filter((q) => q.sell);
+  const fxRate = Number(amount) > 0 && Number(toAmount) > 0 ? Number(toAmount) / Number(amount) : null;
+
+  const applyRateSource = (code: string) => {
+    setRateSource(code);
+    if (code === "manual") return;
+    const q = usableQuotes.find((x) => x.code === code);
+    if (!q?.sell || !(Number(amount) > 0) || !account) return;
+    const v = account.currency === "ARS" ? Number(amount) / q.sell : Number(amount) * q.sell;
+    setToAmount(String(Math.round(v * 100) / 100));
+  };
 
   return (
     <ActionForm action={saveTransaction} onDone={onDone}>
@@ -157,36 +171,25 @@ export default function TransactionForm({
 
       {crossCurrency && (
         <div className="rounded-xl border border-dashed border-line p-3 text-sm">
-          {Number(amount) > 0 && Number(toAmount) > 0 ? (
-            <p className="text-muted">
-              Cotización de este cambio:{" "}
+          <input type="hidden" name="fxRate" value={fxRate ?? ""} />
+          <label className="label">Cotización a usar</label>
+          <select className="input" value={rateSource} onChange={(e) => applyRateSource(e.target.value)}>
+            <option value="manual">Manual (escribo el monto recibido)</option>
+            {usableQuotes.map((q) => (
+              <option key={q.code} value={q.code}>
+                {q.name} ({money(q.sell!, "ARS")})
+              </option>
+            ))}
+          </select>
+          {fxRate ? (
+            <p className="mt-2 text-muted">
+              Cotización de este cambio: 1 {account!.currency} ={" "}
               <b className="text-fg">
-                {money(
-                  account!.currency === "ARS" ? Number(amount) / Number(toAmount) : Number(toAmount) / Number(amount),
-                  "ARS",
-                )}
-              </b>{" "}
-              por {account!.currency === "ARS" ? toAccount!.currency : account!.currency}
+                {fxRate.toLocaleString("es-AR", { maximumFractionDigits: 4 })} {toAccount!.currency}
+              </b>
             </p>
           ) : (
-            <p className="text-muted">Escribí los dos montos y te muestro a cuánto te quedó el cambio.</p>
-          )}
-          {dolar && Number(amount) > 0 && (
-            <button
-              type="button"
-              className="btn-ghost mt-2"
-              onClick={() => {
-                const v = account!.currency === "ARS" ? Number(amount) / dolar.valor : Number(amount) * dolar.valor;
-                setToAmount(String(Math.round(v * 100) / 100));
-              }}
-            >
-              Usar dólar {dolar.nombre} ({money(dolar.valor, "ARS")})
-            </button>
-          )}
-          {dolar && (
-            <p className="mt-1 text-xs text-muted">
-              Si cambiaste a otro valor, escribí el monto recibido a mano: ese registro queda con tu cotización.
-            </p>
+            <p className="mt-2 text-muted">Elegí una cotización o escribí el monto recibido a mano.</p>
           )}
         </div>
       )}

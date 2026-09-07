@@ -1,6 +1,8 @@
 import { RefreshCw, TriangleAlert } from "lucide-react";
 import { requireUserId } from "@/lib/auth";
-import { cotizaciones, ORDEN_PREFERIDO } from "@/lib/cotizaciones";
+import { cotizaciones, NOMBRE_MOSTRAR, ORDEN_PREFERIDO } from "@/lib/cotizaciones";
+
+const OTRAS_MONEDAS = ["eur", "brl"];
 import { money, fmtDateTime } from "@/lib/format";
 import PageHeader from "@/components/PageHeader";
 import ConfirmButton from "@/components/ConfirmButton";
@@ -47,7 +49,7 @@ export default async function MonedasPage() {
         {ordenada.map((q) => (
           <div key={q.code} className="card">
             <div className="flex items-baseline justify-between">
-              <h2 className="font-bold">Dólar {q.name}</h2>
+              <h2 className="font-bold">{OTRAS_MONEDAS.includes(q.code) ? q.name : `Dólar ${NOMBRE_MOSTRAR[q.code] ?? q.name}`}</h2>
               <span className="text-xs text-muted">{q.code}</span>
             </div>
             <div className="mt-3 grid grid-cols-2 gap-3">

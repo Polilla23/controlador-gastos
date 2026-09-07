@@ -5,6 +5,7 @@ import { z } from "zod";
 import { prisma } from "./prisma";
 import { requireUserId } from "./auth";
 import { parseInput } from "./tz";
+import { assertOwnedTransaction, readLinkMode } from "./linkTransaction";
 
 const refresh = () => revalidatePath("/", "layout");
 const num = z.coerce.number();
@@ -30,7 +31,7 @@ export async function saveDebt(fd: FormData) {
   const userId = await requireUserId();
   const id = fd.get("id") ? Number(fd.get("id")) : null;
   const d = debtSchema.parse(Object.fromEntries(fd));
-  const registrar = fd.get("registrar") === "on";
+  const { mode, existingId } = readLinkMode(fd);
 
   if (d.accountId && !(await prisma.account.findFirst({ where: { id: d.accountId, userId } }))) throw new Error("Cuenta inválida");
 
@@ -48,24 +49,28 @@ export async function saveDebt(fd: FormData) {
 
   if (id) {
     await prisma.debt.update({ where: { id, userId }, data });
-  } else {
+  } else if (mode === "existing" && existingId) {
+    await assertOwnedTransaction(userId, existingId);
+    await prisma.debt.create({ data: { ...data, userId, transactionId: existingId } });
+  } else if (mode === "new" && d.accountId) {
+    const account = await prisma.account.findUniqueOrThrow({ where: { id: d.accountId } });
     const debt = await prisma.debt.create({ data: { ...data, userId } });
-    if (registrar && d.accountId) {
-      const account = await prisma.account.findUniqueOrThrow({ where: { id: d.accountId } });
-      await prisma.transaction.create({
-        data: {
-          userId,
-          type: d.direction === "I_LENT" ? "EXPENSE" : "INCOME",
-          amount: d.amount,
-          currency: account.currency,
-          date: data.date,
-          description: d.direction === "I_LENT" ? `Préstamo a ${data.counterparty}` : `Préstamo de ${data.counterparty}`,
-          counterparty: data.counterparty,
-          note: `Deuda #${debt.id}`,
-          accountId: d.accountId,
-        },
-      });
-    }
+    const tx = await prisma.transaction.create({
+      data: {
+        userId,
+        type: d.direction === "I_LENT" ? "EXPENSE" : "INCOME",
+        amount: d.amount,
+        currency: account.currency,
+        date: data.date,
+        description: d.direction === "I_LENT" ? `Préstamo a ${data.counterparty}` : `Préstamo de ${data.counterparty}`,
+        counterparty: data.counterparty,
+        note: `Deuda #${debt.id}`,
+        accountId: d.accountId,
+      },
+    });
+    await prisma.debt.update({ where: { id: debt.id }, data: { transactionId: tx.id } });
+  } else {
+    await prisma.debt.create({ data: { ...data, userId } });
   }
   refresh();
 }
@@ -91,7 +96,7 @@ export async function addDebtPayment(fd: FormData) {
   const debtId = Number(fd.get("debtId"));
   const amount = Number(fd.get("amount"));
   const note = String(fd.get("note") ?? "");
-  const registrar = fd.get("registrar") === "on";
+  const { mode, existingId } = readLinkMode(fd);
   const accountId = fd.get("accountId") ? Number(fd.get("accountId")) : null;
   if (!(amount > 0)) throw new Error("El monto tiene que ser mayor a cero");
 
@@ -99,7 +104,7 @@ export async function addDebtPayment(fd: FormData) {
   if (!debt) throw new Error("La deuda no existe");
 
   let transactionId: number | null = null;
-  if (registrar && accountId) {
+  if (mode === "new" && accountId) {
     const account = await prisma.account.findFirst({ where: { id: accountId, userId } });
     if (!account) throw new Error("Cuenta inválida");
     const tx = await prisma.transaction.create({
@@ -116,6 +121,9 @@ export async function addDebtPayment(fd: FormData) {
       },
     });
     transactionId = tx.id;
+  } else if (mode === "existing" && existingId) {
+    await assertOwnedTransaction(userId, existingId);
+    transactionId = existingId;
   }
 
   await prisma.debtPayment.create({ data: { debtId, amount, note, transactionId } });

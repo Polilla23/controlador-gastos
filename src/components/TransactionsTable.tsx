@@ -6,7 +6,7 @@ import ActionForm from "./ActionForm";
 import Modal from "./Modal";
 import ConfirmButton from "./ConfirmButton";
 import CategorySelect, { type CategoryOpt } from "./CategorySelect";
-import TransactionForm, { type AccountOpt, type TagOpt } from "./TransactionForm";
+import TransactionForm, { type AccountOpt, type TagOpt, type QuoteOpt } from "./TransactionForm";
 import MoneyInput from "./MoneyInput";
 import {
   bulkDeleteTransactions,
@@ -17,7 +17,7 @@ import {
   splitTransaction,
   uploadAttachment,
 } from "@/lib/actions";
-import { fmtDate, fmtDateTime, fmtDayMonth, money } from "@/lib/format";
+import { accountLabel, fmtDate, fmtDateTime, fmtDayMonth, money } from "@/lib/format";
 import { statementLabel } from "@/lib/tarjetas";
 
 export type TxRow = {
@@ -188,11 +188,13 @@ export default function TransactionsTable({
   accounts,
   categories,
   tags,
+  quotes = [],
 }: {
   rows: TxRow[];
   accounts: AccountOpt[];
   categories: CategoryOpt[];
   tags: TagOpt[];
+  quotes?: QuoteOpt[];
 }) {
   const [sel, setSel] = useState<number[]>([]);
   const allShown = rows.length > 0 && sel.length === rows.length;
@@ -200,6 +202,10 @@ export default function TransactionsTable({
 
   const sign = (t: TxRow) => (t.type === "EXPENSE" ? "-" : t.type === "INCOME" ? "+" : "");
   const tone = (t: TxRow) => (t.type === "EXPENSE" ? "text-red-500" : t.type === "INCOME" ? "text-brand-500" : "text-blue-500");
+  const accName = (t: TxRow) => {
+    const full = accounts.find((a) => a.id === t.accountId);
+    return full ? accountLabel(full, accounts) : t.account.name;
+  };
 
   /* Agrupa por día y calcula el neto del día y el acumulado del período.
      Las filas llegan de la más nueva a la más vieja, así que el acumulado se
@@ -235,7 +241,7 @@ export default function TransactionsTable({
         <Attachments tx={t} />
       </Modal>
       <Modal title={`Editar #${t.id}`} triggerClassName="btn-icon" trigger={<Pencil size={15} />}>
-        <TransactionForm accounts={accounts} categories={categories} tags={tags} initial={{ ...t, tags: t.tags }} />
+        <TransactionForm accounts={accounts} categories={categories} tags={tags} quotes={quotes} initial={{ ...t, tags: t.tags }} />
       </Modal>
       {t.type !== "TRANSFER" && !t.planId && (
         <Modal title={`Dividir #${t.id}`} triggerClassName="btn-icon" trigger={<Split size={15} />}>
@@ -400,7 +406,7 @@ export default function TransactionsTable({
                         <span className="text-muted">—</span>
                       )}
                     </td>
-                    <td className="px-2 py-2.5">{t.account.name}</td>
+                    <td className="px-2 py-2.5">{accName(t)}</td>
                     <td className={`whitespace-nowrap px-2 py-2.5 text-right font-bold ${tone(t)}`}>
                       {sign(t)}
                       {money(t.amount, t.currency)}
@@ -433,7 +439,7 @@ export default function TransactionsTable({
                         <span className="min-w-0">
                           <span className="block truncate font-semibold">{t.description || (t.type === "TRANSFER" ? `→ ${t.toAccount?.name ?? ""}` : "Sin descripción")}</span>
                           <span className="block truncate text-xs text-muted">
-                            #{t.id} · {fmtDateTime(t.date)} · {t.account.name}
+                            #{t.id} · {fmtDateTime(t.date)} · {accName(t)}
                             {t.counterparty ? ` · ${t.counterparty}` : ""}
                           </span>
                         </span>

@@ -8,6 +8,7 @@ import ConfirmButton from "./ConfirmButton";
 import MoneyInput from "./MoneyInput";
 import { addDebtPayment, deleteDebt, deleteDebtPayment, saveDebt, setDebtStatus } from "@/lib/actions-deudas";
 import { CURRENCIES, fmtDate, money, toInputDate } from "@/lib/format";
+import LinkTransaction from "./LinkTransaction";
 
 type Cuenta = { id: number; name: string; currency: string };
 
@@ -103,15 +104,7 @@ function Campos({ d, accounts, contrapartes }: { d?: DebtRow; accounts: Cuenta[]
         </select>
       </div>
 
-      {!d && (
-        <label className="flex items-start gap-2 text-sm">
-          <input type="checkbox" name="registrar" defaultChecked className="mt-0.5 h-4 w-4 accent-[var(--color-brand-500)]" />
-          <span>
-            Registrar también el movimiento en esa cuenta
-            <span className="block text-xs text-muted">Si prestaste, sale plata; si te prestaron, entra.</span>
-          </span>
-        </label>
-      )}
+      {!d && <LinkTransaction newLabel="Crear el movimiento en esa cuenta" />}
 
       <label className="flex items-center gap-2 text-sm">
         <input type="checkbox" name="notify" defaultChecked={d?.notify ?? true} className="h-4 w-4 accent-[var(--color-brand-500)]" />
@@ -146,10 +139,7 @@ function Devolver({ d, accounts }: { d: DebtRow; accounts: Cuenta[] }) {
             ))}
           </select>
         </div>
-        <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" name="registrar" defaultChecked className="h-4 w-4 accent-[var(--color-brand-500)]" />
-          Registrar el movimiento en esa cuenta
-        </label>
+        <LinkTransaction newLabel="Crear el movimiento en esa cuenta" />
         <div>
           <label className="label">Nota (opcional)</label>
           <input name="note" className="input" />

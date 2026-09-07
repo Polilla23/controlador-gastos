@@ -3,6 +3,7 @@ import { storeAttachment } from "./storage";
 import { money, fmtDate, fmtDayMonth } from "./format";
 import { APP_TZ, addDays, civil as civilOf, fromCivil, startOfDay } from "./tz";
 import { cargarPresupuestos } from "./presupuestos";
+import { accountBalances } from "./balances";
 
 const api = (method: string) => `https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/${method}`;
 
@@ -39,6 +40,75 @@ const extractId = (text: string) => {
   return m ? Number(m[1]) : null;
 };
 
+/**
+ * Arma el texto de /proximos y /proximomes: agrupado por categoría general
+ * (las tarjetas van en su propio grupo "Tarjetas"), ordenado por fecha dentro
+ * de cada grupo, con "PAGADO" al principio de lo que ya está saldado y una
+ * tabulación para lo que todavía no.
+ */
+async function proximosDelPeriodo(userId: string, start: Date, end: Date): Promise<string> {
+  const [items, cards, debts] = await Promise.all([
+    prisma.planned.findMany({
+      where: { userId, dueDate: { gte: start, lt: end } },
+      include: { category: { include: { parent: true } } },
+      orderBy: { dueDate: "asc" },
+    }),
+    prisma.account.findMany({ where: { userId, type: "CREDIT_CARD", archived: false, dueDay: { not: null } } }),
+    prisma.debt.findMany({ where: { userId, dueDate: { gte: start, lt: end } }, include: { payments: true } }),
+  ]);
+
+  type Fila = { fecha: Date; nombre: string; monto: string; pagado: boolean };
+  const grupos = new Map<string, Fila[]>();
+  const push = (grupo: string, fila: Fila) => {
+    if (!grupos.has(grupo)) grupos.set(grupo, []);
+    grupos.get(grupo)!.push(fila);
+  };
+
+  for (const card of cards) {
+    const c = civilOf(start);
+    let due = fromCivil(c.y, c.m, card.dueDay!, 12);
+    if (due < start) due = fromCivil(c.y, c.m + 1, card.dueDay!, 12);
+    if (due < start || due >= end) continue;
+    const txs = await prisma.transaction.findMany({
+      where: { userId, accountId: card.id, date: { lte: new Date() } },
+      select: { type: true, amount: true },
+    });
+    const usado = txs.reduce((s, t) => s + (t.type === "EXPENSE" ? t.amount : -t.amount), 0) - card.initialBalance;
+    push("Tarjetas", { fecha: due, nombre: card.name, monto: money(Math.max(0, usado), card.currency), pagado: usado <= 0.01 });
+  }
+
+  for (const p of items) {
+    const grupo = p.category?.parent?.name ?? p.category?.name ?? "Otros";
+    push(grupo, { fecha: p.dueDate, nombre: p.description, monto: money(p.amount, p.currency), pagado: p.done });
+  }
+
+  for (const d of debts) {
+    if (!d.dueDate) continue;
+    const falta = d.amount - d.payments.reduce((s, x) => s + x.amount, 0);
+    push("Deudas", {
+      fecha: d.dueDate,
+      nombre: d.direction === "I_LENT" ? `${d.counterparty} te devuelve` : `Le devolvés a ${d.counterparty}`,
+      monto: money(Math.max(0, falta), d.currency),
+      pagado: d.status === "CLOSED" || falta <= 0.01,
+    });
+  }
+
+  if (!grupos.size) return "";
+
+  const orden = [...grupos.keys()].sort((a, b) => (a === "Tarjetas" ? -1 : b === "Tarjetas" ? 1 : a.localeCompare(b, "es")));
+  return orden
+    .map((grupo) => {
+      const filas = grupos.get(grupo)!.sort((a, b) => a.fecha.getTime() - b.fecha.getTime());
+      const lineas = filas.map((f) =>
+        f.pagado
+          ? ` PAGADO - ${f.nombre} - Vencimiento ${fmtDayMonth(f.fecha)} = ${f.monto}`
+          : `\t- ${f.nombre} - Vencimiento ${fmtDayMonth(f.fecha)} = ${f.monto}`,
+      );
+      return `<b>${grupo}</b>\n${lineas.join("\n")}`;
+    })
+    .join("\n\n");
+}
+
 export async function handleUpdate(update: TgUpdate) {
   const msg = update.message;
   if (!msg) return;
@@ -63,73 +133,35 @@ export async function handleUpdate(update: TgUpdate) {
       `✅ Listo, quedaste vinculado como <b>${owner.name || owner.email}</b>.\n\n` +
         "• Mandame una foto o PDF con el texto <code>#123</code> y lo adjunto a ese registro.\n" +
         "• <code>/saldo</code> — tus saldos por cuenta.\n" +
-        "• <code>/proximos</code> — vencimientos e ingresos de los próximos días.",
+        "• <code>/proximos</code> — lo que vence o cobrás este mes.\n" +
+        "• <code>/proximomes</code> — lo mismo, para el mes que viene.",
     );
   }
 
   /* ---------- Commands ---------- */
-  if (/^\/start/i.test(text)) return reply("Ya estás vinculado ✅\nMandame una foto con <code>#123</code>, o usá <code>/saldo</code> y <code>/proximos</code>.");
+  if (/^\/start/i.test(text)) return reply("Ya estás vinculado ✅\nMandame una foto con <code>#123</code>, o usá <code>/saldo</code>, <code>/proximos</code> y <code>/proximomes</code>.");
 
   if (/^\/saldo/i.test(text)) {
-    const accounts = await prisma.account.findMany({ where: { userId: user.id, archived: false }, orderBy: [{ sortOrder: "asc" }, { id: "asc" }] });
-    const txs = await prisma.transaction.findMany({
-      where: { userId: user.id, date: { lte: new Date() } },
-      select: { type: true, amount: true, toAmount: true, accountId: true, toAccountId: true },
-    });
-    const bal = new Map(accounts.map((a) => [a.id, a.initialBalance]));
-    for (const t of txs) {
-      if (t.type === "INCOME") bal.set(t.accountId, (bal.get(t.accountId) ?? 0) + t.amount);
-      else if (t.type === "EXPENSE") bal.set(t.accountId, (bal.get(t.accountId) ?? 0) - t.amount);
-      else if (t.toAccountId != null) {
-        bal.set(t.accountId, (bal.get(t.accountId) ?? 0) - t.amount);
-        bal.set(t.toAccountId, (bal.get(t.toAccountId) ?? 0) + (t.toAmount ?? t.amount));
-      }
-    }
-    const lines = accounts.map((a) => `• ${a.name}: <b>${money(bal.get(a.id) ?? 0, a.currency)}</b>`);
+    const accounts = (await accountBalances(user.id)).filter((a) => !a.archived);
+    const lines = accounts.map((a) => `• ${a.name}: <b>${money(a.balance, a.currency)}</b>`);
     return reply(lines.length ? `<b>Tus saldos</b>\n${lines.join("\n")}` : "Todavía no cargaste ninguna cuenta.");
   }
 
   if (/^\/proximos/i.test(text)) {
     const hoy = startOfDay();
-    const until = addDays(hoy, 30);
-    const [items, cards, deudas] = await Promise.all([
-      prisma.planned.findMany({ where: { userId: user.id, done: false, dueDate: { lte: until } }, orderBy: { dueDate: "asc" }, take: 15 }),
-      prisma.account.findMany({ where: { userId: user.id, type: "CREDIT_CARD", archived: false, dueDay: { not: null } } }),
-      prisma.debt.findMany({ where: { userId: user.id, status: "OPEN", dueDate: { not: null, lte: until } }, include: { payments: true } }),
-    ]);
+    const c = civilOf(hoy);
+    const finMes = fromCivil(c.y, c.m + 1, 1);
+    const cuerpo = await proximosDelPeriodo(user.id, hoy, finMes);
+    return reply(cuerpo ? `<b>Este mes</b>\n\n${cuerpo}` : "No tenés nada para registrar este mes.");
+  }
 
-    type Fila = { fecha: Date; texto: string };
-    const filas: Fila[] = items.map((p) => ({
-      fecha: p.dueDate,
-      texto: `${p.type === "INCOME" ? "🟢" : "🔴"} ${fmtDayMonth(p.dueDate)} · ${p.description}: <b>${money(p.amount, p.currency)}</b>`,
-    }));
-
-    // Vencimiento de cada tarjeta, con el saldo que se debe hasta hoy.
-    for (const card of cards) {
-      const c = civilOf(hoy);
-      let due = fromCivil(c.y, c.m, card.dueDay!, 12);
-      if (due < hoy) due = fromCivil(c.y, c.m + 1, card.dueDay!, 12);
-      if (due > until) continue;
-      const txs = await prisma.transaction.findMany({
-        where: { userId: user.id, accountId: card.id, date: { lte: new Date() } },
-        select: { type: true, amount: true },
-      });
-      const usado = txs.reduce((s, t) => s + (t.type === "EXPENSE" ? t.amount : -t.amount), 0) - card.initialBalance;
-      filas.push({ fecha: due, texto: `💳 ${fmtDayMonth(due)} · ${card.name}: <b>${money(Math.max(0, usado), card.currency)}</b>` });
-    }
-
-    for (const d of deudas) {
-      const falta = d.amount - d.payments.reduce((s, p) => s + p.amount, 0);
-      if (falta <= 0 || !d.dueDate) continue;
-      filas.push({
-        fecha: d.dueDate,
-        texto: `🤝 ${fmtDayMonth(d.dueDate)} · ${d.direction === "I_LENT" ? `${d.counterparty} te devuelve` : `Le devolvés a ${d.counterparty}`}: <b>${money(falta, d.currency)}</b>`,
-      });
-    }
-
-    if (!filas.length) return reply("No tenés pagos, ingresos, tarjetas ni deudas para los próximos 30 días.");
-    filas.sort((a, b) => a.fecha.getTime() - b.fecha.getTime());
-    return reply(`<b>Próximos 30 días</b>\n${filas.map((f) => f.texto).join("\n")}`);
+  if (/^\/proximomes/i.test(text)) {
+    const hoy = startOfDay();
+    const c = civilOf(hoy);
+    const inicio = fromCivil(c.y, c.m + 1, 1);
+    const fin = fromCivil(c.y, c.m + 2, 1);
+    const cuerpo = await proximosDelPeriodo(user.id, inicio, fin);
+    return reply(cuerpo ? `<b>Mes que viene</b>\n\n${cuerpo}` : "No tenés nada para registrar el mes que viene.");
   }
 
   /* ---------- Attachments ---------- */

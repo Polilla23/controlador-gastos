@@ -31,7 +31,7 @@ export const MOVIMIENTOS: Record<string, string> = {
   FEE: "Comisión",
 };
 
-/** Cuánto suma o resta cada tipo de movimiento al efectivo de la cuenta. */
+/** Cuánto suma o resta cada tipo de movimiento al efectivo de la cuenta (visto desde adentro de la cuenta de inversión). */
 function efectoEnCaja(type: string, amount: number) {
   switch (type) {
     case "DEPOSIT":
@@ -45,6 +45,16 @@ function efectoEnCaja(type: string, amount: number) {
     default:
       return 0;
   }
+}
+
+/**
+ * Igual que `efectoEnCaja`, pero para el saldo general de `accountBalances()`.
+ * Un aporte/retiro con `transactionId` ya está contado ahí vía la transferencia
+ * vinculada, así que acá se lo ignora para no duplicarlo.
+ */
+export function efectoEnCajaTransaccion(m: { type: string; amount: number; transactionId: number | null }): number {
+  if ((m.type === "DEPOSIT" || m.type === "WITHDRAW") && m.transactionId) return 0;
+  return efectoEnCaja(m.type, m.amount);
 }
 
 const redondear = (n: number) => Math.round(n * 100) / 100;
@@ -84,10 +94,22 @@ export async function cargarInversiones(userId: string) {
       });
 
     const abiertas = tenencias.filter((t) => t.cantidad > 0);
+    // Costo de lo que sigue en el mercado: lo mismo en que se apoya el valor del portafolio cuando no hay precio cargado.
+    const invertido = abiertas.reduce((s, t) => s + (t.costoDeLoQueQueda ?? 0), 0);
     const valorCartera = abiertas.reduce((s, t) => s + (t.valorActual ?? t.costoDeLoQueQueda ?? 0), 0);
     const conPrecio = abiertas.every((t) => t.valorActual != null);
 
-    return { ...c, efectivo, tenencias, abiertas, valorCartera: redondear(valorCartera), total: redondear(efectivo + valorCartera), conPrecio, movimientos: movsCuenta };
+    return {
+      ...c,
+      efectivo,
+      tenencias,
+      abiertas,
+      invertido: redondear(invertido),
+      valorCartera: redondear(valorCartera),
+      total: redondear(efectivo + valorCartera),
+      conPrecio,
+      movimientos: movsCuenta,
+    };
   });
 
   const porInstrumento = new Map<string, number>();
@@ -95,11 +117,25 @@ export async function cargarInversiones(userId: string) {
     for (const t of c.abiertas) porInstrumento.set(t.kind, (porInstrumento.get(t.kind) ?? 0) + (t.valorActual ?? t.costoDeLoQueQueda ?? 0));
   }
 
+  const porMoneda = new Map<string, { efectivo: number; invertido: number; cartera: number; total: number }>();
+  for (const c of porCuenta) {
+    const b = porMoneda.get(c.currency) ?? { efectivo: 0, invertido: 0, cartera: 0, total: 0 };
+    b.efectivo += c.efectivo;
+    b.invertido += c.invertido;
+    b.cartera += c.valorCartera;
+    b.total += c.total;
+    porMoneda.set(c.currency, b);
+  }
+
   return {
     cuentas: porCuenta,
     total: redondear(porCuenta.reduce((s, c) => s + c.total, 0)),
     efectivoTotal: redondear(porCuenta.reduce((s, c) => s + c.efectivo, 0)),
+    invertidoTotal: redondear(porCuenta.reduce((s, c) => s + c.invertido, 0)),
     carteraTotal: redondear(porCuenta.reduce((s, c) => s + c.valorCartera, 0)),
+    porMoneda: [...porMoneda.entries()]
+      .map(([currency, v]) => ({ currency, efectivo: redondear(v.efectivo), invertido: redondear(v.invertido), cartera: redondear(v.cartera), total: redondear(v.total) }))
+      .sort((a, b) => b.total - a.total),
     porInstrumento: [...porInstrumento.entries()]
       .map(([kind, valor]) => ({ kind, nombre: INSTRUMENTOS[kind] ?? kind, valor: redondear(valor) }))
       .sort((a, b) => b.valor - a.valor),

@@ -17,7 +17,12 @@ model User {
   telegramCode   String?           @unique // one-time code used to link the chat
   notifyDays     Int               @default(3) // days before a due date to warn
   notifyHour     Int               @default(9) // local hour for the daily digest
-  dashboard      Json? // { cards: [{id, size}], accountIds: [] }
+  dashboard      Json? // { cards: string[], cardsMobile?: string[], accountIds: number[] }
+  googleAccessToken  String? // Google Calendar OAuth
+  googleRefreshToken String?
+  googleTokenExpiry  DateTime?
+  googleCalendarId   String? // calendario dedicado creado para la app
+  googleEmail        String? // sólo para mostrar la cuenta conectada
   createdAt      DateTime          @default(now())
   accounts       Account[]
   categories     Category[]
@@ -59,6 +64,8 @@ model Account {
   planned        Planned[]
   budgets        Budget[]
   debts          Debt[]
+  goalContributions GoalContribution[]
+  shareExpenses  ShareExpense[]
   holdings       Holding[]
   investMoves    InvestMove[]
 
@@ -176,7 +183,9 @@ model Planned {
   categoryId     Int?
   category       Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   tags           Tag[]
+  note           String    @default("")
   notify         Boolean   @default(true)
+  autoConfirm    Boolean   @default(false)
   done           Boolean   @default(false)
   lastNotifiedOn DateTime?
   createdAt      DateTime  @default(now())
@@ -243,12 +252,15 @@ model Goal {
 }
 
 model GoalContribution {
-  id     Int      @id @default(autoincrement())
-  goalId Int
-  goal   Goal     @relation(fields: [goalId], references: [id], onDelete: Cascade)
-  amount Float // negativo si se retira plata del objetivo
-  date   DateTime @default(now())
-  note   String   @default("")
+  id            Int      @id @default(autoincrement())
+  goalId        Int
+  goal          Goal     @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  amount        Float // negativo si se retira plata del objetivo
+  date          DateTime @default(now())
+  accountId     Int? // de qué cuenta salió/entró la plata
+  account       Account? @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  transactionId Int? // el movimiento generado, si se registró
+  note          String   @default("")
 
   @@index([goalId, date])
 }
@@ -269,6 +281,7 @@ model Debt {
   dueDate        DateTime? // cuándo hay que devolverla
   accountId      Int?
   account        Account?      @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  transactionId  Int? // el movimiento generado al crear la deuda, si se registró
   status         String        @default("OPEN") // OPEN | CLOSED
   notify         Boolean       @default(true)
   lastNotifiedOn DateTime?
@@ -370,6 +383,9 @@ model ShareExpense {
   paidById    Int
   paidBy      ShareMember  @relation("PagadoPor", fields: [paidById], references: [id], onDelete: Cascade)
   categoryId  Int?
+  accountId   Int? // de qué cuenta salió, cuando yo (isMe) pagué
+  account     Account?     @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  transactionId Int? // el movimiento generado cuando yo (isMe) pagué, si se registró
   note        String       @default("")
   createdAt   DateTime     @default(now())
   splits      ShareSplit[]
@@ -430,6 +446,7 @@ model InvestMove {
   amount    Float // plata que entra o sale de la cuenta
   currency  String   @default("ARS")
   date      DateTime
+  transactionId Int? // sólo DEPOSIT/WITHDRAW: el movimiento (transferencia) generado, si se registró
   note      String   @default("")
   createdAt DateTime @default(now())
 

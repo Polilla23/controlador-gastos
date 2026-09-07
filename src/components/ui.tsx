@@ -16,7 +16,7 @@ function Row({ id, children }: { id: string; children: ReactNode }) {
     <div
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
-      className={`flex items-center gap-2 rounded-xl ${isDragging ? "z-10 bg-subtle shadow-lg" : ""}`}
+      className={`flex items-start gap-2 rounded-xl ${isDragging ? "z-10 bg-subtle shadow-lg" : ""}`}
     >
       <button
         type="button"

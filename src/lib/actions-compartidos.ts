@@ -6,6 +6,7 @@ import { z } from "zod";
 import { prisma } from "./prisma";
 import { requireUser, requireUserId } from "./auth";
 import { parseInput } from "./tz";
+import { assertOwnedTransaction, readLinkMode } from "./linkTransaction";
 
 const refresh = () => revalidatePath("/", "layout");
 const num = z.coerce.number();
@@ -85,6 +86,7 @@ const expenseSchema = z.object({
   date: z.string().min(1),
   paidById: num.int(),
   categoryId: z.preprocess((v) => (v === "" || v == null ? null : Number(v)), z.number().int().nullable()),
+  accountId: z.preprocess((v) => (v === "" || v == null ? null : Number(v)), z.number().int().nullable()),
   note: z.string().default(""),
   mode: z.enum(["EQUAL", "EXACT", "PERCENT"]).default("EQUAL"),
 });
@@ -129,6 +131,7 @@ export async function saveGroupExpense(fd: FormData) {
     date: parseInput(d.date),
     paidById: d.paidById,
     categoryId: d.categoryId,
+    accountId: d.accountId,
     note: d.note,
   };
 
@@ -138,9 +141,39 @@ export async function saveGroupExpense(fd: FormData) {
       prisma.shareExpense.update({ where: { id }, data }),
       prisma.shareSplit.createMany({ data: participantes.map((mid, i) => ({ expenseId: id, memberId: mid, amount: montos[i] })) }),
     ]);
-  } else {
-    const gasto = await prisma.shareExpense.create({ data });
-    await prisma.shareSplit.createMany({ data: participantes.map((mid, i) => ({ expenseId: gasto.id, memberId: mid, amount: montos[i] })) });
+    refresh();
+    return;
+  }
+
+  // Sólo cuando pago yo (isMe) tiene sentido que impacte en Transacciones.
+  const isMine = group.members.find((m) => m.id === d.paidById)?.isMe ?? false;
+  const { mode, existingId } = readLinkMode(fd);
+  let transactionId: number | null = null;
+  if (isMine && mode === "existing" && existingId) {
+    await assertOwnedTransaction(userId, existingId);
+    transactionId = existingId;
+  }
+
+  const gasto = await prisma.shareExpense.create({ data: { ...data, transactionId } });
+  await prisma.shareSplit.createMany({ data: participantes.map((mid, i) => ({ expenseId: gasto.id, memberId: mid, amount: montos[i] })) });
+
+  if (isMine && mode === "new" && d.accountId) {
+    const account = await prisma.account.findFirst({ where: { id: d.accountId, userId } });
+    if (!account) throw new Error("Cuenta inválida");
+    const tx = await prisma.transaction.create({
+      data: {
+        userId,
+        type: "EXPENSE",
+        amount: d.amount,
+        currency: account.currency,
+        date: data.date,
+        description: d.description,
+        categoryId: d.categoryId,
+        note: `Gasto compartido "${group.name}" #${gasto.id}`,
+        accountId: d.accountId,
+      },
+    });
+    await prisma.shareExpense.update({ where: { id: gasto.id }, data: { transactionId: tx.id } });
   }
   refresh();
 }

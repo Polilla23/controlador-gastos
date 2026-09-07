@@ -4,6 +4,7 @@ import { icono } from "@/lib/iconos";
 import { money } from "@/lib/format";
 import PageHeader from "@/components/PageHeader";
 import AccountsBoard from "@/components/AccountsBoard";
+import CierresVencimientos from "@/components/CierresVencimientos";
 
 export default async function CuentasPage() {
   const userId = await requireUserId();
@@ -26,6 +27,8 @@ export default async function CuentasPage() {
           </div>
         ))}
       </div>
+
+      <CierresVencimientos cards={accounts.filter((a) => a.type === "CREDIT_CARD")} />
 
       <AccountsBoard accounts={accounts} />
     </>

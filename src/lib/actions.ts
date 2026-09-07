@@ -117,7 +117,8 @@ export async function saveCategory(fd: FormData) {
     if (hasChildren && d.parentId) throw new Error("Esta categoría ya tiene subcategorías, no puede depender de otra");
     await prisma.category.update({ where: { id, userId }, data: d });
   } else {
-    await prisma.category.create({ data: { ...d, userId } });
+    const last = await prisma.category.aggregate({ where: { userId }, _max: { sortOrder: true } });
+    await prisma.category.create({ data: { ...d, userId, sortOrder: (last._max.sortOrder ?? 0) + 1 } });
   }
   refresh();
 }
@@ -125,6 +126,12 @@ export async function saveCategory(fd: FormData) {
 export async function deleteCategory(id: number) {
   const userId = await requireUserId();
   await prisma.category.delete({ where: { id, userId } });
+  refresh();
+}
+
+export async function reorderCategories(ids: number[]) {
+  const userId = await requireUserId();
+  await prisma.$transaction(ids.map((id, i) => prisma.category.updateMany({ where: { id, userId }, data: { sortOrder: i } })));
   refresh();
 }
 
@@ -140,7 +147,16 @@ export async function saveTag(fd: FormData) {
   const id = fd.get("id") ? Number(fd.get("id")) : null;
   const data = tagSchema.parse(Object.fromEntries(fd));
   if (id) await prisma.tag.update({ where: { id, userId }, data });
-  else await prisma.tag.create({ data: { ...data, userId } });
+  else {
+    const last = await prisma.tag.aggregate({ where: { userId }, _max: { sortOrder: true } });
+    await prisma.tag.create({ data: { ...data, userId, sortOrder: (last._max.sortOrder ?? 0) + 1 } });
+  }
+  refresh();
+}
+
+export async function reorderTags(ids: number[]) {
+  const userId = await requireUserId();
+  await prisma.$transaction(ids.map((id, i) => prisma.tag.updateMany({ where: { id, userId }, data: { sortOrder: i } })));
   refresh();
 }
 
@@ -162,6 +178,7 @@ const txSchema = z.object({
   accountId: num.int(),
   toAccountId: optInt,
   toAmount: optNum,
+  fxRate: optNum,
   categoryId: optInt,
   counterparty: z.string().default(""),
   warrantyMonths: optInt,
@@ -215,6 +232,7 @@ export async function saveTransaction(fd: FormData) {
     accountId: d.accountId,
     toAccountId: d.type === "TRANSFER" ? d.toAccountId : null,
     toAmount: d.type === "TRANSFER" ? d.toAmount : null,
+    fxRate: d.type === "TRANSFER" ? d.fxRate : null,
     categoryId: d.type === "TRANSFER" ? null : d.categoryId,
   };
 
@@ -387,6 +405,8 @@ const plannedSchema = z.object({
   recurrence: z.enum(["NONE", "WEEKLY", "MONTHLY", "YEARLY"]).default("NONE"),
   accountId: optInt,
   categoryId: optInt,
+  note: z.string().default(""),
+  autoConfirm: z.preprocess((v) => v === "on" || v === "true", z.boolean()).default(false),
   notify: z.preprocess((v) => v === "on" || v === "true", z.boolean()).default(true),
 });
 
@@ -394,9 +414,10 @@ export async function savePlanned(fd: FormData) {
   const userId = await requireUserId();
   const id = fd.get("id") ? Number(fd.get("id")) : null;
   const d = plannedSchema.parse(Object.fromEntries(fd));
-  const data = { ...d, dueDate: parseInput(d.dueDate), userId, lastNotifiedOn: null };
-  if (id) await prisma.planned.update({ where: { id, userId }, data });
-  else await prisma.planned.create({ data });
+  const tagIds = fd.getAll("tagIds").map(Number).filter(Boolean);
+  const base = { ...d, dueDate: parseInput(d.dueDate), userId, lastNotifiedOn: null };
+  if (id) await prisma.planned.update({ where: { id, userId }, data: { ...base, tags: { set: tagIds.map((t) => ({ id: t })) } } });
+  else await prisma.planned.create({ data: { ...base, tags: { connect: tagIds.map((t) => ({ id: t })) } } });
   refresh();
 }
 
@@ -406,17 +427,25 @@ export async function deletePlanned(id: number) {
   refresh();
 }
 
-/** Turns a planned item into a real record; recurring ones roll over to the next date. */
-export async function confirmPlanned(id: number) {
-  const userId = await requireUserId();
-  const p = await prisma.planned.findFirst({ where: { id, userId } });
-  if (!p) throw new Error("No existe");
-  const accountId = p.accountId ?? (await prisma.account.findFirst({ where: { userId }, orderBy: { sortOrder: "asc" } }))?.id;
+/** Turns a planned item into a real record; recurring ones roll over to the next date. Shared by the manual "✓" button and the auto-confirm cron step. */
+export async function applyPlannedConfirmation(p: {
+  id: number;
+  userId: string;
+  type: string;
+  amount: number;
+  currency: string;
+  description: string;
+  accountId: number | null;
+  categoryId: number | null;
+  recurrence: string;
+  dueDate: Date;
+}) {
+  const accountId = p.accountId ?? (await prisma.account.findFirst({ where: { userId: p.userId }, orderBy: { sortOrder: "asc" } }))?.id;
   if (!accountId) throw new Error("Creá una cuenta antes de confirmar el movimiento");
 
   await prisma.transaction.create({
     data: {
-      userId,
+      userId: p.userId,
       type: p.type,
       amount: p.amount,
       currency: p.currency,
@@ -428,7 +457,7 @@ export async function confirmPlanned(id: number) {
   });
 
   if (p.recurrence === "NONE") {
-    await prisma.planned.update({ where: { id }, data: { done: true } });
+    await prisma.planned.update({ where: { id: p.id }, data: { done: true } });
   } else {
     const c = civil(p.dueDate);
     const next =
@@ -437,9 +466,23 @@ export async function confirmPlanned(id: number) {
         : p.recurrence === "MONTHLY"
           ? fromCivil(c.y, c.m + 1, c.d, 12)
           : fromCivil(c.y + 1, c.m, c.d, 12);
-    await prisma.planned.update({ where: { id }, data: { dueDate: next, lastNotifiedOn: null } });
+    await prisma.planned.update({ where: { id: p.id }, data: { dueDate: next, lastNotifiedOn: null } });
   }
+}
+
+export async function confirmPlanned(id: number) {
+  const userId = await requireUserId();
+  const p = await prisma.planned.findFirst({ where: { id, userId } });
+  if (!p) throw new Error("No existe");
+  await applyPlannedConfirmation(p);
   refresh();
+}
+
+/** Cron step: turns due Planned items marked "generar automáticamente" into real transactions, for every user. */
+export async function autoConfirmPlanned() {
+  const due = await prisma.planned.findMany({ where: { autoConfirm: true, done: false, dueDate: { lte: new Date() } } });
+  for (const p of due) await applyPlannedConfirmation(p);
+  return due.length;
 }
 
 /* ---------- Attachments ---------- */
@@ -485,9 +528,18 @@ export async function saveNotificationPrefs(fd: FormData) {
   revalidatePath("/perfil");
 }
 
-export async function saveDashboard(cards: string[], accountIds: number[]) {
+export async function disconnectGoogleCalendar() {
   const userId = await requireUserId();
-  await prisma.user.update({ where: { id: userId }, data: { dashboard: { cards, accountIds } } });
+  await prisma.user.update({
+    where: { id: userId },
+    data: { googleAccessToken: null, googleRefreshToken: null, googleTokenExpiry: null, googleCalendarId: null, googleEmail: null },
+  });
+  revalidatePath("/perfil");
+}
+
+export async function saveDashboard(cards: string[], accountIds: number[], cardsMobile?: string[]) {
+  const userId = await requireUserId();
+  await prisma.user.update({ where: { id: userId }, data: { dashboard: { cards, cardsMobile: cardsMobile ?? cards, accountIds } } });
   refresh();
 }
 
@@ -620,6 +672,22 @@ export async function saveFilter(fd: FormData) {
 export async function deleteFilter(id: number) {
   const userId = await requireUserId();
   await prisma.savedFilter.deleteMany({ where: { id, userId } });
+  refresh();
+}
+
+/** Maestro de Filtros: renombrar y/o cambiar las condiciones de un filtro ya guardado. */
+export async function updateFilter(fd: FormData) {
+  const userId = await requireUserId();
+  const id = Number(fd.get("id"));
+  const name = String(fd.get("name") ?? "").trim();
+  if (!name) throw new Error("Ponele un nombre al filtro");
+  const known = ["tipo", "cuenta", "categoria", "etiqueta", "q"] as const;
+  const query: Record<string, string> = {};
+  for (const k of known) {
+    const v = String(fd.get(k) ?? "").trim();
+    if (v) query[k] = v;
+  }
+  await prisma.savedFilter.updateMany({ where: { id, userId }, data: { name, query } });
   refresh();
 }
 

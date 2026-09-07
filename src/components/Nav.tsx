@@ -20,6 +20,7 @@ import {
   Wand2,
   Users,
   LineChart,
+  Filter,
   X,
 } from "lucide-react";
 import clsx from "clsx";
@@ -38,6 +39,7 @@ const ITEMS = [
   { href: "/cuotas", label: "Cuotas", icon: CalendarClock },
   { href: "/categorias", label: "Categorías", icon: Shapes },
   { href: "/etiquetas", label: "Etiquetas", icon: Tags },
+  { href: "/filtros", label: "Filtros", icon: Filter },
   { href: "/monedas", label: "Monedas", icon: Coins },
   { href: "/reglas", label: "Reglas", icon: Wand2 },
   { href: "/perfil", label: "Perfil y Telegram", icon: UserCircle },

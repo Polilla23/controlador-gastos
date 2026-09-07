@@ -11,6 +11,8 @@ import Icono from "./Icono";
 import { ColorPicker } from "./ui";
 import { addContribution, deleteContribution, deleteGoal, saveGoal, setGoalStatus } from "@/lib/actions-metas";
 import { CURRENCIES, fmtDate, money, toInputDate } from "@/lib/format";
+import LinkTransaction from "./LinkTransaction";
+import type { AccountOpt } from "./TransactionForm";
 
 export type GoalRow = {
   id: number;
@@ -87,7 +89,7 @@ function Campos({ g }: { g?: GoalRow }) {
   );
 }
 
-function Aportar({ g }: { g: GoalRow }) {
+function Aportar({ g, accounts }: { g: GoalRow; accounts: AccountOpt[] }) {
   const [retirar, setRetirar] = useState(false);
   return (
     <div className="space-y-5">
@@ -105,6 +107,18 @@ function Aportar({ g }: { g: GoalRow }) {
           <input type="checkbox" name="retirar" checked={retirar} onChange={(e) => setRetirar(e.target.checked)} className="h-4 w-4 accent-[var(--color-brand-500)]" />
           Es un retiro (sacar plata de la meta)
         </label>
+        <div>
+          <label className="label">{retirar ? "A qué cuenta vuelve" : "De qué cuenta sale"}</label>
+          <select name="accountId" className="input" defaultValue="">
+            <option value="">Sin definir</option>
+            {accounts.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.name} ({a.currency})
+              </option>
+            ))}
+          </select>
+        </div>
+        <LinkTransaction newLabel={retirar ? "Crear el ingreso en Transacciones" : "Crear el gasto en Transacciones"} />
       </ActionForm>
 
       <div className="border-t border-line pt-4">
@@ -134,7 +148,7 @@ function Aportar({ g }: { g: GoalRow }) {
   );
 }
 
-export default function GoalsBoard({ goals }: { goals: GoalRow[] }) {
+export default function GoalsBoard({ goals, accounts }: { goals: GoalRow[]; accounts: AccountOpt[] }) {
   const grupos: [string, GoalRow[]][] = [
     ["Activas", goals.filter((g) => g.status === "ACTIVE")],
     ["Pausadas", goals.filter((g) => g.status === "PAUSED")],
@@ -179,7 +193,7 @@ export default function GoalsBoard({ goals }: { goals: GoalRow[] }) {
                     </div>
                     <div className="flex shrink-0 items-center gap-0.5">
                       <Modal title={`Aportar a ${g.name}`} triggerClassName="btn-icon" trigger={<PiggyBank size={16} />}>
-                        <Aportar g={g} />
+                        <Aportar g={g} accounts={accounts} />
                       </Modal>
                       <Modal title={`Editar ${g.name}`} triggerClassName="btn-icon" trigger={<Pencil size={15} />}>
                         <ActionForm action={saveGoal}>

@@ -1,8 +1,9 @@
-import { Bell, MessageCircle, RefreshCw, Send, Smartphone, Trash2, Unlink } from "lucide-react";
+import { Bell, CalendarDays, MessageCircle, RefreshCw, Send, Smartphone, Trash2, Unlink } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
-import { regenerateTelegramCode, saveNotificationPrefs, unlinkTelegram } from "@/lib/actions";
+import { disconnectGoogleCalendar, regenerateTelegramCode, saveNotificationPrefs, unlinkTelegram } from "@/lib/actions";
 import { fmtDate } from "@/lib/format";
+import { googleConfigured } from "@/lib/google-calendar";
 import PageHeader from "@/components/PageHeader";
 import ConfirmButton from "@/components/ConfirmButton";
 import ActionForm from "@/components/ActionForm";
@@ -39,7 +40,10 @@ export default async function PerfilPage() {
                   <code className="rounded bg-subtle px-1">/saldo</code> — saldos de todas tus cuentas
                 </li>
                 <li>
-                  <code className="rounded bg-subtle px-1">/proximos</code> — vencimientos de los próximos 30 días
+                  <code className="rounded bg-subtle px-1">/proximos</code> — lo que vence o cobrás este mes
+                </li>
+                <li>
+                  <code className="rounded bg-subtle px-1">/proximomes</code> — lo mismo, para el mes que viene
                 </li>
               </ul>
               <div className="mt-4">
@@ -89,6 +93,43 @@ export default async function PerfilPage() {
               </div>
               <p className="text-xs text-muted">El bot te responde confirmando la vinculación.</p>
             </>
+          )}
+        </section>
+
+        <section className="card">
+          <h2 className="mb-1 flex items-center gap-2 font-bold">
+            <CalendarDays size={18} className="text-brand-500" /> Google Calendar
+          </h2>
+
+          {user.googleEmail ? (
+            <>
+              <p className="text-sm text-muted">
+                Conectado como <b>{user.googleEmail}</b>. Todos los días creamos un evento de todo el día en tu calendario <b>Mis Finanzas</b> por cada vencimiento, con un aviso a las
+                17:00 del día anterior.
+              </p>
+              <div className="mt-4">
+                <ConfirmButton
+                  action={async () => {
+                    "use server";
+                    await disconnectGoogleCalendar();
+                  }}
+                  message="¿Desconectar Google Calendar? Los eventos que ya se crearon quedan en tu calendario."
+                >
+                  <Unlink size={14} /> Desconectar
+                </ConfirmButton>
+              </div>
+            </>
+          ) : googleConfigured() ? (
+            <>
+              <p className="mb-3 text-sm text-muted">
+                Conectá tu cuenta de Google y te creamos un calendario dedicado con un evento por cada vencimiento (tarjetas, servicios, deudas).
+              </p>
+              <a href="/api/auth/google" className="btn-primary">
+                <CalendarDays size={14} /> Conectar Google Calendar
+              </a>
+            </>
+          ) : (
+            <p className="text-xs text-amber-600">Esta función todavía no está configurada (faltan las credenciales de Google Cloud).</p>
           )}
         </section>
 

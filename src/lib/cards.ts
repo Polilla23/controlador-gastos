@@ -32,11 +32,17 @@ export const DEFAULT_CARDS = [
   "movimientos",
 ];
 
-export type DashboardPrefs = { cards: string[]; accountIds: number[] };
+export type DashboardPrefs = { cards: string[]; cardsMobile: string[]; accountIds: number[] };
 
 export function readPrefs(raw: unknown): DashboardPrefs {
   const v = (raw ?? {}) as Partial<DashboardPrefs>;
   const known = new Set(CARDS.map((c) => c.id));
   const cards = Array.isArray(v.cards) ? v.cards.filter((c) => known.has(c)) : [];
-  return { cards: cards.length ? cards : DEFAULT_CARDS, accountIds: Array.isArray(v.accountIds) ? v.accountIds.map(Number) : [] };
+  const cardsMobile = Array.isArray(v.cardsMobile) ? v.cardsMobile.filter((c) => known.has(c)) : [];
+  const resolvedCards = cards.length ? cards : DEFAULT_CARDS;
+  return {
+    cards: resolvedCards,
+    cardsMobile: cardsMobile.length ? cardsMobile : resolvedCards,
+    accountIds: Array.isArray(v.accountIds) ? v.accountIds.map(Number) : [],
+  };
 }

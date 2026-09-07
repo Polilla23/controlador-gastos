@@ -5,6 +5,7 @@ import { z } from "zod";
 import { prisma } from "./prisma";
 import { requireUserId } from "./auth";
 import { parseInput } from "./tz";
+import { assertOwnedTransaction, readLinkMode } from "./linkTransaction";
 
 const refresh = () => revalidatePath("/", "layout");
 const num = z.coerce.number();
@@ -133,12 +134,36 @@ export async function addContribution(fd: FormData) {
   const amount = Number(fd.get("amount"));
   const note = String(fd.get("note") ?? "");
   const retirar = fd.get("retirar") === "on";
+  const accountId = fd.get("accountId") ? Number(fd.get("accountId")) : null;
+  const { mode, existingId } = readLinkMode(fd);
   if (!amount || amount <= 0) throw new Error("El monto tiene que ser mayor a cero");
 
   const goal = await prisma.goal.findFirst({ where: { id: goalId, userId }, include: { contributions: true } });
   if (!goal) throw new Error("La meta no existe");
 
-  await prisma.goalContribution.create({ data: { goalId, amount: retirar ? -amount : amount, note } });
+  let transactionId: number | null = null;
+  if (mode === "new" && accountId) {
+    const account = await prisma.account.findFirst({ where: { id: accountId, userId } });
+    if (!account) throw new Error("Cuenta inválida");
+    const tx = await prisma.transaction.create({
+      data: {
+        userId,
+        type: retirar ? "INCOME" : "EXPENSE",
+        amount,
+        currency: account.currency,
+        date: new Date(),
+        description: retirar ? `Retiro de la meta "${goal.name}"` : `Aporte a la meta "${goal.name}"`,
+        note: note || `Meta #${goal.id}`,
+        accountId,
+      },
+    });
+    transactionId = tx.id;
+  } else if (mode === "existing" && existingId) {
+    await assertOwnedTransaction(userId, existingId);
+    transactionId = existingId;
+  }
+
+  await prisma.goalContribution.create({ data: { goalId, amount: retirar ? -amount : amount, accountId, transactionId, note } });
 
   // Si con este aporte llegó al objetivo, se marca sola como alcanzada.
   const total = goal.contributions.reduce((s, c) => s + c.amount, 0) + (retirar ? -amount : amount);

@@ -39,3 +39,34 @@ export function statementLabel(statementMonth: string): string {
   const s = new Intl.DateTimeFormat("es-AR", { month: "long", year: "numeric" }).format(fromCivil(y, m, 1, 12));
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
+
+/** Próxima ocurrencia de un día del mes, a partir de `from` (inclusive). */
+function nextDayOfMonth(day: number, from: Date): Date {
+  const c = civil(from);
+  let d = fromCivil(c.y, c.m, day, 12);
+  if (d < from) d = fromCivil(c.y, c.m + 1, day, 12);
+  return d;
+}
+
+/** Cierre/vencimiento anterior, actual (el más reciente ya pasado) y próximo, calculados en vivo. */
+export function proximosCierres(account: { closingDay: number | null; dueDay: number | null }, today: Date = new Date()) {
+  const pares = (day: number | null) => {
+    if (!day) return { anterior: null, actual: null, proximo: null };
+    const proximo = nextDayOfMonth(day, today);
+    const c = civil(proximo);
+    const actual = fromCivil(c.y, c.m - 1, day, 12);
+    const ac = civil(actual);
+    const anterior = fromCivil(ac.y, ac.m - 1, day, 12);
+    return { anterior, actual, proximo };
+  };
+  const cierre = pares(account.closingDay);
+  const vencimiento = pares(account.dueDay);
+  return {
+    cierreAnterior: cierre.anterior,
+    cierreActual: cierre.actual,
+    cierreProximo: cierre.proximo,
+    vencimientoAnterior: vencimiento.anterior,
+    vencimientoActual: vencimiento.actual,
+    vencimientoProximo: vencimiento.proximo,
+  };
+}

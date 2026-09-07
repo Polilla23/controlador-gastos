@@ -9,8 +9,10 @@ import ConfirmButton from "./ConfirmButton";
 import MoneyInput from "./MoneyInput";
 import CategorySelect, { type CategoryOpt } from "./CategorySelect";
 import Tabs from "./Tabs";
+import LinkTransaction from "./LinkTransaction";
 import { addMember, deleteGroupExpense, deleteMember, saldarEntre, saveGroupExpense } from "@/lib/actions-compartidos";
 import { fmtDate, money, toInputDate } from "@/lib/format";
+import type { AccountOpt } from "./TransactionForm";
 
 type Miembro = { id: number; name: string; email: string; isMe: boolean };
 type Gasto = {
@@ -21,6 +23,7 @@ type Gasto = {
   paidById: number;
   categoryId: number | null;
   categoria: string | null;
+  accountId: number | null;
   note: string;
   splits: { id: number; memberId: number; amount: number }[];
   paidBy: { name: string };
@@ -43,13 +46,16 @@ export type GrupoDetalle = {
 };
 
 /** Formulario de gasto con los tres modos de reparto. */
-function GastoForm({ g, categories, gasto }: { g: GrupoDetalle; categories: CategoryOpt[]; gasto?: Gasto }) {
+function GastoForm({ g, categories, accounts, gasto }: { g: GrupoDetalle; categories: CategoryOpt[]; accounts: AccountOpt[]; gasto?: Gasto }) {
+  const meId = g.members.find((m) => m.isMe)?.id;
   const [modo, setModo] = useState<"EQUAL" | "EXACT" | "PERCENT">("EQUAL");
   const [monto, setMonto] = useState(gasto?.amount?.toString() ?? "");
+  const [paidById, setPaidById] = useState<number>(gasto?.paidById ?? meId ?? g.members[0]?.id ?? 0);
   const [participantes, setParticipantes] = useState<number[]>(gasto ? gasto.splits.map((s) => s.memberId) : g.members.map((m) => m.id));
   const [valores, setValores] = useState<Record<number, string>>(
     gasto ? Object.fromEntries(gasto.splits.map((s) => [s.memberId, String(s.amount)])) : {},
   );
+  const isMine = paidById === meId;
 
   const total = Number(monto) || 0;
   const suma = participantes.reduce((s, id) => s + (Number(valores[id]) || 0), 0);
@@ -80,7 +86,7 @@ function GastoForm({ g, categories, gasto }: { g: GrupoDetalle; categories: Cate
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div>
           <label className="label">Quién pagó</label>
-          <select name="paidById" className="input" defaultValue={gasto?.paidById ?? g.members.find((m) => m.isMe)?.id}>
+          <select name="paidById" className="input" value={paidById} onChange={(e) => setPaidById(Number(e.target.value))}>
             {g.members.map((m) => (
               <option key={m.id} value={m.id}>
                 {m.name}
@@ -94,6 +100,23 @@ function GastoForm({ g, categories, gasto }: { g: GrupoDetalle; categories: Cate
           <CategorySelect categories={categories} kind="EXPENSE" name="categoryId" defaultValue={gasto?.categoryId} />
         </div>
       </div>
+
+      {isMine && (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div>
+            <label className="label">De qué cuenta salió</label>
+            <select name="accountId" className="input" defaultValue={gasto?.accountId ?? ""}>
+              <option value="">Sin definir</option>
+              {accounts.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name} ({a.currency})
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      )}
+      {isMine && !gasto && <LinkTransaction newLabel="Crear el gasto en Transacciones" />}
 
       <fieldset className="rounded-xl border border-line p-3">
         <legend className="px-1 text-xs font-semibold uppercase tracking-wide text-muted">Cómo se divide</legend>
@@ -165,12 +188,12 @@ function GastoForm({ g, categories, gasto }: { g: GrupoDetalle; categories: Cate
   );
 }
 
-export default function GroupDetail({ g, categories }: { g: GrupoDetalle; categories: CategoryOpt[] }) {
+export default function GroupDetail({ g, categories, accounts }: { g: GrupoDetalle; categories: CategoryOpt[]; accounts: AccountOpt[] }) {
   const gastos = (
     <>
       <div className="mb-4 flex justify-end">
         <Modal title="Nuevo gasto del grupo" wide trigger={<><Plus size={16} /> Nuevo gasto</>}>
-          <GastoForm g={g} categories={categories} />
+          <GastoForm g={g} categories={categories} accounts={accounts} />
         </Modal>
       </div>
       {g.expenses.length === 0 && <div className="card py-10 text-center text-sm text-muted">Todavía no hay gastos en este grupo.</div>}
@@ -187,7 +210,7 @@ export default function GroupDetail({ g, categories }: { g: GrupoDetalle; catego
             <div className="flex shrink-0 items-center gap-1">
               <b>{money(e.amount, g.currency)}</b>
               <Modal title={`Editar ${e.description}`} wide triggerClassName="btn-icon" trigger={<Pencil size={15} />}>
-                <GastoForm g={g} categories={categories} gasto={e} />
+                <GastoForm g={g} categories={categories} accounts={accounts} gasto={e} />
               </Modal>
               <ConfirmButton action={async () => deleteGroupExpense(e.id)} className="btn-icon hover:text-red-500" message={`¿Eliminar "${e.description}"?`}>
                 <Trash2 size={15} />

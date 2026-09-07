@@ -121,10 +121,10 @@ export function CategoryDonut({ slices, currency, empty }: { slices: Slice[]; cu
             </PieChart>
           </ResponsiveContainer>
         </div>
-        <ul className="w-full flex-1 space-y-1.5 text-sm">
+        <ul className="w-full min-w-0 flex-1 space-y-1.5 text-sm">
           {slices.slice(0, 6).map((c) => (
-            <li key={c.id}>
-              <button type="button" onClick={() => setOpen(c)} className="flex w-full items-center justify-between gap-2 rounded-lg px-1.5 py-1 text-left transition hover:bg-subtle">
+            <li key={c.id} className="min-w-0">
+              <button type="button" onClick={() => setOpen(c)} className="flex w-full min-w-0 items-center justify-between gap-2 rounded-lg px-1.5 py-1 text-left transition hover:bg-subtle">
                 <span className="flex min-w-0 items-center gap-2">
                   <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-white" style={{ background: c.color }}>
                     {c.iconBody ? <Icono body={c.iconBody} size={12} /> : null}

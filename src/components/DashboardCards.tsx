@@ -5,8 +5,9 @@ import dynamic from "next/dynamic";
 import { ArrowDownLeft, ArrowUpRight } from "lucide-react";
 import type { Dashboard } from "@/lib/stats";
 import { CARDS } from "@/lib/cards";
-import { money, fmtDate, fmtDayMonth, pct, NATURES, NATURE_COLORS, ACCOUNT_TYPES } from "@/lib/format";
+import { money, fmtDate, fmtDayMonth, pct, NATURES, NATURE_COLORS, ACCOUNT_TYPES, accountLabel } from "@/lib/format";
 import { Delta, Empty } from "./ui";
+import Icono from "./Icono";
 
 /* Recharts pesa ~400 KB: se carga aparte, ya en el navegador, con un hueco mientras tanto. */
 function box(h: string) {
@@ -21,7 +22,7 @@ const CategoryDonut = dynamic(() => import("./charts").then((m) => m.CategoryDon
 const ForecastBars = dynamic(() => import("./charts").then((m) => m.ForecastBars), { ssr: false, loading: box("mt-3 h-48") });
 const RatioDonut = dynamic(() => import("./charts").then((m) => m.RatioDonut), { ssr: false, loading: box("h-32 w-32 shrink-0 rounded-full") });
 
-type Props = { data: Dashboard; cards: string[] };
+type Props = { data: Dashboard; cards: string[]; cardsMobile: string[] };
 
 /* ---------- Individual cards ---------- */
 
@@ -209,7 +210,9 @@ function ProximosPagos({ d }: { d: Dashboard }) {
         return (
           <li key={p.id} className="flex items-center justify-between gap-2 py-2.5">
             <span className="flex min-w-0 items-center gap-2.5">
-              <span className="h-8 w-8 shrink-0 rounded-full" style={{ background: `${p.color}22`, border: `2px solid ${p.color}` }} />
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full" style={{ background: `${p.color}22`, border: `2px solid ${p.color}` }}>
+                {p.iconBody && <Icono body={p.iconBody} size={15} />}
+              </span>
               <span className="min-w-0">
                 <span className="block truncate font-medium">{p.description}</span>
                 <span className={`block text-xs ${late ? "text-red-500" : "text-muted"}`}>
@@ -373,7 +376,7 @@ function Movimientos({ d }: { d: Dashboard }) {
             <span className="min-w-0">
               <span className="block truncate text-sm font-semibold">{t.description || t.category?.name || "Transferencia"}</span>
               <span className="block truncate text-xs text-muted">
-                {t.account.name} · {fmtDate(t.date)}
+                {accountLabel(t.account, d.accounts)} · {fmtDate(t.date)}
               </span>
             </span>
           </span>
@@ -395,7 +398,7 @@ function Cuentas({ d }: { d: Dashboard }) {
           <span className="flex min-w-0 items-center gap-3">
             <span className="h-8 w-8 shrink-0 rounded-lg" style={{ background: a.color }} />
             <span className="min-w-0">
-              <span className="block truncate text-sm font-semibold">{a.name}</span>
+              <span className="block truncate text-sm font-semibold">{accountLabel(a, d.accounts)}</span>
               <span className="block text-xs text-muted">{ACCOUNT_TYPES[a.type]}</span>
             </span>
           </span>
@@ -408,7 +411,7 @@ function Cuentas({ d }: { d: Dashboard }) {
 
 /* ---------- Renderer ---------- */
 
-export default function DashboardCards({ data, cards }: Props) {
+export default function DashboardCards({ data, cards, cardsMobile }: Props) {
   const defs = new Map(CARDS.map((c) => [c.id, c]));
   const body = (id: string) => {
     switch (id) {
@@ -455,19 +458,24 @@ export default function DashboardCards({ data, cards }: Props) {
     }
   };
 
+  const grid = (ids: string[]) =>
+    ids.map((id) => {
+      const def = defs.get(id);
+      if (!def) return null;
+      return (
+        <section key={id} className={`card ${def.span === 3 ? "md:col-span-2 xl:col-span-3" : def.span === 2 ? "md:col-span-2" : ""}`}>
+          <h2 className="font-bold">{def.title}</h2>
+          <p className="mb-1 text-xs text-muted">{def.question}</p>
+          {body(id)}
+        </section>
+      );
+    });
+
+  // El orden puede ser distinto en celular; se renderizan las dos grillas y CSS muestra la que corresponde.
   return (
-    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-      {cards.map((id) => {
-        const def = defs.get(id);
-        if (!def) return null;
-        return (
-          <section key={id} className={`card ${def.span === 3 ? "md:col-span-2 xl:col-span-3" : def.span === 2 ? "md:col-span-2" : ""}`}>
-            <h2 className="font-bold">{def.title}</h2>
-            <p className="mb-1 text-xs text-muted">{def.question}</p>
-            {body(id)}
-          </section>
-        );
-      })}
-    </div>
+    <>
+      <div className="grid grid-cols-1 gap-4 md:hidden">{grid(cardsMobile)}</div>
+      <div className="hidden md:grid md:grid-cols-2 md:gap-4 xl:grid-cols-3">{grid(cards)}</div>
+    </>
   );
 }

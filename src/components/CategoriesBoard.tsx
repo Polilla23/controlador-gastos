@@ -1,13 +1,14 @@
 "use client";
 
+import { useTransition } from "react";
 import { CornerDownRight, Pencil, Plus, Trash2 } from "lucide-react";
 import ActionForm from "./ActionForm";
 import Modal from "./Modal";
 import ConfirmButton from "./ConfirmButton";
-import { ColorPicker } from "./ui";
+import { ColorPicker, Sortable } from "./ui";
 import IconPicker from "./IconPicker";
 import Icono from "./Icono";
-import { deleteCategory, saveCategory } from "@/lib/actions";
+import { deleteCategory, reorderCategories, saveCategory } from "@/lib/actions";
 import { NATURES } from "@/lib/format";
 
 export type CategoryRow = {
@@ -17,6 +18,7 @@ export type CategoryRow = {
   color: string;
   nature: string;
   parentId: number | null;
+  sortOrder: number;
   count: number;
   icon: string | null;
   iconBody: string | null;
@@ -73,9 +75,11 @@ function Fields({ category, parents, kind, parentId }: { category?: CategoryRow;
 }
 
 export default function CategoriesBoard({ categories, kind, title }: { categories: CategoryRow[]; kind: string; title: string }) {
+  const [, start] = useTransition();
   const pool = categories.filter((c) => c.kind === kind);
-  const parents = pool.filter((c) => !c.parentId);
-  const kids = (id: number) => pool.filter((c) => c.parentId === id);
+  const parents = pool.filter((c) => !c.parentId).sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name, "es"));
+  const kids = (id: number) =>
+    pool.filter((c) => c.parentId === id).sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name, "es"));
 
   const actions = (c: CategoryRow) => (
     <div className="flex shrink-0 items-center gap-1">
@@ -107,10 +111,11 @@ export default function CategoriesBoard({ categories, kind, title }: { categorie
       </div>
 
       {parents.length === 0 && <p className="py-6 text-center text-sm text-muted">No hay categorías todavía.</p>}
+      {parents.length > 1 && <p className="mb-2 text-xs text-muted">Arrastrá desde el asa para cambiar el orden.</p>}
 
-      <ul className="space-y-1">
-        {parents.map((p) => (
-          <li key={p.id}>
+      <Sortable items={parents} onReorder={(ids) => start(() => reorderCategories(ids.map(Number)))}>
+        {(p) => (
+          <div>
             <div className="flex items-center justify-between gap-2 rounded-xl border border-line px-3 py-2.5">
               <div className="flex min-w-0 items-center gap-3">
                 <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-white" style={{ background: p.color }}>
@@ -132,25 +137,27 @@ export default function CategoriesBoard({ categories, kind, title }: { categorie
             </div>
 
             {kids(p.id).length > 0 && (
-              <ul className="mt-1 space-y-1 pl-6">
-                {kids(p.id).map((c) => (
-                  <li key={c.id} className="flex items-center justify-between gap-2 rounded-xl border border-line px-3 py-2">
-                    <div className="flex min-w-0 items-center gap-2">
-                      <CornerDownRight size={14} className="shrink-0 text-muted" />
-                      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-white" style={{ background: c.color }}>
-                        {c.iconBody && <Icono body={c.iconBody} size={12} />}
-                      </span>
-                      <span className="truncate text-sm">{c.name}</span>
-                      {kind === "EXPENSE" && <span className="hidden shrink-0 text-xs text-muted sm:inline">· {NATURES[c.nature] ?? c.nature}</span>}
+              <div className="mt-1 pl-6">
+                <Sortable items={kids(p.id)} onReorder={(ids) => start(() => reorderCategories(ids.map(Number)))}>
+                  {(c) => (
+                    <div className="flex items-center justify-between gap-2 rounded-xl border border-line px-3 py-2">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <CornerDownRight size={14} className="shrink-0 text-muted" />
+                        <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-white" style={{ background: c.color }}>
+                          {c.iconBody && <Icono body={c.iconBody} size={12} />}
+                        </span>
+                        <span className="truncate text-sm">{c.name}</span>
+                        {kind === "EXPENSE" && <span className="hidden shrink-0 text-xs text-muted sm:inline">· {NATURES[c.nature] ?? c.nature}</span>}
+                      </div>
+                      {actions(c)}
                     </div>
-                    {actions(c)}
-                  </li>
-                ))}
-              </ul>
+                  )}
+                </Sortable>
+              </div>
             )}
-          </li>
-        ))}
-      </ul>
+          </div>
+        )}
+      </Sortable>
     </div>
   );
 }
