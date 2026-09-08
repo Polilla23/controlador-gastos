@@ -38,6 +38,7 @@ model User {
   groups         ShareGroup[]
   holdings       Holding[]
   investMoves    InvestMove[]
+  statementImports StatementImport[]
 }
 
 model Account {
@@ -68,6 +69,7 @@ model Account {
   shareExpenses  ShareExpense[]
   holdings       Holding[]
   investMoves    InvestMove[]
+  statementImports StatementImport[]
 
   @@index([userId])
 }
@@ -90,6 +92,7 @@ model Category {
   planned      Planned[]
   budgets      Budget[]
   rules        Rule[]
+  statementImportItems StatementImportItem[]
 
   @@unique([userId, name, parentId])
   @@index([userId])
@@ -107,6 +110,7 @@ model Tag {
   planned      Planned[]
   budgets      Budget[]
   rules        Rule[]
+  statementImportItems StatementImportItem[]
 
   @@unique([userId, name])
 }
@@ -462,4 +466,59 @@ model Attachment {
   mimeType      String
   source        String      @default("WEB") // WEB | TELEGRAM
   createdAt     DateTime    @default(now())
+}
+
+/* ---------- Importación de resúmenes de tarjeta ---------- */
+
+/// Un PDF de resumen de tarjeta subido para convertir sus consumos en gastos.
+/// Nunca crea Transaction directamente: primero queda PENDING con sus items
+/// (previsualización, ya con reglas aplicadas), y sólo al confirmar se generan
+/// los movimientos reales.
+model StatementImport {
+  id               Int                   @id @default(autoincrement())
+  userId           String
+  user             User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accountId        Int
+  account          Account               @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  bank             String // SANTANDER | ICBC_VISA | ICBC_MASTERCARD
+  source           String                @default("TELEGRAM") // TELEGRAM | WEB
+  status           String                @default("PENDING") // PENDING | CONFIRMED | DISCARDED
+  cardLastFour     String?
+  periodEnd        DateTime? // cierre actual declarado por el resumen
+  dueDate          DateTime? // vencimiento actual declarado por el resumen
+  declaredTotalArs Float?
+  declaredTotalUsd Float?
+  attachmentPath   String? // PDF original en Supabase Storage
+  createdAt        DateTime              @default(now())
+  confirmedAt      DateTime?
+  items            StatementImportItem[]
+
+  @@index([userId, status])
+}
+
+/// Un renglón parseado del resumen, con el efecto de las reglas ya calculado
+/// para mostrarlo en la previsualización antes de crear el gasto real.
+model StatementImportItem {
+  id                       Int             @id @default(autoincrement())
+  importId                 Int
+  import                   StatementImport @relation(fields: [importId], references: [id], onDelete: Cascade)
+  date                     DateTime // fecha efectiva a usar en la Transaction
+  rawDescription           String // texto tal cual viene del resumen
+  resolvedDescription      String? // si alguna regla la renombró
+  amount                   Float
+  currency                 String
+  installmentNo            Int?
+  installmentTotal         Int?
+  voucherNumber            String? // "comprobante" del resumen; clave natural para deduplicar
+  kind                     String // CONSUMO | IMPUESTO
+  categoryId               Int?
+  category                 Category?       @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  tags                     Tag[]
+  matchedRuleNames         String          @default("") // CSV, sólo para mostrar qué reglas aplicaron
+  status                   String          @default("PENDING") // PENDING | DUPLICATE | CONFIRMED | SKIPPED
+  skipReason               String? // por qué no se va a crear el gasto (ej. moneda distinta a la cuenta)
+  duplicateOfTransactionId Int?
+  transactionId            Int? // el movimiento creado, una vez confirmado
+
+  @@index([importId])
 }
