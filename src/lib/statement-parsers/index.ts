@@ -1,16 +1,20 @@
 import { parseSantander } from "./santander";
-import { parseIcbc } from "./icbc";
+import { parseIcbcVisa } from "./icbc-visa";
+import { parseIcbcMastercard } from "./icbc-mastercard";
 import type { ResultadoParseo } from "./types";
 
 export * from "./types";
 
-/** Prueba cada parser de banco soportado y devuelve el primero que reconozca el PDF. */
+const PARSERS = [parseSantander, parseIcbcVisa, parseIcbcMastercard];
+
+/** Prueba cada parser de banco/producto soportado y devuelve el primero que reconozca el PDF. */
 export async function parseStatementPdf(buffer: Buffer): Promise<ResultadoParseo> {
-  const santander = await parseSantander(buffer);
-  if (santander.ok) return santander;
-
-  const icbc = await parseIcbc(buffer);
-  if (icbc.ok) return icbc;
-
-  return { ok: false, motivo: "No reconozco el formato de este resumen. Bancos soportados por ahora: Santander, ICBC." };
+  for (const parser of PARSERS) {
+    const resultado = await parser(buffer);
+    if (resultado.ok) return resultado;
+  }
+  return {
+    ok: false,
+    motivo: "No reconozco el formato de este resumen. Soportados por ahora: Santander, Visa ICBC, Mastercard ICBC.",
+  };
 }

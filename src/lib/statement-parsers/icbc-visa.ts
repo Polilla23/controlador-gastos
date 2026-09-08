@@ -21,9 +21,12 @@ const MESES: Record<string, number> = {
 const RE_OPERACION = /^(\d{2})(?:\s+(\d{4,8})\s*([*Q]))?$/;
 
 /**
- * Parser del template de ICBC: un "listado de sistema" de ancho fijo (no una
- * tabla PDF moderna como Santander). Estructura por renglón, reconstruida
- * empíricamente a partir de las coordenadas x/y reales del PDF:
+ * Parser del resumen de la tarjeta Visa de ICBC ("ICBC CLUB"): un "listado de
+ * sistema" de ancho fijo (no una tabla PDF moderna como Santander). Ojo: la
+ * tarjeta Mastercard del mismo banco usa un template completamente distinto
+ * (ver icbc-mastercard.ts) — no es "el formato de ICBC", es uno de dos.
+ * Estructura por renglón, reconstruida empíricamente a partir de las
+ * coordenadas x/y reales del PDF:
  *
  *   [DD] [NombreMes]   <- sólo en la primera fila de una fecha nueva, se omite si se repite
  *   "TT"                <- código de operación de 2 dígitos (03=pago, 20=impuesto, etc.)
@@ -36,10 +39,10 @@ const RE_OPERACION = /^(\d{2})(?:\s+(\d{4,8})\s*([*Q]))?$/;
  *   por ahora todo se asume en pesos. Falta un ejemplo con columna U$S poblada.
  * - No vimos ningún consumo en cuotas ("N de M"), así que `cuota` siempre da null.
  */
-export async function parseIcbc(buffer: Buffer): Promise<ResultadoParseo> {
+export async function parseIcbcVisa(buffer: Buffer): Promise<ResultadoParseo> {
   const items = await extractTextItems(buffer);
-  const esIcbc = items.some((it) => it.str === "ICBC");
-  if (!esIcbc) return { ok: false, motivo: "No parece un resumen de ICBC" };
+  const esIcbcVisa = items.some((it) => it.str === "ICBC");
+  if (!esIcbcVisa) return { ok: false, motivo: "No parece un resumen de la Visa ICBC" };
 
   const rows = groupIntoRows(items);
 
@@ -125,6 +128,6 @@ export async function parseIcbc(buffer: Buffer): Promise<ResultadoParseo> {
 
   return {
     ok: true,
-    resumen: { banco: "ICBC", cardLastFour, cierreActual, vencimientoActual, totalDeclaradoArs, totalDeclaradoUsd: null, lineas },
+    resumen: { banco: "ICBC_VISA", cardLastFour, cierreActual, vencimientoActual, totalDeclaradoArs, totalDeclaradoUsd: null, lineas },
   };
 }

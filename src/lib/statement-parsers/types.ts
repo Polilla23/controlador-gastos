@@ -14,7 +14,7 @@ export type LineaResumen = {
 };
 
 export type ResumenParseado = {
-  banco: "SANTANDER" | "ICBC";
+  banco: "SANTANDER" | "ICBC_VISA" | "ICBC_MASTERCARD";
   cardLastFour: string | null;
   cierreActual: Date | null;
   vencimientoActual: Date | null;
