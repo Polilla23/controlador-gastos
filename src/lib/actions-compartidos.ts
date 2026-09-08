@@ -197,6 +197,9 @@ export async function saldarEntre(fd: FormData) {
   const deId = Number(fd.get("deId"));
   const aId = Number(fd.get("aId"));
   const monto = Number(fd.get("monto"));
+  const note = String(fd.get("note") ?? "");
+  const accountId = fd.get("accountId") ? Number(fd.get("accountId")) : null;
+  const { mode, existingId } = readLinkMode(fd);
   if (!(monto > 0)) throw new Error("El monto tiene que ser mayor a cero");
 
   const group = await prisma.shareGroup.findFirst({ where: { id: groupId, userId }, include: { members: true } });
@@ -205,9 +208,34 @@ export async function saldarEntre(fd: FormData) {
   const a = group.members.find((m) => m.id === aId);
   if (!de || !a) throw new Error("Integrante inválido");
 
+  // Sólo si yo (isMe) pago o cobro tiene sentido que impacte en Transacciones.
+  let transactionId: number | null = null;
+  if (mode === "existing" && existingId && (de.isMe || a.isMe)) {
+    await assertOwnedTransaction(userId, existingId);
+    transactionId = existingId;
+  }
+
   const gasto = await prisma.shareExpense.create({
-    data: { groupId, description: `Pago de ${de.name} a ${a.name}`, amount: monto, date: new Date(), paidById: deId, note: "Liquidación" },
+    data: { groupId, description: `Pago de ${de.name} a ${a.name}`, amount: monto, date: new Date(), paidById: deId, note, transactionId },
   });
   await prisma.shareSplit.create({ data: { expenseId: gasto.id, memberId: aId, amount: monto } });
+
+  if (mode === "new" && accountId && (de.isMe || a.isMe)) {
+    const account = await prisma.account.findFirst({ where: { id: accountId, userId } });
+    if (!account) throw new Error("Cuenta inválida");
+    const tx = await prisma.transaction.create({
+      data: {
+        userId,
+        type: de.isMe ? "EXPENSE" : "INCOME",
+        amount: monto,
+        currency: account.currency,
+        date: new Date(),
+        description: `Pago de ${de.name} a ${a.name}`,
+        note: note || `Liquidación gasto compartido #${gasto.id}`,
+        accountId,
+      },
+    });
+    await prisma.shareExpense.update({ where: { id: gasto.id }, data: { transactionId: tx.id } });
+  }
   refresh();
 }

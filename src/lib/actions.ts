@@ -9,7 +9,7 @@ import { requireUserId } from "./auth";
 import { supabaseServer } from "./supabase";
 import { storeAttachment, removeStored } from "./storage";
 import { addMonths, civil, fromCivil, parseInput } from "./tz";
-import { statementMonthFor } from "./tarjetas";
+import { statementMonthForDate } from "./tarjetas";
 import { aplicarAlCrear } from "./reglas";
 
 const num = z.coerce.number();
@@ -59,13 +59,33 @@ const accountSchema = z.object({
   creditLimit: optNum,
   closingDay: optInt,
   dueDay: optInt,
+  cierreAnterior: optDate,
+  cierreActual: optDate,
+  cierreProximo: optDate,
+  vencimientoAnterior: optDate,
+  vencimientoActual: optDate,
+  vencimientoProximo: optDate,
 });
 
 export async function saveAccount(fd: FormData) {
   const userId = await requireUserId();
   const id = fd.get("id") ? Number(fd.get("id")) : null;
   const d = accountSchema.parse(Object.fromEntries(fd));
-  const data = d.type === "CREDIT_CARD" ? d : { ...d, creditLimit: null, closingDay: null, dueDay: null };
+  const data =
+    d.type === "CREDIT_CARD"
+      ? d
+      : {
+          ...d,
+          creditLimit: null,
+          closingDay: null,
+          dueDay: null,
+          cierreAnterior: null,
+          cierreActual: null,
+          cierreProximo: null,
+          vencimientoAnterior: null,
+          vencimientoActual: null,
+          vencimientoProximo: null,
+        };
   if (id) await prisma.account.update({ where: { id, userId }, data });
   else {
     const last = await prisma.account.aggregate({ where: { userId }, _max: { sortOrder: true } });
@@ -226,7 +246,7 @@ export async function saveTransaction(fd: FormData) {
     note: d.note,
     counterparty: d.counterparty.trim(),
     warrantyMonths: d.type === "EXPENSE" ? d.warrantyMonths : null,
-    statementMonth: account.type === "CREDIT_CARD" ? statementMonthFor(date, account.closingDay, account.dueDay) : null,
+    statementMonth: account.type === "CREDIT_CARD" ? statementMonthForDate(date, account) : null,
     dueDate: d.type === "EXPENSE" ? d.dueDate : null,
     paid: d.type === "EXPENSE" ? d.paid : true,
     accountId: d.accountId,
@@ -267,6 +287,8 @@ export async function saveTransaction(fd: FormData) {
             ...base,
             amount,
             date: addMonths(date, i),
+            // Cada cuota recalcula a qué resumen corresponde según su propia fecha, no la de la cuota 1.
+            statementMonth: account.type === "CREDIT_CARD" ? statementMonthForDate(addMonths(date, i), account) : null,
             description: `${d.description || "Compra en cuotas"} (${i + 1}/${d.installments})`,
             planId: plan.id,
             installmentNo: i + 1,
@@ -406,8 +428,6 @@ const plannedSchema = z.object({
   accountId: optInt,
   categoryId: optInt,
   note: z.string().default(""),
-  autoConfirm: z.preprocess((v) => v === "on" || v === "true", z.boolean()).default(false),
-  notify: z.preprocess((v) => v === "on" || v === "true", z.boolean()).default(true),
 });
 
 export async function savePlanned(fd: FormData) {
@@ -415,7 +435,11 @@ export async function savePlanned(fd: FormData) {
   const id = fd.get("id") ? Number(fd.get("id")) : null;
   const d = plannedSchema.parse(Object.fromEntries(fd));
   const tagIds = fd.getAll("tagIds").map(Number).filter(Boolean);
-  const base = { ...d, dueDate: parseInput(d.dueDate), userId, lastNotifiedOn: null };
+  // Un checkbox sin marcar no manda ningún campo: hay que leerlo literalmente, sin default de Zod
+  // (con default, Zod ni siquiera llega a mirar el valor cuando la clave está ausente).
+  const notify = fd.get("notify") === "on";
+  const autoConfirm = fd.get("autoConfirm") === "on";
+  const base = { ...d, notify, autoConfirm, dueDate: parseInput(d.dueDate), userId, lastNotifiedOn: null };
   if (id) await prisma.planned.update({ where: { id, userId }, data: { ...base, tags: { set: tagIds.map((t) => ({ id: t })) } } });
   else await prisma.planned.create({ data: { ...base, tags: { connect: tagIds.map((t) => ({ id: t })) } } });
   refresh();
@@ -483,6 +507,49 @@ export async function autoConfirmPlanned() {
   const due = await prisma.planned.findMany({ where: { autoConfirm: true, done: false, dueDate: { lte: new Date() } } });
   for (const p of due) await applyPlannedConfirmation(p);
   return due.length;
+}
+
+/**
+ * Cron: cuando el cierre/vencimiento "actual" guardado de una tarjeta ya pasó, lo corre un
+ * lugar (anterior←actual, actual←próximo) y estima el próximo por el día del mes, para no
+ * perder una corrección manual previa. Si nunca se cargaron a mano, no hay nada que rotar
+ * (se siguen calculando en vivo).
+ */
+export async function rollCardDates() {
+  const hoy = new Date();
+  const cards = await prisma.account.findMany({
+    where: { type: "CREDIT_CARD", archived: false, OR: [{ cierreActual: { lt: hoy } }, { vencimientoActual: { lt: hoy } }] },
+  });
+  for (const c of cards) {
+    const data: {
+      cierreAnterior?: Date;
+      cierreActual?: Date;
+      cierreProximo?: Date;
+      vencimientoAnterior?: Date;
+      vencimientoActual?: Date;
+      vencimientoProximo?: Date;
+    } = {};
+    if (c.cierreActual && c.cierreActual < hoy) {
+      data.cierreAnterior = c.cierreActual;
+      const nuevoActual = c.cierreProximo ?? c.cierreActual;
+      data.cierreActual = nuevoActual;
+      if (c.closingDay) {
+        const cc = civil(nuevoActual);
+        data.cierreProximo = fromCivil(cc.y, cc.m + 1, c.closingDay, 12);
+      }
+    }
+    if (c.vencimientoActual && c.vencimientoActual < hoy) {
+      data.vencimientoAnterior = c.vencimientoActual;
+      const nuevoActual = c.vencimientoProximo ?? c.vencimientoActual;
+      data.vencimientoActual = nuevoActual;
+      if (c.dueDay) {
+        const vc = civil(nuevoActual);
+        data.vencimientoProximo = fromCivil(vc.y, vc.m + 1, c.dueDay, 12);
+      }
+    }
+    if (Object.keys(data).length) await prisma.account.update({ where: { id: c.id }, data });
+  }
+  return cards.length;
 }
 
 /* ---------- Attachments ---------- */
@@ -628,7 +695,7 @@ export async function cloneTransaction(id: number) {
       toAccountId: t.toAccountId,
       toAmount: t.toAmount,
       categoryId: t.categoryId,
-      statementMonth: account.type === "CREDIT_CARD" ? statementMonthFor(now, account.closingDay, account.dueDay) : null,
+      statementMonth: account.type === "CREDIT_CARD" ? statementMonthForDate(now, account) : null,
       tags: { connect: t.tags.map((g) => ({ id: g.id })) },
     },
   });
@@ -654,13 +721,24 @@ export async function updateInstallment(fd: FormData) {
 
 /* ---------- Filtros guardados ---------- */
 
+/** Agrupa un query string en un objeto, dejando array cuando una clave se repite (ej. varias cuentas). */
+function groupQueryParams(query: string): Record<string, string | string[]> {
+  const params = new URLSearchParams(query);
+  const out: Record<string, string | string[]> = {};
+  for (const key of new Set(params.keys())) {
+    const vals = params.getAll(key);
+    out[key] = vals.length > 1 ? vals : vals[0];
+  }
+  return out;
+}
+
 export async function saveFilter(fd: FormData) {
   const userId = await requireUserId();
   const name = String(fd.get("name") ?? "").trim();
   const scope = String(fd.get("scope") ?? "TX");
   const query = String(fd.get("query") ?? "");
   if (!name) throw new Error("Ponele un nombre al filtro");
-  const params = Object.fromEntries(new URLSearchParams(query));
+  const params = groupQueryParams(query);
   await prisma.savedFilter.upsert({
     where: { userId_scope_name: { userId, scope, name } },
     create: { userId, name, scope, query: params },
@@ -681,9 +759,15 @@ export async function updateFilter(fd: FormData) {
   const id = Number(fd.get("id"));
   const name = String(fd.get("name") ?? "").trim();
   if (!name) throw new Error("Ponele un nombre al filtro");
-  const known = ["tipo", "cuenta", "categoria", "etiqueta", "q"] as const;
-  const query: Record<string, string> = {};
-  for (const k of known) {
+  const multi = ["cuenta", "categoria", "etiqueta"] as const;
+  const single = ["tipo", "q"] as const;
+  const query: Record<string, string | string[]> = {};
+  for (const k of multi) {
+    const vals = fd.getAll(k).map(String).filter(Boolean);
+    if (vals.length === 1) query[k] = vals[0];
+    else if (vals.length > 1) query[k] = vals;
+  }
+  for (const k of single) {
     const v = String(fd.get(k) ?? "").trim();
     if (v) query[k] = v;
   }

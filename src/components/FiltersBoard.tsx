@@ -4,28 +4,25 @@ import { Pencil, Trash2 } from "lucide-react";
 import ActionForm from "./ActionForm";
 import Modal from "./Modal";
 import ConfirmButton from "./ConfirmButton";
-import CategorySelect, { type CategoryOpt } from "./CategorySelect";
+import { type CategoryOpt } from "./CategorySelect";
+import MultiSelectFilter from "./MultiSelectFilter";
 import { deleteFilter, updateFilter } from "@/lib/actions";
 import { TX_TYPES } from "@/lib/format";
 import type { AccountOpt, TagOpt } from "./TransactionForm";
 
-export type FilterRow = { id: number; name: string; scope: string; query: Record<string, string> };
+export type FilterRow = { id: number; name: string; scope: string; query: Record<string, string | string[]> };
 
-function describe(q: Record<string, string>, accounts: AccountOpt[], categories: CategoryOpt[], tags: TagOpt[]): string {
+const asArr = (v: string | string[] | undefined): string[] => (v == null ? [] : Array.isArray(v) ? v : [v]);
+
+function describe(q: Record<string, string | string[]>, accounts: AccountOpt[], categories: CategoryOpt[], tags: TagOpt[]): string {
   const parts: string[] = [];
-  if (q.tipo) parts.push(TX_TYPES[q.tipo] ?? q.tipo);
-  if (q.cuenta) {
-    const a = accounts.find((x) => String(x.id) === q.cuenta);
-    parts.push(a ? `Cuenta: ${a.name}` : "Cuenta");
-  }
-  if (q.categoria) {
-    const c = categories.find((x) => String(x.id) === q.categoria);
-    parts.push(c ? `Categoría: ${c.name}` : "Categoría");
-  }
-  if (q.etiqueta) {
-    const t = tags.find((x) => String(x.id) === q.etiqueta);
-    parts.push(t ? `#${t.name}` : "Etiqueta");
-  }
+  if (q.tipo) parts.push(TX_TYPES[q.tipo as string] ?? (q.tipo as string));
+  const cuentaIds = asArr(q.cuenta);
+  if (cuentaIds.length) parts.push(`Cuenta: ${cuentaIds.map((id) => accounts.find((a) => String(a.id) === id)?.name ?? id).join(", ")}`);
+  const categoriaIds = asArr(q.categoria);
+  if (categoriaIds.length) parts.push(`Categoría: ${categoriaIds.map((id) => categories.find((c) => String(c.id) === id)?.name ?? id).join(", ")}`);
+  const etiquetaIds = asArr(q.etiqueta);
+  if (etiquetaIds.length) parts.push(`Etiqueta: ${etiquetaIds.map((id) => `#${tags.find((t) => String(t.id) === id)?.name ?? id}`).join(", ")}`);
   if (q.q) parts.push(`Buscar: "${q.q}"`);
   if (q.preset) parts.push(`Período: ${q.preset}`);
   return parts.length ? parts.join(" · ") : "Sin condiciones";
@@ -74,32 +71,9 @@ export default function FiltersBoard({
                       ))}
                     </select>
                   </div>
-                  <div>
-                    <label className="label">Cuenta</label>
-                    <select name="cuenta" className="input" defaultValue={f.query.cuenta ?? ""}>
-                      <option value="">Todas</option>
-                      {accounts.map((a) => (
-                        <option key={a.id} value={a.id}>
-                          {a.name} ({a.currency})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="label">Categoría</label>
-                    <CategorySelect categories={categories} name="categoria" defaultValue={f.query.categoria} noneLabel="Todas" />
-                  </div>
-                  <div>
-                    <label className="label">Etiqueta</label>
-                    <select name="etiqueta" className="input" defaultValue={f.query.etiqueta ?? ""}>
-                      <option value="">Todas</option>
-                      {tags.map((t) => (
-                        <option key={t.id} value={t.id}>
-                          #{t.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                  <MultiSelectFilter name="cuenta" label="Cuenta" initial={asArr(f.query.cuenta)} options={accounts.map((a) => ({ id: a.id, label: `${a.name} (${a.currency})` }))} />
+                  <MultiSelectFilter name="categoria" label="Categoría" initial={asArr(f.query.categoria)} options={categories.map((c) => ({ id: c.id, label: c.name }))} />
+                  <MultiSelectFilter name="etiqueta" label="Etiqueta" initial={asArr(f.query.etiqueta)} options={tags.map((t) => ({ id: t.id, label: `#${t.name}` }))} />
                   <div>
                     <label className="label">Buscar</label>
                     <input name="q" className="input" defaultValue={f.query.q ?? ""} placeholder="Descripción o nota" />

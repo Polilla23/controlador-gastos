@@ -10,7 +10,8 @@ import MoneyInput from "./MoneyInput";
 import IconPicker from "./IconPicker";
 import Icono from "./Icono";
 import { deleteAccount, reorderAccounts, saveAccount, toggleAccountStats } from "@/lib/actions";
-import { ACCOUNT_TYPES, CURRENCIES, money } from "@/lib/format";
+import { ACCOUNT_TYPES, CURRENCIES, money, toInputDate } from "@/lib/format";
+import { proximosCierres } from "@/lib/tarjetas";
 
 export type AccountRow = {
   id: number;
@@ -23,6 +24,12 @@ export type AccountRow = {
   creditLimit: number | null;
   closingDay: number | null;
   dueDay: number | null;
+  cierreAnterior: Date | null;
+  cierreActual: Date | null;
+  cierreProximo: Date | null;
+  vencimientoAnterior: Date | null;
+  vencimientoActual: Date | null;
+  vencimientoProximo: Date | null;
   balance: number;
   icon: string | null;
   iconBody: string | null;
@@ -30,6 +37,8 @@ export type AccountRow = {
 
 function AccountFields({ account }: { account?: AccountRow }) {
   const [type, setType] = useState(account?.type ?? "CASH");
+  // Si nunca se corrigieron a mano, mostramos lo que se calcularía en vivo, para que editarlas sea partir de un valor sensato.
+  const fechas = account ? proximosCierres(account) : null;
   return (
     <>
       {account && <input type="hidden" name="id" value={account.id} />}
@@ -84,6 +93,38 @@ function AccountFields({ account }: { account?: AccountRow }) {
             </div>
           </div>
           <p className="text-xs text-muted">Si cargás el día de vencimiento, el bot de Telegram te avisa antes de cada vencimiento.</p>
+
+          {fechas && (
+            <>
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted">Fechas concretas (opcional, corrige lo calculado del día del mes)</p>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <div>
+                  <label className="label">Cierre anterior</label>
+                  <input name="cierreAnterior" type="date" className="input" defaultValue={fechas.cierreAnterior ? toInputDate(fechas.cierreAnterior) : ""} />
+                </div>
+                <div>
+                  <label className="label">Cierre actual</label>
+                  <input name="cierreActual" type="date" className="input" defaultValue={fechas.cierreActual ? toInputDate(fechas.cierreActual) : ""} />
+                </div>
+                <div>
+                  <label className="label">Próximo cierre</label>
+                  <input name="cierreProximo" type="date" className="input" defaultValue={fechas.cierreProximo ? toInputDate(fechas.cierreProximo) : ""} />
+                </div>
+                <div>
+                  <label className="label">Vencimiento anterior</label>
+                  <input name="vencimientoAnterior" type="date" className="input" defaultValue={fechas.vencimientoAnterior ? toInputDate(fechas.vencimientoAnterior) : ""} />
+                </div>
+                <div>
+                  <label className="label">Vencimiento actual</label>
+                  <input name="vencimientoActual" type="date" className="input" defaultValue={fechas.vencimientoActual ? toInputDate(fechas.vencimientoActual) : ""} />
+                </div>
+                <div>
+                  <label className="label">Próximo vencimiento</label>
+                  <input name="vencimientoProximo" type="date" className="input" defaultValue={fechas.vencimientoProximo ? toInputDate(fechas.vencimientoProximo) : ""} />
+                </div>
+              </div>
+            </>
+          )}
         </div>
       )}
 

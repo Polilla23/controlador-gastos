@@ -16,7 +16,7 @@ export default async function FiltrosPage() {
     <>
       <PageHeader title="Filtros" subtitle="Todos los filtros que guardaste en Transacciones y en Resumen, en un solo lugar" />
       <FiltersBoard
-        filters={filters.map((f) => ({ id: f.id, name: f.name, scope: f.scope, query: f.query as Record<string, string> }))}
+        filters={filters.map((f) => ({ id: f.id, name: f.name, scope: f.scope, query: f.query as Record<string, string | string[]> }))}
         accounts={accounts}
         categories={categories}
         tags={tags}

@@ -48,12 +48,14 @@ type Tenencia = {
   note: string;
   cantidad: number;
   invertido: number;
+  recuperado: number;
   rentas: number;
   costoPromedio: number | null;
   costoDeLoQueQueda: number | null;
   valorActual: number | null;
   ganancia: number | null;
   gananciaPct: number | null;
+  movimientos: number;
 };
 
 type Movimiento = { id: number; type: string; quantity: number | null; price: number | null; amount: number; currency: string; date: Date; note: string; holdingId: number | null };
@@ -438,6 +440,35 @@ export default function InvestmentsBoard({ cartera, accounts }: { cartera: Carte
                   ))}
                 </ul>
               </div>
+            )}
+
+            {c.tenencias.some((t) => t.cantidad === 0 && t.movimientos > 0) && (
+              <details className="mt-4">
+                <summary className="cursor-pointer text-sm font-medium text-brand-500">
+                  Ver instrumentos liquidados ({c.tenencias.filter((t) => t.cantidad === 0 && t.movimientos > 0).length})
+                </summary>
+                <ul className="mt-2 space-y-2">
+                  {c.tenencias
+                    .filter((t) => t.cantidad === 0 && t.movimientos > 0)
+                    .map((h) => (
+                      <li key={h.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-line px-3 py-2.5 opacity-80">
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-semibold">
+                            {h.ticker && <span className="mr-1 font-mono text-xs text-muted">{h.ticker}</span>}
+                            {h.name}
+                          </div>
+                          <div className="truncate text-xs text-muted">{INSTRUMENTOS[h.kind]} · liquidado</div>
+                        </div>
+                        {h.ganancia != null && (
+                          <div className={`text-sm font-semibold ${h.ganancia >= 0 ? "text-brand-500" : "text-red-500"}`}>
+                            {h.ganancia >= 0 ? "+" : ""}
+                            {money(h.ganancia, h.currency)} ({h.gananciaPct}%)
+                          </div>
+                        )}
+                      </li>
+                    ))}
+                </ul>
+              </details>
             )}
 
             {c.movimientos.length > 0 && (

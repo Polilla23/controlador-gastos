@@ -6,13 +6,14 @@ import { icono } from "@/lib/iconos";
 
 export default async function CategoriasPage() {
   const userId = await requireUserId();
-  let [categories, counts] = await Promise.all([
+  const [categoriesRaw, counts] = await Promise.all([
     prisma.category.findMany({ where: { userId }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }] }),
     prisma.transaction.groupBy({ by: ["categoryId"], where: { userId }, _count: { _all: true } }),
   ]);
   // Primera vez que se usa el orden manual: arrancamos de A a Z.
-  if (categories.length > 1 && categories.every((c) => c.sortOrder === 0)) {
-    const sorted = [...categories].sort((a, b) => a.name.localeCompare(b.name, "es"));
+  let categories = categoriesRaw;
+  if (categoriesRaw.length > 1 && categoriesRaw.every((c) => c.sortOrder === 0)) {
+    const sorted = [...categoriesRaw].sort((a, b) => a.name.localeCompare(b.name, "es"));
     await prisma.$transaction(sorted.map((c, i) => prisma.category.update({ where: { id: c.id }, data: { sortOrder: i } })));
     categories = sorted.map((c, i) => ({ ...c, sortOrder: i }));
   }

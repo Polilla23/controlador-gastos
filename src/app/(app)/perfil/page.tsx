@@ -1,4 +1,5 @@
-import { Bell, CalendarDays, MessageCircle, RefreshCw, Send, Smartphone, Trash2, Unlink } from "lucide-react";
+import Link from "next/link";
+import { Bell, CalendarDays, MessageCircle, RefreshCw, Send, Smartphone, Trash2, Unlink, Upload } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { disconnectGoogleCalendar, regenerateTelegramCode, saveNotificationPrefs, unlinkTelegram } from "@/lib/actions";
@@ -22,8 +23,9 @@ export default async function PerfilPage() {
 
   return (
     <>
-      <PageHeader title="Perfil" subtitle={user.email} />
+      <PageHeader title="Configuraciones" subtitle={user.email} />
 
+      <h2 className="mb-2 text-lg font-bold">Programaciones</h2>
       <div className="grid gap-4 lg:grid-cols-2">
         <section className="card">
           <h2 className="mb-1 flex items-center gap-2 font-bold">
@@ -152,6 +154,18 @@ export default async function PerfilPage() {
           {!user.telegramChatId && <p className="mt-3 text-xs text-amber-600">Vinculá tu Telegram para recibir los avisos.</p>}
         </section>
       </div>
+
+      <h2 className="mb-2 mt-6 text-lg font-bold">Datos y varios</h2>
+
+      <section className="card">
+        <h2 className="mb-1 flex items-center gap-2 font-bold">
+          <Upload size={18} className="text-brand-500" /> Importar desde CSV
+        </h2>
+        <p className="mb-3 text-sm text-muted">Traé tus movimientos de otra app (por ejemplo, Wallet) desde un archivo CSV, mapeando columnas y corrigiendo valores.</p>
+        <Link href="/perfil/importar" className="btn-primary">
+          <Upload size={14} /> Importar CSV
+        </Link>
+      </section>
 
       <section className="card mt-4">
         <h2 className="mb-1 flex items-center gap-2 font-bold">

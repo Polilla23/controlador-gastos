@@ -8,7 +8,7 @@ import Modal from "./Modal";
 import ConfirmButton from "./ConfirmButton";
 import { deleteFilter, saveFilter } from "@/lib/actions";
 
-export type FiltroGuardado = { id: number; name: string; query: Record<string, string> };
+export type FiltroGuardado = { id: number; name: string; query: Record<string, string | string[]> };
 
 /**
  * "Mi filtro": guarda los criterios que están puestos ahora mismo (los de la
@@ -25,7 +25,13 @@ export default function SavedFilters({ filtros, scope }: { filtros: FiltroGuarda
     setElegido(id);
     if (!id) return;
     const f = filtros.find((x) => String(x.id) === id);
-    if (f) router.push(`${path}?${new URLSearchParams(f.query).toString()}`);
+    if (!f) return;
+    const usp = new URLSearchParams();
+    for (const [k, v] of Object.entries(f.query)) {
+      if (Array.isArray(v)) v.forEach((x) => usp.append(k, x));
+      else usp.append(k, v);
+    }
+    router.push(`${path}?${usp.toString()}`);
   };
 
   return (

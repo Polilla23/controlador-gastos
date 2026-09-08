@@ -166,9 +166,10 @@ const liquidarSchema = z.object({
 });
 
 /**
- * Liquida una caución: acredita el neto (bruto menos arancel, IVA y derecho de
- * mercado) como renta, y registra por separado el total de esas deducciones
- * como comisión, para que el efectivo de la cuenta quede bien calculado.
+ * Liquida una caución: cuenta como una venta de todo lo que quedaba abierto
+ * (así se ve la ganancia o pérdida, y la tenencia se cierra), más el total de
+ * arancel/IVA/derecho de mercado como una comisión aparte. El efecto en el
+ * efectivo de la cuenta es el mismo neto de siempre: +bruto − deducciones.
  */
 export async function liquidarCaucion(fd: FormData) {
   const userId = await requireUserId();
@@ -182,6 +183,11 @@ export async function liquidarCaucion(fd: FormData) {
   const neto = redondear(d.bruto - deducciones);
   if (neto <= 0) throw new Error("El neto tiene que ser mayor a cero");
 
+  const movs = await prisma.investMove.findMany({ where: { holdingId: holding.id }, select: { type: true, quantity: true } });
+  const compradas = movs.filter((m) => m.type === "BUY").reduce((s, m) => s + (m.quantity ?? 0), 0);
+  const vendidas = movs.filter((m) => m.type === "SELL").reduce((s, m) => s + (m.quantity ?? 0), 0);
+  const cantidad = Math.max(0, redondear(compradas - vendidas));
+
   const fecha = parseInput(d.date);
   await prisma.$transaction([
     prisma.investMove.create({
@@ -189,11 +195,13 @@ export async function liquidarCaucion(fd: FormData) {
         userId,
         accountId: holding.accountId,
         holdingId: holding.id,
-        type: "INCOME",
-        amount: neto,
+        type: "SELL",
+        quantity: cantidad || null,
+        price: cantidad ? redondear(d.bruto / cantidad) : null,
+        amount: d.bruto,
         currency: holding.currency,
         date: fecha,
-        note: d.note || `Liquidación caución: bruto ${d.bruto}`,
+        note: d.note || "Liquidación de caución",
       },
     }),
     ...(deducciones > 0

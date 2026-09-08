@@ -97,7 +97,7 @@ function GastoForm({ g, categories, accounts, gasto }: { g: GrupoDetalle; catego
         </div>
         <div>
           <label className="label">Categoría</label>
-          <CategorySelect categories={categories} kind="EXPENSE" name="categoryId" defaultValue={gasto?.categoryId} />
+          <CategorySelect categories={categories} name="categoryId" defaultValue={gasto?.categoryId} />
         </div>
       </div>
 
@@ -188,6 +188,44 @@ function GastoForm({ g, categories, accounts, gasto }: { g: GrupoDetalle; catego
   );
 }
 
+/** Formulario para registrar que alguien saldó su parte; si soy yo el que paga o cobra, ofrece engancharlo a Transacciones. */
+function SaldarForm({ g, accounts, p }: { g: GrupoDetalle; accounts: AccountOpt[]; p: Pago }) {
+  const meId = g.members.find((m) => m.isMe)?.id;
+  const deIsMe = p.deId === meId;
+  const aIsMe = p.aId === meId;
+  return (
+    <ActionForm action={saldarEntre} submitLabel="Registrar">
+      <input type="hidden" name="groupId" value={g.id} />
+      <input type="hidden" name="deId" value={p.deId} />
+      <input type="hidden" name="aId" value={p.aId} />
+      <input type="hidden" name="monto" value={p.monto} />
+      <p className="rounded-lg bg-subtle px-3 py-2 text-sm text-muted">
+        <b>{p.deNombre}</b> le paga <b>{money(p.monto, g.currency)}</b> a <b>{p.aNombre}</b>.
+      </p>
+      {(deIsMe || aIsMe) && (
+        <>
+          <div>
+            <label className="label">{deIsMe ? "De qué cuenta salió" : "A qué cuenta entró"}</label>
+            <select name="accountId" className="input" defaultValue="">
+              <option value="">Sin definir</option>
+              {accounts.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name} ({a.currency})
+                </option>
+              ))}
+            </select>
+          </div>
+          <LinkTransaction newLabel={deIsMe ? "Crear el egreso en Transacciones" : "Crear el ingreso en Transacciones"} />
+        </>
+      )}
+      <div>
+        <label className="label">Nota (opcional)</label>
+        <input name="note" className="input" />
+      </div>
+    </ActionForm>
+  );
+}
+
 export default function GroupDetail({ g, categories, accounts }: { g: GrupoDetalle; categories: CategoryOpt[]; accounts: AccountOpt[] }) {
   const gastos = (
     <>
@@ -235,20 +273,9 @@ export default function GroupDetail({ g, categories, accounts }: { g: GrupoDetal
               </span>
               <span className="flex items-center gap-2">
                 <b className="text-brand-500">{money(p.monto, g.currency)}</b>
-                <ConfirmButton
-                  action={async () => {
-                    const fd = new FormData();
-                    fd.set("groupId", String(g.id));
-                    fd.set("deId", String(p.deId));
-                    fd.set("aId", String(p.aId));
-                    fd.set("monto", String(p.monto));
-                    await saldarEntre(fd);
-                  }}
-                  className="btn-ghost"
-                  message={`¿Registrar que ${p.deNombre} le pagó ${money(p.monto, g.currency)} a ${p.aNombre}?`}
-                >
-                  <HandCoins size={14} /> Ya se pagó
-                </ConfirmButton>
+                <Modal title="Registrar pago" triggerClassName="btn-ghost" trigger={<><HandCoins size={14} /> Ya se pagó</>}>
+                  <SaldarForm g={g} accounts={accounts} p={p} />
+                </Modal>
               </span>
             </li>
           ))}

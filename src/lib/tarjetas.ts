@@ -1,7 +1,10 @@
 import { civil, fromCivil } from "./tz";
 
 /**
- * En qué resumen de tarjeta cae un consumo.
+ * En qué resumen de tarjeta cae un consumo, calculado sólo desde el día del mes
+ * de cierre/vencimiento (sin mirar fechas concretas guardadas). Es el respaldo
+ * que usa `statementMonthForDate` cuando la fecha está fuera del rango que
+ * cubren las fechas persistidas de la cuenta.
  *
  * Si la tarjeta cierra el 27 y comprás el 23 de agosto, el consumo entra en el
  * resumen que se paga en septiembre. Si comprás el 28 (ya pasado el cierre),
@@ -48,10 +51,26 @@ function nextDayOfMonth(day: number, from: Date): Date {
   return d;
 }
 
-/** Cierre/vencimiento anterior, actual (el más reciente ya pasado) y próximo, calculados en vivo. */
-export function proximosCierres(account: { closingDay: number | null; dueDay: number | null }, today: Date = new Date()) {
+/** Lo que una tarjeta necesita para calcular sus cierres/vencimientos: el día del mes, y opcionalmente las fechas concretas ya corregidas a mano. */
+export type CardDates = {
+  closingDay: number | null;
+  dueDay: number | null;
+  cierreAnterior?: Date | null;
+  cierreActual?: Date | null;
+  cierreProximo?: Date | null;
+  vencimientoAnterior?: Date | null;
+  vencimientoActual?: Date | null;
+  vencimientoProximo?: Date | null;
+};
+
+/**
+ * Cierre/vencimiento anterior, actual (el más reciente ya pasado) y próximo.
+ * Usa las fechas guardadas en la cuenta si están cargadas (el usuario las corrigió
+ * a mano); si no, las calcula en vivo a partir del día del mes.
+ */
+export function proximosCierres(account: CardDates, today: Date = new Date()) {
   const pares = (day: number | null) => {
-    if (!day) return { anterior: null, actual: null, proximo: null };
+    if (!day) return { anterior: null as Date | null, actual: null as Date | null, proximo: null as Date | null };
     const proximo = nextDayOfMonth(day, today);
     const c = civil(proximo);
     const actual = fromCivil(c.y, c.m - 1, day, 12);
@@ -62,11 +81,35 @@ export function proximosCierres(account: { closingDay: number | null; dueDay: nu
   const cierre = pares(account.closingDay);
   const vencimiento = pares(account.dueDay);
   return {
-    cierreAnterior: cierre.anterior,
-    cierreActual: cierre.actual,
-    cierreProximo: cierre.proximo,
-    vencimientoAnterior: vencimiento.anterior,
-    vencimientoActual: vencimiento.actual,
-    vencimientoProximo: vencimiento.proximo,
+    cierreAnterior: account.cierreAnterior ?? cierre.anterior,
+    cierreActual: account.cierreActual ?? cierre.actual,
+    cierreProximo: account.cierreProximo ?? cierre.proximo,
+    vencimientoAnterior: account.vencimientoAnterior ?? vencimiento.anterior,
+    vencimientoActual: account.vencimientoActual ?? vencimiento.actual,
+    vencimientoProximo: account.vencimientoProximo ?? vencimiento.proximo,
   };
+}
+
+/**
+ * En qué resumen cae una fecha, prefiriendo los cierres concretos guardados en
+ * la cuenta (por si el banco corrió el cierre unos días) sobre el cálculo por
+ * día del mes. Si la fecha queda fuera del rango que cubren esos cierres
+ * guardados (por ejemplo, la cuota número 8 de un plan de 12), recurre al
+ * cálculo por día del mes para esa cuota puntual.
+ */
+export function statementMonthForDate(date: Date, account: CardDates): string | null {
+  if (!account.closingDay) return null;
+  const guardados = [account.cierreAnterior, account.cierreActual, account.cierreProximo].filter((d): d is Date => !!d).sort((a, b) => a.getTime() - b.getTime());
+  const cierreQueAplica = guardados.find((d) => date <= d);
+  if (cierreQueAplica) {
+    const c = civil(cierreQueAplica);
+    let payMonth = c.m + 1;
+    let payYear = c.y;
+    while (payMonth > 12) {
+      payMonth -= 12;
+      payYear += 1;
+    }
+    return `${payYear}-${String(payMonth).padStart(2, "0")}`;
+  }
+  return statementMonthFor(date, account.closingDay, account.dueDay);
 }

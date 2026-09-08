@@ -74,7 +74,17 @@ async function proximosDelPeriodo(userId: string, start: Date, end: Date): Promi
       select: { type: true, amount: true },
     });
     const usado = txs.reduce((s, t) => s + (t.type === "EXPENSE" ? t.amount : -t.amount), 0) - card.initialBalance;
-    push("Tarjetas", { fecha: due, nombre: card.name, monto: money(Math.max(0, usado), card.currency), pagado: usado <= 0.01 });
+    // Pagada si hay un movimiento "Pago Tarjeta..." de/hacia esta cuenta dentro del período.
+    const pago = await prisma.transaction.findFirst({
+      where: {
+        userId,
+        OR: [{ accountId: card.id }, { toAccountId: card.id }],
+        description: { startsWith: "Pago Tarjeta", mode: "insensitive" },
+        date: { gte: start, lt: end },
+      },
+      select: { id: true },
+    });
+    push("Tarjetas", { fecha: due, nombre: card.name, monto: money(Math.max(0, usado), card.currency), pagado: !!pago });
   }
 
   for (const p of items) {
@@ -95,16 +105,17 @@ async function proximosDelPeriodo(userId: string, start: Date, end: Date): Promi
 
   if (!grupos.size) return "";
 
+  const emojiGrupo: Record<string, string> = { Tarjetas: "💳", Deudas: "🤝", Otros: "🗂️" };
   const orden = [...grupos.keys()].sort((a, b) => (a === "Tarjetas" ? -1 : b === "Tarjetas" ? 1 : a.localeCompare(b, "es")));
   return orden
     .map((grupo) => {
       const filas = grupos.get(grupo)!.sort((a, b) => a.fecha.getTime() - b.fecha.getTime());
       const lineas = filas.map((f) =>
         f.pagado
-          ? ` PAGADO - ${f.nombre} - Vencimiento ${fmtDayMonth(f.fecha)} = ${f.monto}`
+          ? ` ✅ PAGADO - ${f.nombre} - Vencimiento ${fmtDayMonth(f.fecha)} = ${f.monto}`
           : `\t- ${f.nombre} - Vencimiento ${fmtDayMonth(f.fecha)} = ${f.monto}`,
       );
-      return `<b>${grupo}</b>\n${lineas.join("\n")}`;
+      return `<b>${emojiGrupo[grupo] ?? "📁"} ${grupo}</b>\n${lineas.join("\n")}`;
     })
     .join("\n\n");
 }
@@ -143,8 +154,8 @@ export async function handleUpdate(update: TgUpdate) {
 
   if (/^\/saldo/i.test(text)) {
     const accounts = (await accountBalances(user.id)).filter((a) => !a.archived);
-    const lines = accounts.map((a) => `• ${a.name}: <b>${money(a.balance, a.currency)}</b>`);
-    return reply(lines.length ? `<b>Tus saldos</b>\n${lines.join("\n")}` : "Todavía no cargaste ninguna cuenta.");
+    const lines = accounts.map((a) => `${a.balance < 0 ? "🔴" : "🟢"} ${a.name}: <b>${money(a.balance, a.currency)}</b>`);
+    return reply(lines.length ? `💰 <b>Tus saldos</b>\n${lines.join("\n")}` : "Todavía no cargaste ninguna cuenta.");
   }
 
   if (/^\/proximos/i.test(text)) {
@@ -152,7 +163,7 @@ export async function handleUpdate(update: TgUpdate) {
     const c = civilOf(hoy);
     const finMes = fromCivil(c.y, c.m + 1, 1);
     const cuerpo = await proximosDelPeriodo(user.id, hoy, finMes);
-    return reply(cuerpo ? `<b>Este mes</b>\n\n${cuerpo}` : "No tenés nada para registrar este mes.");
+    return reply(cuerpo ? `📅 <b>Este mes</b>\n\n${cuerpo}` : "🎉 No tenés nada para registrar este mes.");
   }
 
   if (/^\/proximomes/i.test(text)) {
@@ -161,7 +172,7 @@ export async function handleUpdate(update: TgUpdate) {
     const inicio = fromCivil(c.y, c.m + 1, 1);
     const fin = fromCivil(c.y, c.m + 2, 1);
     const cuerpo = await proximosDelPeriodo(user.id, inicio, fin);
-    return reply(cuerpo ? `<b>Mes que viene</b>\n\n${cuerpo}` : "No tenés nada para registrar el mes que viene.");
+    return reply(cuerpo ? `📅 <b>Mes que viene</b>\n\n${cuerpo}` : "🎉 No tenés nada para registrar el mes que viene.");
   }
 
   /* ---------- Attachments ---------- */

@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import dynamic from "next/dynamic";
-import { ArrowDownLeft, ArrowUpRight } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, HelpCircle } from "lucide-react";
 import type { Dashboard } from "@/lib/stats";
 import { CARDS } from "@/lib/cards";
 import { money, fmtDate, fmtDayMonth, pct, NATURES, NATURE_COLORS, ACCOUNT_TYPES, accountLabel } from "@/lib/format";
 import { Delta, Empty } from "./ui";
 import Icono from "./Icono";
+import CierresVencimientos from "./CierresVencimientos";
 
 /* Recharts pesa ~400 KB: se carga aparte, ya en el navegador, con un hueco mientras tanto. */
 function box(h: string) {
@@ -129,7 +130,9 @@ function TopGastos({ d }: { d: Dashboard }) {
       {d.topExpenses.map((t) => (
         <li key={t.id} className="flex items-center justify-between gap-2 py-2.5">
           <span className="flex min-w-0 items-center gap-2.5">
-            <span className="h-8 w-8 shrink-0 rounded-full" style={{ background: `${t.color}22`, border: `2px solid ${t.color}` }} />
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full" style={{ background: `${t.color}22`, border: `2px solid ${t.color}` }}>
+              {t.iconBody && <Icono body={t.iconBody} size={15} />}
+            </span>
             <span className="min-w-0">
               <span className="block truncate font-medium">{t.description}</span>
               <span className="block truncate text-xs text-muted">
@@ -241,8 +244,13 @@ function Deudas({ d }: { d: Dashboard }) {
       {d.debts.slice(0, 6).map((x) => (
         <li key={x.name}>
           <div className="mb-1 flex items-center justify-between text-sm">
-            <span className="truncate">{x.name}</span>
-            <b>{money(x.value, d.mainCurrency)}</b>
+            <span className="flex min-w-0 items-center gap-2">
+              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-white" style={{ background: x.color }}>
+                {x.iconBody && <Icono body={x.iconBody} size={11} />}
+              </span>
+              <span className="truncate">{x.name}</span>
+            </span>
+            <b className="shrink-0">{money(x.value, d.mainCurrency)}</b>
           </div>
           <div className="h-2.5 overflow-hidden rounded-full bg-subtle">
             <div className="h-full rounded-full" style={{ width: `${(x.value / max) * 100}%`, background: x.color }} />
@@ -372,11 +380,16 @@ function Movimientos({ d }: { d: Dashboard }) {
       {d.recent.map((t) => (
         <li key={t.id} className="flex items-center justify-between gap-2 py-2.5">
           <span className="flex min-w-0 items-center gap-3">
-            <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: t.category?.color ?? (t.type === "TRANSFER" ? "#3B82F6" : "#9CA3AF") }} />
+            <span
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full"
+              style={{ background: `${t.category?.color ?? (t.type === "TRANSFER" ? "#3B82F6" : "#9CA3AF")}22`, border: `2px solid ${t.category?.color ?? (t.type === "TRANSFER" ? "#3B82F6" : "#9CA3AF")}` }}
+            >
+              {t.iconBody && <Icono body={t.iconBody} size={15} />}
+            </span>
             <span className="min-w-0">
               <span className="block truncate text-sm font-semibold">{t.description || t.category?.name || "Transferencia"}</span>
               <span className="block truncate text-xs text-muted">
-                {accountLabel(t.account, d.accounts)} · {fmtDate(t.date)}
+                #{t.id} · {accountLabel(t.account, d.accounts)} · {fmtDate(t.date)}
               </span>
             </span>
           </span>
@@ -453,6 +466,8 @@ export default function DashboardCards({ data, cards, cardsMobile }: Props) {
         return <Movimientos d={data} />;
       case "cuentas":
         return <Cuentas d={data} />;
+      case "cierres-tarjetas":
+        return <CierresVencimientos cards={data.accounts.filter((a) => a.type === "CREDIT_CARD")} />;
       default:
         return null;
     }
@@ -464,7 +479,12 @@ export default function DashboardCards({ data, cards, cardsMobile }: Props) {
       if (!def) return null;
       return (
         <section key={id} className={`card ${def.span === 3 ? "md:col-span-2 xl:col-span-3" : def.span === 2 ? "md:col-span-2" : ""}`}>
-          <h2 className="font-bold">{def.title}</h2>
+          <h2 className="flex items-center gap-1.5 font-bold">
+            {def.title}
+            <span title={def.explanation}>
+              <HelpCircle size={13} className="shrink-0 cursor-help text-muted" />
+            </span>
+          </h2>
           <p className="mb-1 text-xs text-muted">{def.question}</p>
           {body(id)}
         </section>

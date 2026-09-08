@@ -56,6 +56,14 @@ model Account {
   creditLimit    Float? // CREDIT_CARD only
   closingDay     Int? // CREDIT_CARD: statement closing day of month
   dueDay         Int? // CREDIT_CARD: payment due day of month
+  // CREDIT_CARD: fechas concretas, editables a mano. Mientras estén vacías se calculan en vivo
+  // desde closingDay/dueDay; una vez cargadas, son la fuente de verdad hasta el próximo rollover.
+  cierreAnterior      DateTime?
+  cierreActual        DateTime?
+  cierreProximo       DateTime?
+  vencimientoAnterior DateTime?
+  vencimientoActual   DateTime?
+  vencimientoProximo  DateTime?
   lastNotifiedOn DateTime? // dedupes the card due-date reminder
   createdAt      DateTime          @default(now())
   transactions   Transaction[]     @relation("AccountTx")

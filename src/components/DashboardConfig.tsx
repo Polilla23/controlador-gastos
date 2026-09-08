@@ -85,6 +85,7 @@ export default function DashboardConfig({ cards, cardsMobile, accounts }: { card
                     <div className="min-w-0">
                       <div className="truncate text-sm font-semibold">{c.title}</div>
                       <div className="truncate text-xs text-muted">{c.question}</div>
+                      <div className="mt-0.5 text-xs text-muted opacity-80">{c.explanation}</div>
                     </div>
                     <button type="button" onClick={() => setActiveSel((s) => s.filter((x) => x !== c.id))} className="btn-icon shrink-0 hover:text-red-500" aria-label="Quitar">
                       <Trash2 size={15} />

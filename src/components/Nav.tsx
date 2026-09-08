@@ -42,7 +42,7 @@ const ITEMS = [
   { href: "/filtros", label: "Filtros", icon: Filter },
   { href: "/monedas", label: "Monedas", icon: Coins },
   { href: "/reglas", label: "Reglas", icon: Wand2 },
-  { href: "/perfil", label: "Perfil y Telegram", icon: UserCircle },
+  { href: "/perfil", label: "Configuraciones", icon: UserCircle },
 ];
 
 /** Items promoted to the mobile bottom bar; the rest live behind the menu. */

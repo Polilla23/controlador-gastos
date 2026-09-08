@@ -11,6 +11,7 @@ import DashboardCards from "@/components/DashboardCards";
 import DashboardConfig from "@/components/DashboardConfig";
 import DashboardTagFilter from "@/components/DashboardTagFilter";
 import SavedFilters from "@/components/SavedFilters";
+import StickyFilters from "@/components/StickyFilters";
 import Modal from "@/components/Modal";
 import TransactionForm from "@/components/TransactionForm";
 
@@ -32,10 +33,11 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
 
   return (
     <>
+      <StickyFilters scope="DASHBOARD" />
       <PageHeader title="Resumen" subtitle="Tu situación financiera de un vistazo">
         <RangePicker range={range} />
         <DashboardTagFilter tags={tags} selected={tagId} />
-        <SavedFilters filtros={filtros.map((f) => ({ id: f.id, name: f.name, query: f.query as Record<string, string> }))} scope="DASHBOARD" />
+        <SavedFilters filtros={filtros.map((f) => ({ id: f.id, name: f.name, query: f.query as Record<string, string | string[]> }))} scope="DASHBOARD" />
         <DashboardConfig cards={prefs.cards} cardsMobile={prefs.cardsMobile} accounts={data.accounts.map((a) => ({ id: a.id, name: a.name, currency: a.currency, color: a.color, selected: a.selected }))} />
         <Modal title="Nuevo registro" trigger={<><Plus size={16} /> <span className="hidden sm:inline">Nuevo registro</span></>}>
           <TransactionForm accounts={data.accounts} categories={categories} tags={tags} quotes={quotes} />

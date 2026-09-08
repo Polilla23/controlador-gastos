@@ -2,6 +2,7 @@ import { prisma } from "./prisma";
 import { monthKey, monthLabel, previousRange, type Range } from "./format";
 import { addDays, fromCivil, civil, startOfDay, startOfMonth } from "./tz";
 import { icono } from "./iconos";
+import { efectoEnCajaTransaccion, portfolioValueByAccount } from "./inversiones";
 
 export type Slice = { id: string; name: string; value: number; color: string; iconBody: string | null; children: Slice[] };
 
@@ -16,7 +17,7 @@ export async function loadDashboard(userId: string, range: Range, accountIds?: n
   const now = new Date();
   const prev = previousRange(range);
 
-  const [allAccounts, txs, planned, plans] = await Promise.all([
+  const [allAccounts, txs, planned, plans, investMoves] = await Promise.all([
     prisma.account.findMany({ where: { userId, archived: false }, orderBy: [{ sortOrder: "asc" }, { id: "asc" }] }),
     prisma.transaction.findMany({
       where: tagId ? { userId, tags: { some: { id: tagId } } } : { userId },
@@ -27,6 +28,7 @@ export async function loadDashboard(userId: string, range: Range, accountIds?: n
         toAmount: true,
         currency: true,
         date: true,
+        createdAt: true,
         description: true,
         accountId: true,
         toAccountId: true,
@@ -42,6 +44,7 @@ export async function loadDashboard(userId: string, range: Range, accountIds?: n
       include: { account: true, category: true, transactions: { select: { id: true, amount: true, date: true, installmentNo: true } } },
       orderBy: { startDate: "desc" },
     }),
+    prisma.investMove.findMany({ where: { userId }, select: { type: true, amount: true, accountId: true, transactionId: true } }),
   ]);
 
   const selected = accountIds?.length ? allAccounts.filter((a) => accountIds.includes(a.id)) : allAccounts.filter((a) => a.includeInStats);
@@ -63,6 +66,15 @@ export async function loadDashboard(userId: string, range: Range, accountIds?: n
     return bal;
   };
   const balances = balanceAt(now);
+  // Saldo "de hoy": se le suma el efecto de los movimientos de inversión y el valor actual del
+  // portafolio, para que coincida con lo que muestra la página Inversiones. No se hace lo mismo
+  // para los puntos históricos de la tendencia: no hay precios históricos guardados.
+  for (const m of investMoves) balances.set(m.accountId, (balances.get(m.accountId) ?? 0) + efectoEnCajaTransaccion(m));
+  const hayInversion = allAccounts.some((a) => a.type === "INVESTMENT");
+  const portafolio = hayInversion ? await portfolioValueByAccount(userId) : new Map<number, number>();
+  for (const a of allAccounts) {
+    if (a.type === "INVESTMENT") balances.set(a.id, (balances.get(a.id) ?? 0) + (portafolio.get(a.id) ?? 0));
+  }
   const accounts = allAccounts.map((a) => ({ ...a, balance: balances.get(a.id) ?? 0, selected: ids.has(a.id) }));
   const scoped = accounts.filter((a) => ids.has(a.id));
 
@@ -161,6 +173,7 @@ export async function loadDashboard(userId: string, range: Range, accountIds?: n
       account: t.account.name,
       date: t.date,
       color: t.category?.color ?? "#9CA3AF",
+      iconBody: t.category?.icon ? (icono(t.category.icon)?.body ?? null) : null,
     }));
 
   /* ---------- Credit cards ---------- */
@@ -192,11 +205,11 @@ export async function loadDashboard(userId: string, range: Range, accountIds?: n
   };
 
   /* ---------- Debt ratio (fixed "must pay" expenses vs income) ---------- */
-  const debtRows = new Map<string, { name: string; value: number; color: string }>();
+  const debtRows = new Map<string, { name: string; value: number; color: string; iconBody: string | null }>();
   for (const t of cur.filter((t) => t.type === "EXPENSE" && (t.category?.nature ?? "NEED") === "MUST")) {
     const c = t.category;
     const key = c ? String(c.id) : "none";
-    const row = debtRows.get(key) ?? { name: c?.name ?? "Sin categoría", value: 0, color: c?.color ?? "#9CA3AF" };
+    const row = debtRows.get(key) ?? { name: c?.name ?? "Sin categoría", value: 0, color: c?.color ?? "#9CA3AF", iconBody: c?.icon ? (icono(c.icon)?.body ?? null) : null };
     row.value += t.amount;
     debtRows.set(key, row);
   }
@@ -229,7 +242,12 @@ export async function loadDashboard(userId: string, range: Range, accountIds?: n
     })
     .filter((p) => p.paidCount < p.installments);
 
-  const recent = txs.slice(0, 8);
+  // Por cuándo se cargó (createdAt), no por la fecha del movimiento: si no, una cuota con
+  // fecha futura tapa algo que se acaba de cargar recién.
+  const recent = [...txs]
+    .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+    .slice(0, 8)
+    .map((t) => ({ ...t, iconBody: t.category?.icon ? (icono(t.category.icon)?.body ?? null) : null }));
 
   return {
     range,

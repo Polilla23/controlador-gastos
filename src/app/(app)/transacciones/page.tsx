@@ -9,8 +9,9 @@ import RangePicker from "@/components/RangePicker";
 import Modal from "@/components/Modal";
 import TransactionForm from "@/components/TransactionForm";
 import TransactionsTable from "@/components/TransactionsTable";
-import CategorySelect from "@/components/CategorySelect";
 import SavedFilters from "@/components/SavedFilters";
+import MultiSelectFilter from "@/components/MultiSelectFilter";
+import StickyFilters from "@/components/StickyFilters";
 import { cotizaciones } from "@/lib/cotizaciones";
 
 type SP = Record<string, string | string[] | undefined>;
@@ -23,14 +24,18 @@ export default async function TransaccionesPage({ searchParams }: { searchParams
   const range = resolveRange(sp as Record<string, string | undefined>);
 
   const cuentaIds = asList(sp.cuenta).map(Number).filter((n) => !Number.isNaN(n));
+  const categoriaIds = asList(sp.categoria).map(Number).filter((n) => !Number.isNaN(n));
+  const etiquetaIds = asList(sp.etiqueta).map(Number).filter((n) => !Number.isNaN(n));
   const resumen = asOne(sp.resumen);
 
   const where: Prisma.TransactionWhereInput = { userId, date: { gte: range.start, lt: range.end } };
   if (sp.tipo) where.type = asOne(sp.tipo);
   if (cuentaIds.length === 1) where.accountId = cuentaIds[0];
   else if (cuentaIds.length > 1) where.accountId = { in: cuentaIds };
-  if (sp.categoria) where.categoryId = Number(asOne(sp.categoria));
-  if (sp.etiqueta) where.tags = { some: { id: Number(asOne(sp.etiqueta)) } };
+  if (categoriaIds.length === 1) where.categoryId = categoriaIds[0];
+  else if (categoriaIds.length > 1) where.categoryId = { in: categoriaIds };
+  if (etiquetaIds.length === 1) where.tags = { some: { id: etiquetaIds[0] } };
+  else if (etiquetaIds.length > 1) where.tags = { some: { id: { in: etiquetaIds } } };
   if (resumen) where.statementMonth = resumen;
   if (sp.q) {
     const q = asOne(sp.q)!;
@@ -86,9 +91,10 @@ export default async function TransaccionesPage({ searchParams }: { searchParams
 
   return (
     <>
+      <StickyFilters scope="TX" />
       <PageHeader title="Transacciones" subtitle={`${rows.length} registros · ${range.label}`}>
         <RangePicker range={range} />
-        <SavedFilters filtros={filtros.map((f) => ({ id: f.id, name: f.name, query: f.query as Record<string, string> }))} scope="TX" />
+        <SavedFilters filtros={filtros.map((f) => ({ id: f.id, name: f.name, query: f.query as Record<string, string | string[]> }))} scope="TX" />
         <Modal title="Nuevo registro" trigger={<><Plus size={16} /> <span className="hidden sm:inline">Nuevo</span></>}>
           <TransactionForm accounts={accounts} categories={categories} tags={tags} counterparties={counterparties} quotes={quotes} />
         </Modal>
@@ -108,7 +114,7 @@ export default async function TransaccionesPage({ searchParams }: { searchParams
         </div>
       )}
 
-      <form className="card mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+      <form className="card mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-7 xl:items-end">
         <input type="hidden" name="preset" value={range.preset} />
         <input type="hidden" name="ancla" value={range.anchor} />
         {range.preset === "rango" && (
@@ -135,21 +141,22 @@ export default async function TransaccionesPage({ searchParams }: { searchParams
             ))}
           </select>
         </div>
-        <div>
-          <label className="label">Cuenta</label>
-          <select name="cuenta" className="input" multiple size={Math.min(4, Math.max(2, accounts.length))} defaultValue={cuentaIds.map(String)}>
-            {accounts.map((a) => (
-              <option key={a.id} value={a.id}>
-                {accountLabel(a, accounts)}
-              </option>
-            ))}
-          </select>
-          <p className="mt-1 text-xs text-muted">Ctrl/Cmd + clic para elegir varias. Vacío = todas.</p>
-        </div>
-        <div>
-          <label className="label">Categoría</label>
-          <CategorySelect categories={categories} name="categoria" defaultValue={asOne(sp.categoria)} noneLabel="Todas" />
-        </div>
+        <MultiSelectFilter
+          name="cuenta"
+          label="Cuenta"
+          initial={cuentaIds}
+          options={accounts.map((a) => ({ id: a.id, label: accountLabel(a, accounts) }))}
+        />
+        <MultiSelectFilter
+          name="categoria"
+          label="Categoría"
+          initial={categoriaIds}
+          options={categories
+            .slice()
+            .sort((a, b) => a.name.localeCompare(b.name, "es"))
+            .map((c) => ({ id: c.id, label: c.parentId ? `${categories.find((p) => p.id === c.parentId)?.name ?? ""} › ${c.name}` : c.name }))}
+        />
+        <MultiSelectFilter name="etiqueta" label="Etiqueta" initial={etiquetaIds} options={tags.map((t) => ({ id: t.id, label: `#${t.name}` }))} />
         {statementMonths.length > 0 && (
           <div>
             <label className="label">Resumen de tarjeta</label>
@@ -163,22 +170,9 @@ export default async function TransaccionesPage({ searchParams }: { searchParams
             </select>
           </div>
         )}
-        <div className="flex items-end gap-2">
-          <div className="flex-1">
-            <label className="label">Etiqueta</label>
-            <select name="etiqueta" className="input" defaultValue={asOne(sp.etiqueta) ?? ""}>
-              <option value="">Todas</option>
-              {tags.map((t) => (
-                <option key={t.id} value={t.id}>
-                  #{t.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <button type="submit" className="btn-primary">
-            Filtrar
-          </button>
-        </div>
+        <button type="submit" className="btn-primary">
+          Filtrar
+        </button>
       </form>
 
       <TransactionsTable rows={rows} accounts={accounts} categories={categories} tags={tags} quotes={quotes} />

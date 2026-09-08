@@ -1,11 +1,13 @@
 import { prisma } from "./prisma";
-import { efectoEnCajaTransaccion } from "./inversiones";
+import { efectoEnCajaTransaccion, portfolioValueByAccount } from "./inversiones";
 
 /**
  * Balance = initialBalance + incomes - expenses - transfers out + transfers in
  * (only up to today), más los movimientos de inversión de las cuentas de tipo
  * INVESTMENT (compras/ventas/rentas/comisiones, y aportes/retiros que no
- * tengan ya una transferencia vinculada, para no contarlos dos veces).
+ * tengan ya una transferencia vinculada, para no contarlos dos veces), más el
+ * valor actual del portafolio — así el saldo de una cuenta de inversión es
+ * "efectivo + portafolio", igual que en la página Inversiones.
  */
 export async function accountBalances(userId: string) {
   const [accounts, txs, moves] = await Promise.all([
@@ -27,5 +29,12 @@ export async function accountBalances(userId: string) {
     }
   }
   for (const m of moves) bal.set(m.accountId, (bal.get(m.accountId) ?? 0) + efectoEnCajaTransaccion(m));
+
+  const hayInversion = accounts.some((a) => a.type === "INVESTMENT");
+  const portafolio = hayInversion ? await portfolioValueByAccount(userId) : new Map<number, number>();
+  for (const a of accounts) {
+    if (a.type === "INVESTMENT") bal.set(a.id, (bal.get(a.id) ?? 0) + (portafolio.get(a.id) ?? 0));
+  }
+
   return accounts.map((a) => ({ ...a, balance: bal.get(a.id) ?? 0 }));
 }

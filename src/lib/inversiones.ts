@@ -87,8 +87,12 @@ export async function cargarInversiones(userId: string) {
         const costoDeLoQueQueda = costoPromedio != null ? redondear(costoPromedio * cantidad) : null;
 
         const valorActual = h.lastPrice != null ? redondear(h.lastPrice * cantidad) : null;
-        const ganancia = valorActual != null && costoDeLoQueQueda != null ? redondear(valorActual - costoDeLoQueQueda + rentas) : null;
-        const gananciaPct = ganancia != null && costoDeLoQueQueda ? Math.round((ganancia / costoDeLoQueQueda) * 100) : null;
+        // Ganancia total = lo recuperado al vender + lo que queda vale hoy + rentas cobradas − lo invertido.
+        // Cuando cantidad=0 (posición cerrada del todo) no le queda valor de mercado, sin importar si se cargó un precio.
+        const valorActualParaGanancia = cantidad === 0 ? 0 : valorActual;
+        const costoParaGanancia = cantidad === 0 ? 0 : costoDeLoQueQueda;
+        const ganancia = valorActualParaGanancia != null && costoParaGanancia != null ? redondear(recuperado + valorActualParaGanancia - costoParaGanancia + rentas - invertido) : null;
+        const gananciaPct = ganancia != null && invertido ? Math.round((ganancia / invertido) * 100) : null;
 
         return { ...h, cantidad, invertido: redondear(invertido), recuperado: redondear(recuperado), rentas: redondear(rentas), costoPromedio, costoDeLoQueQueda, valorActual, ganancia, gananciaPct, movimientos: movs.length };
       });
@@ -140,4 +144,14 @@ export async function cargarInversiones(userId: string) {
       .map(([kind, valor]) => ({ kind, nombre: INSTRUMENTOS[kind] ?? kind, valor: redondear(valor) }))
       .sort((a, b) => b.valor - a.valor),
   };
+}
+
+/**
+ * Cuánto vale hoy el portafolio (tenencias abiertas) de cada cuenta de inversión.
+ * Lo usan `accountBalances()` y el Resumen para que el saldo de una cuenta de
+ * inversión sea "efectivo + portafolio" en todos lados, no sólo el efectivo.
+ */
+export async function portfolioValueByAccount(userId: string): Promise<Map<number, number>> {
+  const { cuentas } = await cargarInversiones(userId);
+  return new Map(cuentas.map((c) => [c.id, c.valorCartera]));
 }
