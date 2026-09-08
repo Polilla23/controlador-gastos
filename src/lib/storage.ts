@@ -30,6 +30,12 @@ export async function signedUrl(path: string, seconds = 600) {
   return data.signedUrl;
 }
 
+export async function downloadStored(path: string): Promise<Buffer> {
+  const { data, error } = await supabaseAdmin().storage.from(BUCKET).download(path);
+  if (error || !data) throw new Error("No se pudo leer el archivo guardado");
+  return Buffer.from(await data.arrayBuffer());
+}
+
 export async function removeStored(path: string) {
   await supabaseAdmin().storage.from(BUCKET).remove([path]);
 }

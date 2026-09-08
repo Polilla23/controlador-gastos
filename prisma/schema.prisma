@@ -471,18 +471,20 @@ model Attachment {
 /* ---------- Importación de resúmenes de tarjeta ---------- */
 
 /// Un PDF de resumen de tarjeta subido para convertir sus consumos en gastos.
-/// Nunca crea Transaction directamente: primero queda PENDING con sus items
-/// (previsualización, ya con reglas aplicadas), y sólo al confirmar se generan
-/// los movimientos reales.
+/// Nunca crea Transaction directamente: primero queda AWAITING_ACCOUNT (recién
+/// subido, todavía sin saber a qué tarjeta corresponde -- pasa por Telegram,
+/// donde el PDF y la respuesta con la cuenta llegan en mensajes separados) o
+/// PENDING (ya con sus items, previsualización con reglas aplicadas), y sólo
+/// al confirmar se generan los movimientos reales.
 model StatementImport {
   id               Int                   @id @default(autoincrement())
   userId           String
   user             User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
-  accountId        Int
-  account          Account               @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  accountId        Int?
+  account          Account?              @relation(fields: [accountId], references: [id], onDelete: Cascade)
   bank             String // SANTANDER | ICBC_VISA | ICBC_MASTERCARD
   source           String                @default("TELEGRAM") // TELEGRAM | WEB
-  status           String                @default("PENDING") // PENDING | CONFIRMED | DISCARDED
+  status           String                @default("AWAITING_ACCOUNT") // AWAITING_ACCOUNT | PENDING | CONFIRMED | DISCARDED
   cardLastFour     String?
   periodEnd        DateTime? // cierre actual declarado por el resumen
   dueDate          DateTime? // vencimiento actual declarado por el resumen

@@ -4,6 +4,7 @@ import { money, fmtDate, fmtDayMonth } from "./format";
 import { APP_TZ, addDays, civil as civilOf, fromCivil, startOfDay } from "./tz";
 import { cargarPresupuestos } from "./presupuestos";
 import { accountBalances } from "./balances";
+import { iniciarCarga, elegirCuenta, confirmarImportacion, descartarImportacion, tarjetasDisponibles, nombreBanco } from "./statement-imports";
 
 const api = (method: string) => `https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/${method}`;
 
@@ -14,6 +15,41 @@ export async function sendText(chatId: string, text: string) {
     body: JSON.stringify({ chat_id: chatId, text, parse_mode: "HTML", disable_web_page_preview: true }),
   });
   if (!res.ok) console.error("telegram sendMessage failed", await res.text());
+}
+
+/** Manda un mensaje con botones inline; cada fila es un array de {text, data}. */
+async function sendButtons(chatId: string, text: string, rows: { text: string; data: string }[][]) {
+  const res = await fetch(api("sendMessage"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      chat_id: chatId,
+      text,
+      parse_mode: "HTML",
+      reply_markup: { inline_keyboard: rows.map((row) => row.map((b) => ({ text: b.text, callback_data: b.data }))) },
+    }),
+  });
+  if (!res.ok) console.error("telegram sendMessage(buttons) failed", await res.text());
+}
+
+/** Reemplaza el texto de un mensaje ya mandado (y le saca los botones). */
+async function editText(chatId: string, messageId: number | undefined, text: string) {
+  if (!messageId) return sendText(chatId, text);
+  const res = await fetch(api("editMessageText"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ chat_id: chatId, message_id: messageId, text, parse_mode: "HTML" }),
+  });
+  if (!res.ok) console.error("telegram editMessageText failed", await res.text());
+}
+
+/** Hay que responder todo callback_query o el botón queda "cargando" en el celular del usuario. */
+async function answerCallback(callbackQueryId: string, text?: string) {
+  await fetch(api("answerCallbackQuery"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ callback_query_id: callbackQueryId, text }),
+  });
 }
 
 async function downloadFile(fileId: string): Promise<Buffer> {
@@ -32,6 +68,11 @@ export type TgUpdate = {
     caption?: string;
     photo?: { file_id: string; file_size?: number }[];
     document?: { file_id: string; mime_type?: string; file_name?: string };
+  };
+  callback_query?: {
+    id: string;
+    data?: string;
+    message?: { chat: { id: number }; message_id: number };
   };
 };
 
@@ -109,7 +150,61 @@ async function proximosDelPeriodo(userId: string, start: Date, end: Date): Promi
     .join("\n\n");
 }
 
+/** Botones de "¿a qué tarjeta corresponde?" y "¿confirmás la importación?". */
+async function handleCallback(cq: NonNullable<TgUpdate["callback_query"]>) {
+  const chatId = cq.message ? String(cq.message.chat.id) : null;
+  const messageId = cq.message?.message_id;
+  const data = cq.data ?? "";
+  if (!chatId) return answerCallback(cq.id);
+
+  const user = await prisma.user.findUnique({ where: { telegramChatId: chatId } });
+  if (!user) return answerCallback(cq.id, "Sesión inválida, volvé a vincular la cuenta.");
+
+  const mAcc = data.match(/^simp_acct:(\d+):(\d+)$/);
+  if (mAcc) {
+    const [, importId, accountId] = mAcc;
+    const res = await elegirCuenta(user.id, Number(importId), Number(accountId));
+    await answerCallback(cq.id);
+    if (!res.ok) return editText(chatId, messageId, `⚠️ ${res.motivo}`);
+
+    const resumenTxt = [
+      `Se detectaron <b>${res.totalLineas}</b> consumos.`,
+      res.pendientes ? `✅ ${res.pendientes} listos para importar` : null,
+      res.duplicados ? `♻️ ${res.duplicados} ya estaban importados (se omiten)` : null,
+      res.omitidos ? `⚠️ ${res.omitidos} en otra moneda, se importan aparte más adelante` : null,
+    ]
+      .filter(Boolean)
+      .join("\n");
+
+    if (!res.pendientes) return editText(chatId, messageId, `${resumenTxt}\n\nNo hay nada nuevo para importar.`);
+    return sendButtons(chatId, resumenTxt, [
+      [
+        { text: "✅ Confirmar e importar", data: `simp_ok:${importId}` },
+        { text: "✖️ Cancelar", data: `simp_no:${importId}` },
+      ],
+    ]);
+  }
+
+  const mOk = data.match(/^simp_ok:(\d+)$/);
+  if (mOk) {
+    const res = await confirmarImportacion(user.id, Number(mOk[1]));
+    await answerCallback(cq.id);
+    return editText(chatId, messageId, res.ok ? `✅ Importé ${res.creados} gasto${res.creados === 1 ? "" : "s"}.` : `⚠️ ${res.motivo}`);
+  }
+
+  const mNo = data.match(/^simp_no:(\d+)$/);
+  if (mNo) {
+    await descartarImportacion(user.id, Number(mNo[1]));
+    await answerCallback(cq.id, "Cancelado");
+    return editText(chatId, messageId, "Importación cancelada.");
+  }
+
+  return answerCallback(cq.id);
+}
+
 export async function handleUpdate(update: TgUpdate) {
+  if (update.callback_query) return handleCallback(update.callback_query);
+
   const msg = update.message;
   if (!msg) return;
   const chatId = String(msg.chat.id);
@@ -168,6 +263,22 @@ export async function handleUpdate(update: TgUpdate) {
   const photo = msg.photo?.slice(-1)[0]; // last = highest resolution
   const doc = msg.document;
   const id = extractId(text);
+
+  // Un PDF sin "#123" no es un comprobante para adjuntar: es un resumen de
+  // tarjeta para importar. Si tiene "#123" sigue el camino normal de abajo.
+  if (doc?.mime_type === "application/pdf" && id == null) {
+    const data = await downloadFile(doc.file_id);
+    const res = await iniciarCarga({ userId: user.id, source: "TELEGRAM", buffer: data });
+    if (!res.ok) return reply(`No pude leer este PDF como resumen de tarjeta: ${res.motivo}`);
+
+    const cuentas = await tarjetasDisponibles(user.id);
+    if (!cuentas.length) return reply("No tenés ninguna tarjeta de crédito cargada todavía. Creála en la app y volvé a mandar el resumen.");
+
+    const botones = cuentas.map((c) => [{ text: c.name, data: `simp_acct:${res.importId}:${c.id}` }]);
+    const marca = nombreBanco(res.bank);
+    const detalle = res.cardLastFour ? `${marca} terminada en ${res.cardLastFour}` : marca;
+    return sendButtons(chatId, `📄 Encontré un resumen de <b>${detalle}</b> con <b>${res.totalLineas}</b> consumos.\n\n¿A qué tarjeta corresponde?`, botones);
+  }
 
   if (!photo && !doc) {
     if (id == null) return reply('Mandame una foto o PDF con el número del registro en el texto, por ejemplo <code>#123</code>.');

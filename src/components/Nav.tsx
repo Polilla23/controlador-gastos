@@ -21,6 +21,7 @@ import {
   Users,
   LineChart,
   Filter,
+  Upload,
   X,
 } from "lucide-react";
 import clsx from "clsx";
@@ -37,6 +38,7 @@ const ITEMS = [
   { href: "/compartidos", label: "Gastos compartidos", icon: Users },
   { href: "/deudas", label: "Deudas", icon: HandCoins },
   { href: "/cuotas", label: "Cuotas", icon: CalendarClock },
+  { href: "/importar", label: "Importar resumen", icon: Upload },
   { href: "/categorias", label: "Categorías", icon: Shapes },
   { href: "/etiquetas", label: "Etiquetas", icon: Tags },
   { href: "/filtros", label: "Filtros", icon: Filter },
