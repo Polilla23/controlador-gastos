@@ -144,10 +144,17 @@ export async function elegirCuenta(userId: string, importId: number, accountId: 
       else if (status === "DUPLICATE") duplicados++;
       else omitidos++;
 
+      // Para una línea en cuotas, la fecha impresa es la de la compra
+      // original (a veces de meses atrás), no la de este resumen -- usarla tal
+      // cual haría caer el statementMonth en el mes equivocado. Igual que el
+      // resto de la app con las cuotas cargadas a mano (ver addMonths(date, i)
+      // en saveTransaction), la fecha de cada cuota es la de su propio período.
+      const fechaEfectiva = linea.cuota && resumen.cierreActual ? resumen.cierreActual : linea.fecha;
+
       await tx.statementImportItem.create({
         data: {
           importId,
-          date: linea.fecha,
+          date: fechaEfectiva,
           rawDescription: linea.descripcion,
           resolvedDescription: efecto.description ?? null,
           amount: linea.monto,
