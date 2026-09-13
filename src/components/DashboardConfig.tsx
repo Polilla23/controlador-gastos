@@ -31,7 +31,7 @@ export default function DashboardConfig({ cards, cardsMobile, accounts }: { card
 
   return (
     <>
-      <button type="button" className="btn-ghost" onClick={() => setOpen(true)}>
+      <button type="button" className="btn-ghost h-9" onClick={() => setOpen(true)}>
         <SlidersHorizontal size={16} /> <span className="hidden sm:inline">Personalizar</span>
       </button>
 

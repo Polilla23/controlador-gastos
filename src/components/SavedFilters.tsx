@@ -35,7 +35,7 @@ export default function SavedFilters({ filtros, scope }: { filtros: FiltroGuarda
   };
 
   return (
-    <div className="flex items-center gap-1.5 rounded-xl border border-line bg-card px-2 py-1.5">
+    <div className="flex h-9 items-center gap-1.5 rounded-xl border border-line bg-card px-2">
       <Filter size={15} className="text-muted" />
       <span className="sr-only">Filtros guardados</span>
       <select className="max-w-36 bg-transparent text-xs font-semibold text-fg outline-none" value={elegido} onChange={(e) => aplicar(e.target.value)}>

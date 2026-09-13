@@ -23,7 +23,7 @@ export default function RangePicker({ range }: { range: Range }) {
 
   return (
     <div className="flex w-full flex-wrap items-center justify-center gap-2 sm:w-auto sm:justify-start">
-      <div className="flex items-center gap-0.5 rounded-xl border border-line bg-card p-1">
+      <div className="flex h-9 items-center gap-0.5 rounded-xl border border-line bg-card px-1">
         {PRESETS.map((p) => (
           <button
             key={p.key}
@@ -36,7 +36,7 @@ export default function RangePicker({ range }: { range: Range }) {
         ))}
       </div>
 
-      <div className="flex items-center gap-1 rounded-xl border border-line bg-card p-1">
+      <div className="flex h-9 items-center gap-1 rounded-xl border border-line bg-card px-1">
         <button type="button" onClick={() => go(shiftRange(range, -1))} disabled={range.preset === "rango"} className="btn-icon disabled:opacity-30" aria-label="Período anterior">
           <ChevronLeft size={16} />
         </button>

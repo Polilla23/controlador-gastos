@@ -21,7 +21,7 @@ export default function DashboardTagFilter({ tags, selected }: { tags: { id: num
   const activa = tags.find((t) => t.id === selected);
 
   return (
-    <label className="flex items-center gap-1.5 rounded-xl border border-line bg-card px-2 py-1.5">
+    <label className="flex h-9 items-center gap-1.5 rounded-xl border border-line bg-card px-2">
       <TagIcon size={15} style={{ color: activa?.color ?? "var(--muted)" }} />
       <span className="sr-only">Filtrar por etiqueta</span>
       <select

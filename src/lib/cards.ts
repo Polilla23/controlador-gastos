@@ -79,7 +79,7 @@ export const CARDS: CardDef[] = [
     title: "Pronóstico de saldo",
     question: "¿Me va a alcanzar para pagar mis cuentas?",
     explanation:
-      "Parte del saldo actual, resta lo planificado a pagar y suma lo planificado a cobrar dentro de 30 días, y le agrega el promedio diario de ingresos/egresos de los últimos 90 días, proyectado a 30 días.",
+      "Parte del saldo actual, resta lo planificado a pagar y suma lo planificado a cobrar durante el mes calendario siguiente al que estás mirando en el Resumen (si mirás septiembre, proyecta todo octubre), y le agrega el promedio diario de ingresos/egresos de los últimos 90 días, proyectado a los días de ese mes.",
     span: 2,
   },
   {

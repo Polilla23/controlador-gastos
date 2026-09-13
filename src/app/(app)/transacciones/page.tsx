@@ -92,7 +92,7 @@ export default async function TransaccionesPage({ searchParams }: { searchParams
   return (
     <>
       <StickyFilters scope="TX" />
-      <PageHeader title="Transacciones" subtitle={`${rows.length} registros · ${range.label}`}>
+      <PageHeader title="Transacciones" subtitle={`${rows.length} registros · ${range.label}`} sticky>
         <RangePicker range={range} />
         <SavedFilters filtros={filtros.map((f) => ({ id: f.id, name: f.name, query: f.query as Record<string, string | string[]> }))} scope="TX" />
         <Modal title="Nuevo registro" trigger={<><Plus size={16} /> <span className="hidden sm:inline">Nuevo</span></>}>

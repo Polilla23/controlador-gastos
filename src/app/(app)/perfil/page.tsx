@@ -1,10 +1,12 @@
 import Link from "next/link";
-import { Bell, CalendarDays, MessageCircle, RefreshCw, Send, Smartphone, Trash2, Unlink, Upload } from "lucide-react";
+import { Bell, CalendarDays, KeyRound, MessageCircle, RefreshCw, Send, Smartphone, Trash2, Unlink, Upload, UserRound } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { disconnectGoogleCalendar, limpiarCalendariosDuplicados, regenerateTelegramCode, saveNotificationPrefs, sincronizarGoogleCalendarAhora, unlinkTelegram } from "@/lib/actions";
+import { changePassword, removeAvatar, updateProfile } from "@/lib/actions-perfil";
 import { fmtDate } from "@/lib/format";
 import { googleConfigured } from "@/lib/google-calendar";
+import { signedUrl } from "@/lib/storage";
 import PageHeader from "@/components/PageHeader";
 import ConfirmButton from "@/components/ConfirmButton";
 import ActionForm from "@/components/ActionForm";
@@ -14,6 +16,7 @@ import DangerZone from "@/components/DangerZone";
 export default async function PerfilPage() {
   const user = await requireUser();
   const bot = process.env.NEXT_PUBLIC_TELEGRAM_BOT;
+  const avatarUrl = user.avatarPath ? await signedUrl(user.avatarPath, 3600).catch(() => null) : null;
   const recent = await prisma.attachment.findMany({
     where: { source: "TELEGRAM", transaction: { userId: user.id } },
     orderBy: { createdAt: "desc" },
@@ -25,9 +28,69 @@ export default async function PerfilPage() {
     <>
       <PageHeader title="Configuraciones" subtitle={user.email} />
 
-      <h2 className="mb-2 text-lg font-bold">Programaciones</h2>
-      <div className="grid gap-4 lg:grid-cols-2">
-        <section className="card">
+      <section className="mb-6 rounded-2xl border border-line bg-subtle/60 p-4 sm:p-5">
+        <h2 className="mb-3 text-lg font-bold">Perfil</h2>
+        <div className="grid gap-4 lg:grid-cols-2">
+          <div className="card">
+            <h2 className="mb-1 flex items-center gap-2 font-bold">
+              <UserRound size={18} className="text-brand-500" /> Datos personales
+            </h2>
+            <p className="mb-3 text-sm text-muted">
+              Correo: <b className="text-fg">{user.email}</b>
+            </p>
+            <ActionForm action={updateProfile} submitLabel="Guardar">
+              <div className="flex items-center gap-3">
+                {avatarUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={avatarUrl} alt="" className="h-14 w-14 shrink-0 rounded-full object-cover" />
+                ) : (
+                  <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-subtle text-muted">
+                    <UserRound size={22} />
+                  </span>
+                )}
+                <div className="min-w-0 flex-1">
+                  <label className="label">Foto de perfil</label>
+                  <input name="avatar" type="file" accept="image/png,image/jpeg,image/webp" className="input text-xs file:mr-2 file:rounded-lg file:border-0 file:bg-subtle file:px-2 file:py-1 file:text-xs file:font-semibold" />
+                  <p className="mt-1 text-xs text-muted">JPG, PNG o WEBP. Se ve chica y redonda, una imagen cuadrada de 256×256 a 512px queda perfecta.</p>
+                </div>
+              </div>
+              <div>
+                <label className="label">Nombre</label>
+                <input name="name" required className="input" defaultValue={user.name} placeholder="Ej: Franco" />
+              </div>
+            </ActionForm>
+            {avatarUrl && (
+              <div className="mt-2 flex justify-end">
+                <ConfirmButton action={async () => removeAvatar()} className="btn-ghost" message="¿Sacar la foto de perfil?">
+                  <Trash2 size={14} /> Sacar foto
+                </ConfirmButton>
+              </div>
+            )}
+          </div>
+
+          <div className="card">
+            <h2 className="mb-1 flex items-center gap-2 font-bold">
+              <KeyRound size={18} className="text-brand-500" /> Contraseña
+            </h2>
+            <p className="mb-3 text-sm text-muted">Elegí una contraseña nueva para tu cuenta.</p>
+            <ActionForm action={changePassword} submitLabel="Cambiar contraseña">
+              <div>
+                <label className="label">Contraseña nueva</label>
+                <input name="password" type="password" required minLength={8} className="input" placeholder="Mínimo 8 caracteres" />
+              </div>
+              <div>
+                <label className="label">Repetila</label>
+                <input name="confirm" type="password" required minLength={8} className="input" />
+              </div>
+            </ActionForm>
+          </div>
+        </div>
+      </section>
+
+      <section className="mb-6 rounded-2xl border border-line bg-subtle/60 p-4 sm:p-5">
+        <h2 className="mb-3 text-lg font-bold">Programaciones</h2>
+        <div className="grid gap-4 lg:grid-cols-2">
+          <section className="card">
           <h2 className="mb-1 flex items-center gap-2 font-bold">
             <MessageCircle size={18} className="text-brand-500" /> Telegram
           </h2>
@@ -173,58 +236,62 @@ export default async function PerfilPage() {
           </ActionForm>
           {!user.telegramChatId && <p className="mt-3 text-xs text-amber-600">Vinculá tu Telegram para recibir los avisos.</p>}
         </section>
-      </div>
-
-      <h2 className="mb-2 mt-6 text-lg font-bold">Datos y varios</h2>
-
-      <section className="card">
-        <h2 className="mb-1 flex items-center gap-2 font-bold">
-          <Upload size={18} className="text-brand-500" /> Importar desde CSV
-        </h2>
-        <p className="mb-3 text-sm text-muted">Traé tus movimientos de otra app (por ejemplo, Wallet) desde un archivo CSV, mapeando columnas y corrigiendo valores.</p>
-        <Link href="/perfil/importar" className="btn-primary">
-          <Upload size={14} /> Importar CSV
-        </Link>
+        </div>
       </section>
 
-      <section className="card mt-4">
-        <h2 className="mb-1 flex items-center gap-2 font-bold">
-          <Smartphone size={18} className="text-brand-500" /> Instalar en el celular
-        </h2>
-        <p className="mb-3 text-sm text-muted">
-          Podés dejarla como una app más: ícono en la pantalla de inicio, pantalla completa y sin barra del navegador. Se actualiza sola, no hay que bajar nada de ninguna tienda.
-        </p>
-        <InstallApp />
-      </section>
+      <section className="rounded-2xl border border-line bg-subtle/60 p-4 sm:p-5">
+        <h2 className="mb-3 text-lg font-bold">Datos y varios</h2>
+        <div className="space-y-4">
+        <section className="card">
+          <h2 className="mb-1 flex items-center gap-2 font-bold">
+            <Upload size={18} className="text-brand-500" /> Importar desde CSV
+          </h2>
+          <p className="mb-3 text-sm text-muted">Traé tus movimientos de otra app (por ejemplo, Wallet) desde un archivo CSV, mapeando columnas y corrigiendo valores.</p>
+          <Link href="/perfil/importar" className="btn-primary">
+            <Upload size={14} /> Importar CSV
+          </Link>
+        </section>
 
-      <section className="card mt-4 border-red-500/30">
-        <h2 className="mb-1 flex items-center gap-2 font-bold text-red-500">
-          <Trash2 size={18} /> Zona de peligro
-        </h2>
-        <p className="mb-3 text-sm text-muted">
-          Borrar todos tus datos deja la cuenta vacía, como el primer día. Tu usuario, tu correo y tu vínculo con Telegram se conservan.
-        </p>
-        <DangerZone />
-      </section>
+        <section className="card">
+          <h2 className="mb-1 flex items-center gap-2 font-bold">
+            <Smartphone size={18} className="text-brand-500" /> Instalar en el celular
+          </h2>
+          <p className="mb-3 text-sm text-muted">
+            Podés dejarla como una app más: ícono en la pantalla de inicio, pantalla completa y sin barra del navegador. Se actualiza sola, no hay que bajar nada de ninguna tienda.
+          </p>
+          <InstallApp />
+        </section>
 
-      <section className="card mt-4">
-        <h2 className="mb-2 font-bold">Últimos comprobantes recibidos por Telegram</h2>
-        {recent.length === 0 && <p className="text-sm text-muted">Todavía no llegó ninguno.</p>}
-        <ul className="divide-y divide-line text-sm">
-          {recent.map((a) => (
-            <li key={a.id} className="flex items-center justify-between gap-2 py-2">
-              <span className="min-w-0 truncate">
-                <a href={`/api/adjuntos/${a.id}`} target="_blank" rel="noreferrer" className="font-medium text-brand-500 hover:underline">
-                  Ver archivo
-                </a>
-                <span className="ml-2 text-muted">
-                  → #{a.transaction.id} {a.transaction.description}
+        <section className="card border-red-500/30">
+          <h2 className="mb-1 flex items-center gap-2 font-bold text-red-500">
+            <Trash2 size={18} /> Zona de peligro
+          </h2>
+          <p className="mb-3 text-sm text-muted">
+            Borrar todos tus datos deja la cuenta vacía, como el primer día. Tu usuario, tu correo y tu vínculo con Telegram se conservan.
+          </p>
+          <DangerZone />
+        </section>
+
+        <section className="card">
+          <h2 className="mb-2 font-bold">Últimos comprobantes recibidos por Telegram</h2>
+          {recent.length === 0 && <p className="text-sm text-muted">Todavía no llegó ninguno.</p>}
+          <ul className="divide-y divide-line text-sm">
+            {recent.map((a) => (
+              <li key={a.id} className="flex items-center justify-between gap-2 py-2">
+                <span className="min-w-0 truncate">
+                  <a href={`/api/adjuntos/${a.id}`} target="_blank" rel="noreferrer" className="font-medium text-brand-500 hover:underline">
+                    Ver archivo
+                  </a>
+                  <span className="ml-2 text-muted">
+                    → #{a.transaction.id} {a.transaction.description}
+                  </span>
                 </span>
-              </span>
-              <span className="shrink-0 text-xs text-muted">{fmtDate(a.createdAt)}</span>
-            </li>
-          ))}
-        </ul>
+                <span className="shrink-0 text-xs text-muted">{fmtDate(a.createdAt)}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+        </div>
       </section>
     </>
   );

@@ -22,9 +22,10 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
 
   const sp = await searchParams;
   const tagId = sp.etiqueta ? Number(sp.etiqueta) : undefined;
+  const trendRange = sp.tDesde && sp.tHasta ? { from: sp.tDesde, to: sp.tHasta } : undefined;
 
   const [data, categories, tags, filtros, { lista: quotes }] = await Promise.all([
-    loadDashboard(user.id, range, prefs.accountIds, tagId),
+    loadDashboard(user.id, range, prefs.accountIds, tagId, trendRange),
     prisma.category.findMany({ where: { userId: user.id }, orderBy: { name: "asc" } }),
     prisma.tag.findMany({ where: { userId: user.id }, orderBy: { name: "asc" } }),
     prisma.savedFilter.findMany({ where: { userId: user.id, scope: "DASHBOARD" }, orderBy: { name: "asc" } }),
@@ -34,7 +35,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   return (
     <>
       <StickyFilters scope="DASHBOARD" />
-      <PageHeader title="Resumen" subtitle="Tu situación financiera de un vistazo">
+      <PageHeader title="Resumen" subtitle="Tu situación financiera de un vistazo" sticky>
         <RangePicker range={range} />
         <DashboardTagFilter tags={tags} selected={tagId} />
         <SavedFilters filtros={filtros.map((f) => ({ id: f.id, name: f.name, query: f.query as Record<string, string | string[]> }))} scope="DASHBOARD" />

@@ -13,6 +13,7 @@ model User {
   id             String            @id
   email          String            @unique
   name           String            @default("")
+  avatarPath     String? // path del avatar en el bucket de Storage
   telegramChatId String?           @unique
   telegramCode   String?           @unique // one-time code used to link the chat
   notifyDays     Int               @default(3) // days before a due date to warn

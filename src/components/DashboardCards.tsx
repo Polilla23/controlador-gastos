@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { ArrowDownLeft, ArrowUpRight, HelpCircle } from "lucide-react";
@@ -9,6 +10,7 @@ import { money, fmtDate, fmtDayMonth, pct, NATURES, NATURE_COLORS, ACCOUNT_TYPES
 import { Delta, Empty } from "./ui";
 import Icono from "./Icono";
 import CierresVencimientos from "./CierresVencimientos";
+import TrendRangeControl from "./TrendRangeControl";
 
 /* Recharts pesa ~400 KB: se carga aparte, ya en el navegador, con un hueco mientras tanto. */
 function box(h: string) {
@@ -187,7 +189,7 @@ function Pronostico({ d }: { d: Dashboard }) {
   ];
   return (
     <>
-      <div className="text-xs font-semibold uppercase tracking-wide text-muted">Próximos 30 días</div>
+      <div className="text-xs font-semibold uppercase tracking-wide text-muted">{f.monthLabel}</div>
       <div className={`kpi-value ${f.end < 0 ? "text-red-500" : ""}`}>{money(f.end, d.mainCurrency)}</div>
       <ForecastBars rows={rows} currency={d.mainCurrency} />
       <p className="mt-1 text-xs text-muted">El gasto e ingreso esperados salen del promedio de los últimos 90 días.</p>
@@ -426,6 +428,15 @@ function Cuentas({ d }: { d: Dashboard }) {
 
 export default function DashboardCards({ data, cards, cardsMobile }: Props) {
   const defs = new Map(CARDS.map((c) => [c.id, c]));
+  // El "?" se toca/tapea para mostrar la explicación (el hover con `title` no funciona en celular).
+  const [explained, setExplained] = useState<Set<string>>(new Set());
+  const toggleExplain = (id: string) =>
+    setExplained((s) => {
+      const next = new Set(s);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   const body = (id: string) => {
     switch (id) {
       case "patrimonio":
@@ -477,15 +488,23 @@ export default function DashboardCards({ data, cards, cardsMobile }: Props) {
     ids.map((id) => {
       const def = defs.get(id);
       if (!def) return null;
+      const open = explained.has(id);
+      const conRango = id === "tendencia-saldo" || id === "tendencia-flujo";
       return (
         <section key={id} className={`card ${def.span === 3 ? "md:col-span-2 xl:col-span-3" : def.span === 2 ? "md:col-span-2" : ""}`}>
           <h2 className="flex items-center gap-1.5 font-bold">
             {def.title}
-            <span title={def.explanation}>
-              <HelpCircle size={13} className="shrink-0 cursor-help text-muted" />
-            </span>
+            <button type="button" onClick={() => toggleExplain(id)} className="text-muted" aria-label="Cómo se calcula">
+              <HelpCircle size={13} className="shrink-0 cursor-pointer" />
+            </button>
+            {conRango && (
+              <span className="ml-auto">
+                <TrendRangeControl from={data.trendFrom} to={data.trendTo} />
+              </span>
+            )}
           </h2>
           <p className="mb-1 text-xs text-muted">{def.question}</p>
+          {open && <p className="mb-2 rounded-lg bg-subtle px-2.5 py-2 text-xs text-muted">{def.explanation}</p>}
           {body(id)}
         </section>
       );

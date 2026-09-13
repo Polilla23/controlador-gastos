@@ -13,7 +13,7 @@ const shortMonth = (ym: string) => monthLabel(ym).slice(0, 3);
  * Everything the dashboard cards need, computed in one pass.
  * `accountIds` restricts which accounts count towards the KPIs.
  */
-export async function loadDashboard(userId: string, range: Range, accountIds?: number[], tagId?: number) {
+export async function loadDashboard(userId: string, range: Range, accountIds?: number[], tagId?: number, trendRange?: { from: string; to: string }) {
   const now = new Date();
   const prev = previousRange(range);
 
@@ -103,12 +103,26 @@ export async function loadDashboard(userId: string, range: Range, accountIds?: n
   const incomePrev = sum(past, "INCOME");
   const expensePrev = sum(past, "EXPENSE");
 
-  /* ---------- Trends (last 12 months) ---------- */
+  /* ---------- Trends (last 12 months, o el rango que se haya personalizado) ---------- */
   const thisMonth = civil(startOfMonth(now));
-  const months = Array.from({ length: 12 }, (_, i) => {
-    const d = fromCivil(thisMonth.y, thisMonth.m - 11 + i, 1);
-    return { key: M(d), label: shortMonth(M(d)), end: fromCivil(thisMonth.y, thisMonth.m - 10 + i, 1) };
+  let trendY = thisMonth.y;
+  let trendM = thisMonth.m - 11;
+  let trendCount = 12;
+  if (trendRange) {
+    const [fy, fm] = trendRange.from.split("-").map(Number);
+    const [ty, tm] = trendRange.to.split("-").map(Number);
+    if (fy && fm && ty && tm) {
+      trendY = fy;
+      trendM = fm;
+      trendCount = Math.max(1, Math.min(60, (ty - fy) * 12 + (tm - fm) + 1));
+    }
+  }
+  const months = Array.from({ length: trendCount }, (_, i) => {
+    const d = fromCivil(trendY, trendM + i, 1);
+    return { key: M(d), label: shortMonth(M(d)), end: fromCivil(trendY, trendM + i + 1, 1) };
   });
+  const trendFrom = M(fromCivil(trendY, trendM, 1));
+  const trendTo = M(fromCivil(trendY, trendM + trendCount - 1, 1));
   const cashflowTrend = months.map((m) => {
     const rows = flows.filter((t) => M(t.date) === m.key);
     const i = rows.filter((t) => t.type === "INCOME").reduce((s, t) => s + t.amount, 0);
@@ -181,14 +195,22 @@ export async function loadDashboard(userId: string, range: Range, accountIds?: n
   /* ---------- Planned money & forecast ---------- */
   const in30 = addDays(startOfDay(now), 30);
   const upcoming = planned.filter((p) => p.dueDate < in30);
-  const plannedOut = upcoming.filter((p) => p.type === "EXPENSE" && p.currency === mainCurrency).reduce((s, p) => s + p.amount, 0);
-  const plannedIn = upcoming.filter((p) => p.type === "INCOME" && p.currency === mainCurrency).reduce((s, p) => s + p.amount, 0);
 
-  // Expected flows from the last 90 days of history, prorated to 30 days.
+  // Pronóstico: el mes calendario siguiente al que se está mirando en el Resumen (no una ventana
+  // fija de 30 días desde hoy) -- si el rango elegido es septiembre, proyecta todo octubre.
+  const viewedMonth = civil(range.start);
+  const forecastStart = fromCivil(viewedMonth.y, viewedMonth.m + 1, 1);
+  const forecastEnd = fromCivil(viewedMonth.y, viewedMonth.m + 2, 1);
+  const forecastPlanned = planned.filter((p) => p.dueDate >= forecastStart && p.dueDate < forecastEnd);
+  const plannedOut = forecastPlanned.filter((p) => p.type === "EXPENSE" && p.currency === mainCurrency).reduce((s, p) => s + p.amount, 0);
+  const plannedIn = forecastPlanned.filter((p) => p.type === "INCOME" && p.currency === mainCurrency).reduce((s, p) => s + p.amount, 0);
+
+  // Expected flows from the last 90 days of history, prorated to the number of days del mes pronosticado.
   const since = addDays(startOfDay(now), -90);
   const hist = flows.filter((t) => t.date >= since && t.date <= now);
-  const expectedExpense = (hist.filter((t) => t.type === "EXPENSE").reduce((s, t) => s + t.amount, 0) / 90) * 30;
-  const expectedIncome = (hist.filter((t) => t.type === "INCOME").reduce((s, t) => s + t.amount, 0) / 90) * 30;
+  const forecastDays = Math.round((forecastEnd.getTime() - forecastStart.getTime()) / 86400000);
+  const expectedExpense = (hist.filter((t) => t.type === "EXPENSE").reduce((s, t) => s + t.amount, 0) / 90) * forecastDays;
+  const expectedIncome = (hist.filter((t) => t.type === "INCOME").reduce((s, t) => s + t.amount, 0) / 90) * forecastDays;
   const forecast = {
     start: netWorth,
     plannedOut,
@@ -196,6 +218,7 @@ export async function loadDashboard(userId: string, range: Range, accountIds?: n
     expectedExpense,
     expectedIncome,
     end: netWorth + plannedIn - plannedOut + expectedIncome - expectedExpense,
+    monthLabel: monthLabel(M(forecastStart)),
   };
 
   /* ---------- Debt ratio (fixed "must pay" expenses vs income) ---------- */
@@ -256,6 +279,8 @@ export async function loadDashboard(userId: string, range: Range, accountIds?: n
     expensePrev,
     cashflowTrend,
     balanceTrend,
+    trendFrom,
+    trendTo,
     byCategory,
     byIncomeCategory,
     natureTotals,

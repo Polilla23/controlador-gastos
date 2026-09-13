@@ -50,7 +50,7 @@ const BOTTOM = ["/", "/transacciones", "/cuentas", "/planificados"];
 
 const isActive = (path: string, href: string) => (href === "/" ? path === "/" : path.startsWith(href));
 
-export default function Nav({ userLabel }: { userLabel: string }) {
+export default function Nav({ userLabel, avatarUrl }: { userLabel: string; avatarUrl?: string | null }) {
   const path = usePathname();
   const [open, setOpen] = useState(false);
 
@@ -80,10 +80,14 @@ export default function Nav({ userLabel }: { userLabel: string }) {
           <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-500 text-white">
             <Wallet size={18} />
           </div>
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <div className="text-sm font-bold">Mis Finanzas</div>
             <div className="truncate text-xs text-muted">{userLabel}</div>
           </div>
+          {avatarUrl && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={avatarUrl} alt="" className="h-8 w-8 shrink-0 rounded-full object-cover" />
+          )}
         </Link>
         <nav className="flex flex-1 flex-col gap-1">{ITEMS.map((i) => link(i))}</nav>
         <div className="mt-2 space-y-1 border-t border-line pt-2">
@@ -105,6 +109,10 @@ export default function Nav({ userLabel }: { userLabel: string }) {
             <Wallet size={16} />
           </div>
           <span className="font-bold">Mis Finanzas</span>
+          {avatarUrl && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={avatarUrl} alt="" className="h-7 w-7 shrink-0 rounded-full object-cover" />
+          )}
         </Link>
         <div className="flex items-center gap-1">
           <ThemeToggle />
