@@ -9,10 +9,12 @@ export default async function CuentasPage() {
   const userId = await requireUserId();
   const cuentas = await accountBalances(userId);
   const accounts = cuentas.map((a) => ({ ...a, iconBody: icono(a.icon)?.body ?? null }));
-  const totals = accounts.reduce<Record<string, number>>((acc, a) => {
+  const totalsRaw = accounts.reduce<Record<string, number>>((acc, a) => {
     acc[a.currency] = (acc[a.currency] ?? 0) + a.balance;
     return acc;
   }, {});
+  // El "|| 0" convierte un -0 (resto de punto flotante) en 0: si no, money() lo muestra como "-$0,00".
+  const totals = Object.fromEntries(Object.entries(totalsRaw).map(([cur, total]) => [cur, Math.round(total * 100) / 100 || 0]));
 
   return (
     <>

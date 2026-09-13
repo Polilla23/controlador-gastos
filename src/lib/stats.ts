@@ -8,6 +8,9 @@ export type Slice = { id: string; name: string; value: number; color: string; ic
 
 const M = (d: Date) => monthKey(d);
 const shortMonth = (ym: string) => monthLabel(ym).slice(0, 3);
+// El "|| 0" convierte un -0 en 0: Intl.NumberFormat (money()) muestra "-$0,00" para -0, y los
+// saldos que dan justo cero suelen llegar como un resto de punto flotante (-0.0000000001).
+const redondear = (n: number) => Math.round(n * 100) / 100 || 0;
 
 /**
  * Everything the dashboard cards need, computed in one pass.
@@ -75,7 +78,7 @@ export async function loadDashboard(userId: string, range: Range, accountIds?: n
   for (const a of allAccounts) {
     if (a.type === "INVESTMENT") balances.set(a.id, (balances.get(a.id) ?? 0) + (portafolio.get(a.id) ?? 0));
   }
-  const accounts = allAccounts.map((a) => ({ ...a, balance: balances.get(a.id) ?? 0, selected: ids.has(a.id) }));
+  const accounts = allAccounts.map((a) => ({ ...a, balance: redondear(balances.get(a.id) ?? 0), selected: ids.has(a.id) }));
   const scoped = accounts.filter((a) => ids.has(a.id));
 
   const byCurrency = new Map<string, number>();
@@ -88,8 +91,8 @@ export async function loadDashboard(userId: string, range: Range, accountIds?: n
   const mainCurrency = [...counts.entries()].sort((a, b) => b[1] - a[1] || (byCurrency.get(b[0]) ?? 0) - (byCurrency.get(a[0]) ?? 0))[0]?.[0] ?? "ARS";
   const mainIds = new Set(scoped.filter((a) => a.currency === mainCurrency).map((a) => a.id));
 
-  const netWorth = scoped.filter((a) => a.currency === mainCurrency).reduce((s, a) => s + a.balance, 0);
-  const netWorthPrev = [...mainIds].reduce((s, id) => s + (balanceAt(range.start).get(id) ?? 0), 0);
+  const netWorth = redondear(scoped.filter((a) => a.currency === mainCurrency).reduce((s, a) => s + a.balance, 0));
+  const netWorthPrev = redondear([...mainIds].reduce((s, id) => s + (balanceAt(range.start).get(id) ?? 0), 0));
 
   /* ---------- Movement helpers ---------- */
   const inRange = (d: Date, s: Date, e: Date) => d >= s && d < e;

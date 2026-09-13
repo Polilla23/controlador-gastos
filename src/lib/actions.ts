@@ -747,35 +747,6 @@ export async function splitTransaction(fd: FormData) {
   refresh();
 }
 
-/** Copia un registro con la fecha de hoy, sin los adjuntos. */
-export async function cloneTransaction(id: number) {
-  const userId = await requireUserId();
-  const t = await prisma.transaction.findFirst({ where: { id, userId }, include: { tags: true } });
-  if (!t) throw new Error("El registro no existe");
-  const account = await prisma.account.findUniqueOrThrow({ where: { id: t.accountId } });
-  const now = new Date();
-  await prisma.transaction.create({
-    data: {
-      userId,
-      type: t.type,
-      amount: t.amount,
-      currency: t.currency,
-      date: now,
-      description: t.description,
-      note: t.note,
-      counterparty: t.counterparty,
-      warrantyMonths: t.warrantyMonths,
-      accountId: t.accountId,
-      toAccountId: t.toAccountId,
-      toAmount: t.toAmount,
-      categoryId: t.categoryId,
-      statementMonth: account.type === "CREDIT_CARD" ? statementMonthForDate(now, account) : null,
-      tags: { connect: t.tags.map((g) => ({ id: g.id })) },
-    },
-  });
-  refresh();
-}
-
 /** Ajusta una sola cuota (por redondeo, por ejemplo) y recalcula el total del plan. */
 export async function updateInstallment(fd: FormData) {
   const userId = await requireUserId();
@@ -833,8 +804,8 @@ export async function updateFilter(fd: FormData) {
   const id = Number(fd.get("id"));
   const name = String(fd.get("name") ?? "").trim();
   if (!name) throw new Error("Ponele un nombre al filtro");
-  const multi = ["cuenta", "categoria", "etiqueta", "persona"] as const;
-  const single = ["tipo", "q"] as const;
+  const multi = ["cuenta", "categoria", "etiqueta"] as const;
+  const single = ["tipo", "q", "persona"] as const;
   const query: Record<string, string | string[]> = {};
   for (const k of multi) {
     const vals = fd.getAll(k).map(String).filter(Boolean);

@@ -1,6 +1,10 @@
 import { prisma } from "./prisma";
 import { efectoEnCajaTransaccion, portfolioValueByAccount } from "./inversiones";
 
+// El "|| 0" convierte un -0 en 0: Intl.NumberFormat (money()) muestra "-$0,00" para -0, y los
+// saldos que dan justo cero suelen llegar como un resto de punto flotante (-0.0000000001).
+const redondear = (n: number) => Math.round(n * 100) / 100 || 0;
+
 /**
  * Balance = initialBalance + incomes - expenses - transfers out + transfers in
  * (only up to today), más los movimientos de inversión de las cuentas de tipo
@@ -36,5 +40,5 @@ export async function accountBalances(userId: string) {
     if (a.type === "INVESTMENT") bal.set(a.id, (bal.get(a.id) ?? 0) + (portafolio.get(a.id) ?? 0));
   }
 
-  return accounts.map((a) => ({ ...a, balance: bal.get(a.id) ?? 0 }));
+  return accounts.map((a) => ({ ...a, balance: redondear(bal.get(a.id) ?? 0) }));
 }

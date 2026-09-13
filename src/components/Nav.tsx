@@ -21,6 +21,7 @@ import {
   Users,
   LineChart,
   Filter,
+  UserRound,
   X,
 } from "lucide-react";
 import clsx from "clsx";
@@ -39,6 +40,7 @@ const ITEMS = [
   { href: "/cuotas", label: "Cuotas", icon: CalendarClock },
   { href: "/categorias", label: "Categorías", icon: Shapes },
   { href: "/etiquetas", label: "Etiquetas", icon: Tags },
+  { href: "/personas", label: "Personas", icon: UserRound },
   { href: "/filtros", label: "Filtros", icon: Filter },
   { href: "/monedas", label: "Monedas", icon: Coins },
   { href: "/reglas", label: "Reglas", icon: Wand2 },

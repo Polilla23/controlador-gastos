@@ -26,7 +26,7 @@ export default async function TransaccionesPage({ searchParams }: { searchParams
   const cuentaIds = asList(sp.cuenta).map(Number).filter((n) => !Number.isNaN(n));
   const categoriaIds = asList(sp.categoria).map(Number).filter((n) => !Number.isNaN(n));
   const etiquetaIds = asList(sp.etiqueta).map(Number).filter((n) => !Number.isNaN(n));
-  const personas = asList(sp.persona);
+  const persona = asOne(sp.persona) ?? "";
   const resumen = asOne(sp.resumen);
 
   const where: Prisma.TransactionWhereInput = { userId, date: { gte: range.start, lt: range.end } };
@@ -37,8 +37,7 @@ export default async function TransaccionesPage({ searchParams }: { searchParams
   else if (categoriaIds.length > 1) where.categoryId = { in: categoriaIds };
   if (etiquetaIds.length === 1) where.tags = { some: { id: etiquetaIds[0] } };
   else if (etiquetaIds.length > 1) where.tags = { some: { id: { in: etiquetaIds } } };
-  if (personas.length === 1) where.counterparty = personas[0];
-  else if (personas.length > 1) where.counterparty = { in: personas };
+  if (persona) where.counterparty = { contains: persona, mode: "insensitive" };
   if (resumen) where.statementMonth = resumen;
   if (sp.q) {
     const q = asOne(sp.q)!;
@@ -133,7 +132,15 @@ export default async function TransaccionesPage({ searchParams }: { searchParams
             <input name="q" className="input pl-9" defaultValue={asOne(sp.q) ?? ""} placeholder="Descripción o nota" />
           </div>
         </div>
-        <MultiSelectFilter name="persona" label="Persona" initial={personas} options={counterparties.map((c) => ({ id: c, label: c }))} />
+        <div>
+          <label className="label">Persona</label>
+          <input name="persona" list="personas-conocidas" className="input" defaultValue={persona} placeholder="Nombre o apellido" />
+          <datalist id="personas-conocidas">
+            {counterparties.map((c) => (
+              <option key={c} value={c} />
+            ))}
+          </datalist>
+        </div>
         <div>
           <label className="label">Tipo</label>
           <select name="tipo" className="input" defaultValue={asOne(sp.tipo) ?? ""}>

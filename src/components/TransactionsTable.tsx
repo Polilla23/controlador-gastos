@@ -11,7 +11,6 @@ import MoneyInput from "./MoneyInput";
 import {
   bulkDeleteTransactions,
   bulkUpdateTransactions,
-  cloneTransaction,
   deleteAttachment,
   deleteTransaction,
   splitTransaction,
@@ -248,9 +247,15 @@ export default function TransactionsTable({
           <SplitForm tx={t} accounts={accounts} />
         </Modal>
       )}
-      <ConfirmButton action={async () => cloneTransaction(t.id)} className="btn-icon" message="¿Clonar este registro con la fecha de hoy?">
-        <Copy size={15} />
-      </ConfirmButton>
+      <Modal title={`Clonar #${t.id}`} triggerClassName="btn-icon" trigger={<Copy size={15} />}>
+        <TransactionForm
+          accounts={accounts}
+          categories={categories}
+          tags={tags}
+          quotes={quotes}
+          initial={{ ...t, id: undefined, date: new Date(), tags: t.tags }}
+        />
+      </Modal>
       <ConfirmButton action={async () => deleteTransaction(t.id)} className="btn-icon hover:text-red-500" message="¿Eliminar este registro?">
         <Trash2 size={15} />
       </ConfirmButton>

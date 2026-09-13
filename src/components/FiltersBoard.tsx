@@ -13,6 +13,9 @@ import type { AccountOpt, TagOpt } from "./TransactionForm";
 export type FilterRow = { id: number; name: string; scope: string; query: Record<string, string | string[]> };
 
 const asArr = (v: string | string[] | undefined): string[] => (v == null ? [] : Array.isArray(v) ? v : [v]);
+// El filtro de persona es de coincidencia (texto libre), pero un filtro guardado con la versión
+// anterior (selección múltiple) puede tener un array guardado: nos quedamos con el primero.
+const asOneStr = (v: string | string[] | undefined): string => (v == null ? "" : Array.isArray(v) ? (v[0] ?? "") : v);
 
 function describe(q: Record<string, string | string[]>, accounts: AccountOpt[], categories: CategoryOpt[], tags: TagOpt[]): string {
   const parts: string[] = [];
@@ -23,8 +26,8 @@ function describe(q: Record<string, string | string[]>, accounts: AccountOpt[], 
   if (categoriaIds.length) parts.push(`Categoría: ${categoriaIds.map((id) => categories.find((c) => String(c.id) === id)?.name ?? id).join(", ")}`);
   const etiquetaIds = asArr(q.etiqueta);
   if (etiquetaIds.length) parts.push(`Etiqueta: ${etiquetaIds.map((id) => `#${tags.find((t) => String(t.id) === id)?.name ?? id}`).join(", ")}`);
-  const personas = asArr(q.persona);
-  if (personas.length) parts.push(`Persona: ${personas.join(", ")}`);
+  const persona = asOneStr(q.persona);
+  if (persona) parts.push(`Persona: "${persona}"`);
   if (q.q) parts.push(`Buscar: "${q.q}"`);
   if (q.preset) parts.push(`Período: ${q.preset}`);
   return parts.length ? parts.join(" · ") : "Sin condiciones";
@@ -35,13 +38,11 @@ export default function FiltersBoard({
   accounts,
   categories,
   tags,
-  personas,
 }: {
   filters: FilterRow[];
   accounts: AccountOpt[];
   categories: CategoryOpt[];
   tags: TagOpt[];
-  personas: string[];
 }) {
   return (
     <div className="card">
@@ -78,7 +79,10 @@ export default function FiltersBoard({
                   <MultiSelectFilter name="cuenta" label="Cuenta" initial={asArr(f.query.cuenta)} options={accounts.map((a) => ({ id: a.id, label: `${a.name} (${a.currency})` }))} />
                   <MultiSelectFilter name="categoria" label="Categoría" initial={asArr(f.query.categoria)} options={categories.map((c) => ({ id: c.id, label: c.name }))} />
                   <MultiSelectFilter name="etiqueta" label="Etiqueta" initial={asArr(f.query.etiqueta)} options={tags.map((t) => ({ id: t.id, label: `#${t.name}` }))} />
-                  <MultiSelectFilter name="persona" label="Persona" initial={asArr(f.query.persona)} options={personas.map((p) => ({ id: p, label: p }))} />
+                  <div>
+                    <label className="label">Persona</label>
+                    <input name="persona" className="input" defaultValue={asOneStr(f.query.persona)} placeholder="Nombre o apellido (coincidencia)" />
+                  </div>
                   <div>
                     <label className="label">Buscar</label>
                     <input name="q" className="input" defaultValue={f.query.q ?? ""} placeholder="Descripción o nota" />

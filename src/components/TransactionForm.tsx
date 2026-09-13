@@ -13,7 +13,8 @@ export type AccountOpt = { id: number; name: string; currency: string; color: st
 export type TagOpt = { id: number; name: string; color: string };
 
 export type TxInitial = {
-  id: number;
+  // Ausente = se crea un registro nuevo con estos valores de partida (clonar), en vez de editar.
+  id?: number;
   type: string;
   amount: number;
   date: Date;
@@ -115,7 +116,7 @@ export default function TransactionForm({
 
   return (
     <ActionForm action={saveTransaction} onDone={onDone}>
-      {initial && <input type="hidden" name="id" value={initial.id} />}
+      {initial?.id != null && <input type="hidden" name="id" value={initial.id} />}
       <input type="hidden" name="type" value={type} />
 
       {!initial && (
