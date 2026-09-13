@@ -26,9 +26,10 @@ export async function saveRule(fd: FormData) {
   const tagIds = fd.getAll("setTagIds").map(Number).filter(Boolean);
   const matchAccountIds = fd.getAll("matchAccountIds").map(Number).filter(Boolean);
   const matchToAccountIds = fd.getAll("matchToAccountIds").map(Number).filter(Boolean);
+  const matchCounterparties = fd.getAll("matchCounterparties").map(String).filter(Boolean);
 
-  if (!d.keywords.trim() && !matchAccountIds.length && !matchToAccountIds.length && d.matchType === "ANY") {
-    throw new Error("La regla es demasiado amplia: poné al menos una palabra clave, una cuenta o un tipo.");
+  if (!d.keywords.trim() && !matchAccountIds.length && !matchToAccountIds.length && !matchCounterparties.length && d.matchType === "ANY") {
+    throw new Error("La regla es demasiado amplia: poné al menos una palabra clave, una cuenta, una persona o un tipo.");
   }
   if (!d.setCategoryId && !d.setDescription && !d.setNote && !d.setCounterparty && !tagIds.length) {
     throw new Error("La regla no hace nada: elegí qué categoría, etiqueta o texto aplicar.");
@@ -37,7 +38,7 @@ export async function saveRule(fd: FormData) {
   const cuentaIds = [...matchAccountIds, ...matchToAccountIds];
   if (cuentaIds.length && (await prisma.account.count({ where: { id: { in: cuentaIds }, userId } })) !== new Set(cuentaIds).size) throw new Error("Cuenta inválida");
 
-  const base = { ...d, keywords: d.keywords.trim() };
+  const base = { ...d, keywords: d.keywords.trim(), matchCounterparties };
   if (id) {
     await prisma.rule.update({
       where: { id, userId },

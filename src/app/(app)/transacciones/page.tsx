@@ -26,6 +26,7 @@ export default async function TransaccionesPage({ searchParams }: { searchParams
   const cuentaIds = asList(sp.cuenta).map(Number).filter((n) => !Number.isNaN(n));
   const categoriaIds = asList(sp.categoria).map(Number).filter((n) => !Number.isNaN(n));
   const etiquetaIds = asList(sp.etiqueta).map(Number).filter((n) => !Number.isNaN(n));
+  const personas = asList(sp.persona);
   const resumen = asOne(sp.resumen);
 
   const where: Prisma.TransactionWhereInput = { userId, date: { gte: range.start, lt: range.end } };
@@ -36,6 +37,8 @@ export default async function TransaccionesPage({ searchParams }: { searchParams
   else if (categoriaIds.length > 1) where.categoryId = { in: categoriaIds };
   if (etiquetaIds.length === 1) where.tags = { some: { id: etiquetaIds[0] } };
   else if (etiquetaIds.length > 1) where.tags = { some: { id: { in: etiquetaIds } } };
+  if (personas.length === 1) where.counterparty = personas[0];
+  else if (personas.length > 1) where.counterparty = { in: personas };
   if (resumen) where.statementMonth = resumen;
   if (sp.q) {
     const q = asOne(sp.q)!;
@@ -114,7 +117,7 @@ export default async function TransaccionesPage({ searchParams }: { searchParams
         </div>
       )}
 
-      <form className="card mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-7 xl:items-end">
+      <form className="card mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-8 xl:items-end">
         <input type="hidden" name="preset" value={range.preset} />
         <input type="hidden" name="ancla" value={range.anchor} />
         {range.preset === "rango" && (
@@ -130,6 +133,7 @@ export default async function TransaccionesPage({ searchParams }: { searchParams
             <input name="q" className="input pl-9" defaultValue={asOne(sp.q) ?? ""} placeholder="Descripción o nota" />
           </div>
         </div>
+        <MultiSelectFilter name="persona" label="Persona" initial={personas} options={counterparties.map((c) => ({ id: c, label: c }))} />
         <div>
           <label className="label">Tipo</label>
           <select name="tipo" className="input" defaultValue={asOne(sp.tipo) ?? ""}>
@@ -145,7 +149,7 @@ export default async function TransaccionesPage({ searchParams }: { searchParams
           name="cuenta"
           label="Cuenta"
           initial={cuentaIds}
-          options={accounts.map((a) => ({ id: a.id, label: accountLabel(a, accounts) }))}
+          options={accounts.map((a) => ({ id: a.id, label: accountLabel(a) }))}
         />
         <MultiSelectFilter
           name="categoria"

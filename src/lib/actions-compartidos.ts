@@ -59,11 +59,11 @@ export async function reorderGroups(ids: number[]) {
   refresh();
 }
 
-/** Categoría fija para asentar cancelaciones de saldo entre dos integrantes que no son yo: no es ni un ingreso ni un egreso mío. */
+/** Categoría fija para asentar cancelaciones de saldo entre dos integrantes que no son yo: no es ni un ingreso ni un egreso mío, así que va en "Otros". */
 async function saldoPagadoCategoryId(userId: string): Promise<number> {
   const existing = await prisma.category.findFirst({ where: { userId, name: "Saldo pagado" } });
   if (existing) return existing.id;
-  const created = await prisma.category.create({ data: { userId, name: "Saldo pagado", kind: "EXPENSE", color: "#9CA3AF", icon: "handshake" } });
+  const created = await prisma.category.create({ data: { userId, name: "Saldo pagado", kind: "OTHER", color: "#9CA3AF", icon: "handshake" } });
   return created.id;
 }
 

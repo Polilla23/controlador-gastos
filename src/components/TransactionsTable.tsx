@@ -204,7 +204,7 @@ export default function TransactionsTable({
   const tone = (t: TxRow) => (t.type === "EXPENSE" ? "text-red-500" : t.type === "INCOME" ? "text-brand-500" : "text-blue-500");
   const accName = (t: TxRow) => {
     const full = accounts.find((a) => a.id === t.accountId);
-    return full ? accountLabel(full, accounts) : t.account.name;
+    return full ? accountLabel(full) : t.account.name;
   };
 
   /* Agrupa por día y calcula el neto del día y el acumulado del período.

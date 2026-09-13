@@ -32,6 +32,13 @@ export type TgUpdate = {
     caption?: string;
     photo?: { file_id: string; file_size?: number }[];
     document?: { file_id: string; mime_type?: string; file_name?: string };
+    // El mensaje al que se responde (long-press → Responder). Sirve para adjuntar una foto
+    // mandada sin número: se manda la foto, y después se responde a esa misma foto con el
+    // número del registro, sin tener que reenviarla.
+    reply_to_message?: {
+      photo?: { file_id: string; file_size?: number }[];
+      document?: { file_id: string; mime_type?: string; file_name?: string };
+    };
   };
 };
 
@@ -180,6 +187,23 @@ export async function handleUpdate(update: TgUpdate) {
   const doc = msg.document;
   const id = extractId(text);
 
+  // Respondiendo (long-press → Responder) a una foto/PDF que se mandó sin el número: no hace
+  // falta reenviarla, se adjunta la que está en el mensaje respondido.
+  const repliedPhoto = msg.reply_to_message?.photo?.slice(-1)[0];
+  const repliedDoc = msg.reply_to_message?.document;
+  if (!photo && !doc && (repliedPhoto || repliedDoc)) {
+    if (id == null) return reply("Decime el número del registro para adjuntar esa foto, por ejemplo <code>#123</code>.");
+    const tx = await prisma.transaction.findFirst({ where: { id, userId: user.id } });
+    if (!tx) return reply(`No encontré el registro <b>#${id}</b> en tu cuenta. Revisá el ID en la app.`);
+
+    const fileId = repliedPhoto?.file_id ?? repliedDoc!.file_id;
+    const mimeType = repliedPhoto ? "image/jpeg" : (repliedDoc!.mime_type ?? "application/octet-stream");
+    const data = await downloadFile(fileId);
+    const storagePath = await storeAttachment(user.id, tx.id, data, mimeType);
+    await prisma.attachment.create({ data: { transactionId: tx.id, storagePath, mimeType, source: "TELEGRAM" } });
+    return reply(`✅ Adjunté el archivo al registro <b>#${tx.id}</b> (${tx.description || "sin descripción"} · ${money(tx.amount, tx.currency)}).`);
+  }
+
   if (!photo && !doc) {
     if (id == null) return reply('Mandame una foto o PDF con el número del registro en el texto, por ejemplo <code>#123</code>.');
     const tx = await prisma.transaction.findFirst({
@@ -190,11 +214,11 @@ export async function handleUpdate(update: TgUpdate) {
     return reply(
       `<b>#${tx.id}</b> · ${tx.description || tx.category?.name || tx.type}\n` +
         `${money(tx.amount, tx.currency)} · ${tx.account.name} · ${fmtDate(tx.date)}\n` +
-        `Adjuntos: ${tx.attachments.length}\n\nMandame una foto con <code>#${tx.id}</code> para adjuntarla.`,
+        `Adjuntos: ${tx.attachments.length}\n\nMandame una foto con <code>#${tx.id}</code> para adjuntarla, o si ya la mandaste, respondé a esa foto con el número.`,
     );
   }
 
-  if (id == null) return reply('Falta el número del registro. Mandá la foto con el texto <code>#123</code>, por ejemplo.');
+  if (id == null) return reply('Falta el número del registro. Mandá la foto con el texto <code>#123</code>, o si preferís, mandala así nomás y después respondé a esa foto con el número.');
   const tx = await prisma.transaction.findFirst({ where: { id, userId: user.id } });
   if (!tx) return reply(`No encontré el registro <b>#${id}</b> en tu cuenta. Revisá el ID en la app.`);
 

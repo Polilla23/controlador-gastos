@@ -45,6 +45,7 @@ export function coincide(regla: ReglaConTags, t: Candidato): boolean {
   if (regla.matchType !== "ANY" && regla.matchType !== t.type) return false;
   if (regla.matchAccounts.length && !regla.matchAccounts.some((a) => a.id === t.accountId)) return false;
   if (regla.matchToAccounts.length && !regla.matchToAccounts.some((a) => a.id === t.toAccountId)) return false;
+  if (regla.matchCounterparties.length && !regla.matchCounterparties.includes(t.counterparty)) return false;
 
   const palabras = regla.keywords
     .split(",")

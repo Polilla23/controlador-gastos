@@ -21,6 +21,7 @@ export type RuleRow = {
   matchType: string;
   matchAccounts: Cuenta[];
   matchToAccounts: Cuenta[];
+  matchCounterparties: string[];
   setCategoryId: number | null;
   setDescription: string;
   setNote: string;
@@ -55,7 +56,7 @@ function TagPicker({ tags, initial }: { tags: Etiqueta[]; initial: number[] }) {
   );
 }
 
-function Campos({ r, accounts, categories, tags }: { r?: RuleRow; accounts: Cuenta[]; categories: CategoryOpt[]; tags: Etiqueta[] }) {
+function Campos({ r, accounts, categories, tags, personas }: { r?: RuleRow; accounts: Cuenta[]; categories: CategoryOpt[]; tags: Etiqueta[]; personas: string[] }) {
   return (
     <>
       {r && <input type="hidden" name="id" value={r.id} />}
@@ -87,7 +88,7 @@ function Campos({ r, accounts, categories, tags }: { r?: RuleRow; accounts: Cuen
             <MultiSelectFilter
               name="matchAccountIds"
               label="Desde la cuenta"
-              options={accounts.map((a) => ({ id: a.id, label: a.name }))}
+              options={accounts.map((a) => ({ id: a.id, label: `${a.name} (${a.currency})` }))}
               initial={r?.matchAccounts.map((a) => a.id) ?? []}
               allLabel="Cualquiera"
             />
@@ -95,13 +96,20 @@ function Campos({ r, accounts, categories, tags }: { r?: RuleRow; accounts: Cuen
               <MultiSelectFilter
                 name="matchToAccountIds"
                 label="Hacia la cuenta"
-                options={accounts.map((a) => ({ id: a.id, label: a.name }))}
+                options={accounts.map((a) => ({ id: a.id, label: `${a.name} (${a.currency})` }))}
                 initial={r?.matchToAccounts.map((a) => a.id) ?? []}
                 allLabel="Cualquiera"
               />
               <p className="mt-1 text-xs text-muted">Sólo para transferencias.</p>
             </div>
           </div>
+          <MultiSelectFilter
+            name="matchCounterparties"
+            label="Persona (quién pagó o cobró)"
+            options={personas.map((p) => ({ id: p, label: p }))}
+            initial={r?.matchCounterparties ?? []}
+            allLabel="Cualquiera"
+          />
         </div>
       </fieldset>
 
@@ -220,7 +228,19 @@ function PreviewReglas({ onResult }: { onResult: (msg: string) => void }) {
   );
 }
 
-export default function RulesBoard({ rules, accounts, categories, tags }: { rules: RuleRow[]; accounts: Cuenta[]; categories: CategoryOpt[]; tags: Etiqueta[] }) {
+export default function RulesBoard({
+  rules,
+  accounts,
+  categories,
+  tags,
+  personas,
+}: {
+  rules: RuleRow[];
+  accounts: Cuenta[];
+  categories: CategoryOpt[];
+  tags: Etiqueta[];
+  personas: string[];
+}) {
   const [resultado, setResultado] = useState<string | null>(null);
 
   return (
@@ -231,7 +251,7 @@ export default function RulesBoard({ rules, accounts, categories, tags }: { rule
         </Modal>
         <Modal title="Nueva regla" wide trigger={<><Plus size={16} /> Nueva regla</>}>
           <ActionForm action={saveRule}>
-            <Campos accounts={accounts} categories={categories} tags={tags} />
+            <Campos accounts={accounts} categories={categories} tags={tags} personas={personas} />
           </ActionForm>
         </Modal>
       </div>
@@ -263,7 +283,7 @@ export default function RulesBoard({ rules, accounts, categories, tags }: { rule
                 </ConfirmButton>
                 <Modal title={`Editar ${r.name}`} wide triggerClassName="btn-icon" trigger={<Pencil size={15} />}>
                   <ActionForm action={saveRule}>
-                    <Campos r={r} accounts={accounts} categories={categories} tags={tags} />
+                    <Campos r={r} accounts={accounts} categories={categories} tags={tags} personas={personas} />
                   </ActionForm>
                 </Modal>
                 <ConfirmButton action={async () => deleteRule(r.id)} className="btn-icon hover:text-red-500" message={`¿Eliminar la regla "${r.name}"?`}>
@@ -288,12 +308,17 @@ export default function RulesBoard({ rules, accounts, categories, tags }: { rule
                   )}
                   {r.matchAccounts.length > 0 && (
                     <li>
-                      Sale de <b className="text-fg">{r.matchAccounts.map((a) => a.name).join(", ")}</b>
+                      Sale de <b className="text-fg">{r.matchAccounts.map((a) => `${a.name} (${a.currency})`).join(", ")}</b>
                     </li>
                   )}
                   {r.matchToAccounts.length > 0 && (
                     <li>
-                      Va hacia <b className="text-fg">{r.matchToAccounts.map((a) => a.name).join(", ")}</b>
+                      Va hacia <b className="text-fg">{r.matchToAccounts.map((a) => `${a.name} (${a.currency})`).join(", ")}</b>
+                    </li>
+                  )}
+                  {r.matchCounterparties.length > 0 && (
+                    <li>
+                      Es de <b className="text-fg">{r.matchCounterparties.join(", ")}</b>
                     </li>
                   )}
                 </ul>

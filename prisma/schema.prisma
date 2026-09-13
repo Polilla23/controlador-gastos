@@ -351,6 +351,7 @@ model Rule {
   matchType       String    @default("ANY") // ANY | INCOME | EXPENSE | TRANSFER
   matchAccounts   Account[] @relation("RuleMatchAccounts")
   matchToAccounts Account[] @relation("RuleMatchToAccounts")
+  matchCounterparties String[] @default([]) // vacío = cualquiera; si no, tiene que ser alguna de estas personas
   setCategoryId   Int?
   setCategory     Category? @relation(fields: [setCategoryId], references: [id], onDelete: SetNull)
   setDescription  String    @default("")

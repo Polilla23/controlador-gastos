@@ -306,7 +306,7 @@ export default function PlannedBoard({
             <div key={g.account.id}>
               <div className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted">
                 <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: g.account.color }} />
-                {g.account.name}
+                {g.account.name} ({g.account.currency})
               </div>
               <ul className="space-y-1">{g.rows.map(fila)}</ul>
             </div>

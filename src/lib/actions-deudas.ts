@@ -112,6 +112,9 @@ export async function addDebtPayment(fd: FormData) {
   if (mode === "new" && accountId) {
     const account = await prisma.account.findFirst({ where: { id: accountId, userId } });
     if (!account) throw new Error("Cuenta inválida");
+    // La etiqueta "Pago Préstamo" ya existe en el sistema; si el usuario la borró o renombró, se
+    // sigue creando el registro igual, simplemente sin etiquetar.
+    const tagPagoPrestamo = await prisma.tag.findFirst({ where: { userId, name: "Pago Préstamo" } });
     const tx = await prisma.transaction.create({
       data: {
         userId,
@@ -123,6 +126,7 @@ export async function addDebtPayment(fd: FormData) {
         counterparty: debt.counterparty,
         note: `Deuda #${debt.id}`,
         accountId,
+        tags: tagPagoPrestamo ? { connect: [{ id: tagPagoPrestamo.id }] } : undefined,
       },
     });
     transactionId = tx.id;

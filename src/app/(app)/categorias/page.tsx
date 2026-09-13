@@ -25,7 +25,10 @@ export default async function CategoriasPage() {
       <PageHeader title="Categorías" subtitle="Agrupá tus movimientos. Cada categoría puede tener subcategorías." />
       <div className="grid gap-4 lg:grid-cols-2">
         <CategoriesBoard categories={rows} kind="EXPENSE" title="Egresos" />
-        <CategoriesBoard categories={rows} kind="INCOME" title="Ingresos" />
+        <div className="space-y-4">
+          <CategoriesBoard categories={rows} kind="INCOME" title="Ingresos" />
+          <CategoriesBoard categories={rows} kind="OTHER" title="Otros" />
+        </div>
       </div>
     </>
   );

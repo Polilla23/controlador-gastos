@@ -391,7 +391,7 @@ function Movimientos({ d }: { d: Dashboard }) {
             <span className="min-w-0">
               <span className="block truncate text-sm font-semibold">{t.description || t.category?.name || "Transferencia"}</span>
               <span className="block truncate text-xs text-muted">
-                #{t.id} · {accountLabel(t.account, d.accounts)} · {fmtDate(t.date)}
+                #{t.id} · {accountLabel(t.account)} · {fmtDate(t.date)}
               </span>
             </span>
           </span>
@@ -413,7 +413,7 @@ function Cuentas({ d }: { d: Dashboard }) {
           <span className="flex min-w-0 items-center gap-3">
             <span className="h-8 w-8 shrink-0 rounded-lg" style={{ background: a.color }} />
             <span className="min-w-0">
-              <span className="block truncate text-sm font-semibold">{accountLabel(a, d.accounts)}</span>
+              <span className="block truncate text-sm font-semibold">{accountLabel(a)}</span>
               <span className="block text-xs text-muted">{ACCOUNT_TYPES[a.type]}</span>
             </span>
           </span>

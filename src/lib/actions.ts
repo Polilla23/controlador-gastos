@@ -833,7 +833,7 @@ export async function updateFilter(fd: FormData) {
   const id = Number(fd.get("id"));
   const name = String(fd.get("name") ?? "").trim();
   if (!name) throw new Error("Ponele un nombre al filtro");
-  const multi = ["cuenta", "categoria", "etiqueta"] as const;
+  const multi = ["cuenta", "categoria", "etiqueta", "persona"] as const;
   const single = ["tipo", "q"] as const;
   const query: Record<string, string | string[]> = {};
   for (const k of multi) {

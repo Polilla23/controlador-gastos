@@ -232,7 +232,7 @@ function MovimientoForm({ cuenta, accounts, m }: { cuenta: CuentaInversion; acco
               <option value="">Sin definir</option>
               {otrasCuentas.map((a) => (
                 <option key={a.id} value={a.id}>
-                  {accountLabel(a, accounts)}
+                  {accountLabel(a)}
                 </option>
               ))}
             </select>

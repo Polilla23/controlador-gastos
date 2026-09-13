@@ -1,11 +1,12 @@
 import { prisma } from "@/lib/prisma";
 import { requireUserId } from "@/lib/auth";
+import { listarPersonas } from "@/lib/personas";
 import PageHeader from "@/components/PageHeader";
 import RulesBoard from "@/components/RulesBoard";
 
 export default async function ReglasPage() {
   const userId = await requireUserId();
-  const [rules, accounts, categories, tags] = await Promise.all([
+  const [rules, accounts, categories, tags, personas] = await Promise.all([
     prisma.rule.findMany({
       where: { userId },
       include: { setTags: true, setCategory: { select: { name: true } }, matchAccounts: true, matchToAccounts: true },
@@ -14,6 +15,7 @@ export default async function ReglasPage() {
     prisma.account.findMany({ where: { userId, archived: false }, orderBy: [{ sortOrder: "asc" }, { id: "asc" }], select: { id: true, name: true, currency: true } }),
     prisma.category.findMany({ where: { userId }, orderBy: { name: "asc" } }),
     prisma.tag.findMany({ where: { userId }, orderBy: { name: "asc" } }),
+    listarPersonas(userId),
   ]);
 
   return (
@@ -24,6 +26,7 @@ export default async function ReglasPage() {
         accounts={accounts}
         categories={categories}
         tags={tags}
+        personas={personas}
       />
     </>
   );
