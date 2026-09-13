@@ -2,14 +2,15 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ArrowDownLeft, ArrowUpRight, Coins, HelpCircle, LineChart, Pencil, Plus, Receipt, Tag, Trash2 } from "lucide-react";
+import { ArrowDownLeft, ArrowLeftRight, ArrowUpRight, Coins, HelpCircle, LineChart, Pencil, Plus, Receipt, Tag, Trash2 } from "lucide-react";
 import ActionForm from "./ActionForm";
 import Modal from "./Modal";
 import ConfirmButton from "./ConfirmButton";
 import MoneyInput from "./MoneyInput";
 import LinkTransaction from "./LinkTransaction";
-import { deleteHolding, deleteInvestMove, liquidarCaucion, saveHolding, saveInvestMove, setHoldingPrice } from "@/lib/actions-inversiones";
-import { CURRENCIES, accountLabel, fmtDate, money, toInputDate } from "@/lib/format";
+import { convertirDolarMep, deleteHolding, deleteInvestMove, liquidarCaucion, saveHolding, saveInvestMove, setHoldingPrice } from "@/lib/actions-inversiones";
+import { CURRENCIES, accountLabel, fmtDate, fmtDateTime, money, toInputDate, toInputDateTime } from "@/lib/format";
+import { parseInput } from "@/lib/tz";
 import type { AccountOpt } from "./TransactionForm";
 
 const INSTRUMENTOS: Record<string, string> = {
@@ -158,6 +159,7 @@ function MovimientoForm({ cuenta, accounts, m }: { cuenta: CuentaInversion; acco
   const [type, setType] = useState(m?.type ?? "BUY");
   const [cantidad, setCantidad] = useState(m?.quantity?.toString() ?? "");
   const [precio, setPrecio] = useState(m?.price?.toString() ?? "");
+  const [date, setDate] = useState(toInputDateTime(m?.date ?? new Date()));
   const conInstrumento = type === "BUY" || type === "SELL";
   const esMovimientoDeCaja = type === "DEPOSIT" || type === "WITHDRAW";
   const otrasCuentas = accounts.filter((a) => a.id !== cuenta.id);
@@ -214,8 +216,9 @@ function MovimientoForm({ cuenta, accounts, m }: { cuenta: CuentaInversion; acco
           {calculado != null && <p className="mt-1 text-xs text-muted">Cantidad × precio = {money(calculado, cuenta.currency)}</p>}
         </div>
         <div>
-          <label className="label">Fecha</label>
-          <input name="date" type="date" required className="input" defaultValue={toInputDate(m?.date ? new Date(m.date) : new Date())} />
+          <label className="label">Fecha y hora</label>
+          <input type="datetime-local" required className="input" value={date} onChange={(e) => setDate(e.target.value)} />
+          <input type="hidden" name="date" value={date ? parseInput(date).toISOString() : ""} />
         </div>
       </div>
 
@@ -252,6 +255,7 @@ function LiquidarCaucionForm({ holding }: { holding: Tenencia }) {
   const [arancel, setArancel] = useState("");
   const [iva, setIva] = useState("");
   const [derecho, setDerecho] = useState("");
+  const [date, setDate] = useState(toInputDateTime(new Date()));
   const neto = Number(bruto) > 0 ? Math.max(0, Number(bruto) - (Number(arancel) || 0) - (Number(iva) || 0) - (Number(derecho) || 0)) : null;
 
   return (
@@ -276,8 +280,9 @@ function LiquidarCaucionForm({ holding }: { holding: Tenencia }) {
         </div>
       </div>
       <div>
-        <label className="label">Fecha de liquidación</label>
-        <input name="date" type="date" required className="input" defaultValue={toInputDate(new Date())} />
+        <label className="label">Fecha y hora de liquidación</label>
+        <input type="datetime-local" required className="input" value={date} onChange={(e) => setDate(e.target.value)} />
+        <input type="hidden" name="date" value={date ? parseInput(date).toISOString() : ""} />
       </div>
       {neto != null && (
         <p className="rounded-lg bg-subtle px-3 py-2 text-sm">
@@ -287,6 +292,52 @@ function LiquidarCaucionForm({ holding }: { holding: Tenencia }) {
       <div>
         <label className="label">Nota (opcional)</label>
         <input name="note" className="input" placeholder="Ej: Boleto #9.856.865" />
+      </div>
+    </ActionForm>
+  );
+}
+
+/** Conversión entre dos cuentas de inversión (típicamente dólar MEP): sale plata de una y entra en la otra. */
+function MepForm({ cuenta, cuentas }: { cuenta: CuentaInversion; cuentas: CuentaInversion[] }) {
+  const destinos = cuentas.filter((c) => c.id !== cuenta.id);
+  const [destinoId, setDestinoId] = useState(destinos[0]?.id ?? 0);
+  const destino = destinos.find((c) => c.id === destinoId);
+  const [date, setDate] = useState(toInputDateTime(new Date()));
+
+  return (
+    <ActionForm action={convertirDolarMep} submitLabel="Registrar conversión">
+      <input type="hidden" name="cuentaOrigenId" value={cuenta.id} />
+      <p className="text-sm text-muted">
+        Convertís plata de <b>{cuenta.name}</b> ({cuenta.currency}) a otra cuenta de inversión (por ejemplo, vía dólar MEP). Queda reflejado en el saldo de las dos cuentas y en Cuentas.
+      </p>
+      <div>
+        <label className="label">Cuenta destino</label>
+        <select name="cuentaDestinoId" className="input" value={destinoId} onChange={(e) => setDestinoId(Number(e.target.value))}>
+          {destinos.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name} ({c.currency})
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div>
+          <label className="label">Monto debitado ({cuenta.currency})</label>
+          <MoneyInput name="montoOrigen" required />
+        </div>
+        <div>
+          <label className="label">Monto neto acreditado {destino ? `(${destino.currency})` : ""}</label>
+          <MoneyInput name="montoDestino" required />
+        </div>
+      </div>
+      <div>
+        <label className="label">Fecha y hora</label>
+        <input type="datetime-local" required className="input" value={date} onChange={(e) => setDate(e.target.value)} />
+        <input type="hidden" name="date" value={date ? parseInput(date).toISOString() : ""} />
+      </div>
+      <div>
+        <label className="label">Nota (opcional)</label>
+        <input name="note" className="input" placeholder="Ej: Boletos #10.226.242/243" />
       </div>
     </ActionForm>
   );
@@ -384,6 +435,11 @@ export default function InvestmentsBoard({ cartera, accounts }: { cartera: Carte
                 <Modal title={`Nuevo movimiento en ${c.name}`} trigger={<><Plus size={15} /> Movimiento</>}>
                   <MovimientoForm cuenta={c} accounts={accounts} />
                 </Modal>
+                {cartera.cuentas.length > 1 && (
+                  <Modal title={`Conversión desde ${c.name}`} triggerClassName="btn-ghost" trigger={<><ArrowLeftRight size={15} /> Conversión</>}>
+                    <MepForm cuenta={c} cuentas={cartera.cuentas} />
+                  </Modal>
+                )}
               </div>
             </div>
 
@@ -497,7 +553,7 @@ export default function InvestmentsBoard({ cartera, accounts }: { cartera: Carte
                               {m.quantity ? ` · ${m.quantity} × ${money(m.price ?? 0, m.currency)}` : ""}
                             </span>
                             <span className="block text-xs text-muted">
-                              {fmtDate(m.date)}
+                              {fmtDateTime(m.date)}
                               {m.note ? ` · ${m.note}` : ""}
                             </span>
                           </span>

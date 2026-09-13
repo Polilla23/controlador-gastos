@@ -97,6 +97,9 @@ export async function saveInvestMove(fd: FormData) {
     if (!h) throw new Error("Ese instrumento no es de esta cuenta");
   }
 
+  const date = new Date(d.date);
+  if (Number.isNaN(date.getTime())) throw new Error("Fecha inválida");
+
   const data = {
     accountId: d.accountId,
     holdingId: necesitaTenencia ? d.holdingId : null,
@@ -105,7 +108,7 @@ export async function saveInvestMove(fd: FormData) {
     price: necesitaTenencia ? d.price : null,
     amount: d.amount,
     currency: d.currency,
-    date: parseInput(d.date),
+    date,
     note: d.note,
   };
 
@@ -188,7 +191,8 @@ export async function liquidarCaucion(fd: FormData) {
   const vendidas = movs.filter((m) => m.type === "SELL").reduce((s, m) => s + (m.quantity ?? 0), 0);
   const cantidad = Math.max(0, redondear(compradas - vendidas));
 
-  const fecha = parseInput(d.date);
+  const fecha = new Date(d.date);
+  if (Number.isNaN(fecha.getTime())) throw new Error("Fecha inválida");
   await prisma.$transaction([
     prisma.investMove.create({
       data: {
@@ -221,5 +225,78 @@ export async function liquidarCaucion(fd: FormData) {
         ]
       : []),
   ]);
+  refresh();
+}
+
+const mepSchema = z.object({
+  cuentaOrigenId: num.int(),
+  cuentaDestinoId: num.int(),
+  montoOrigen: num.positive("El monto debitado tiene que ser mayor a cero"),
+  montoDestino: num.positive("El monto acreditado tiene que ser mayor a cero"),
+  date: z.string().min(1),
+  note: z.string().default(""),
+});
+
+/**
+ * Conversión entre dos cuentas de inversión (por ejemplo, dólar MEP): sale plata de una
+ * cuenta y entra en la otra, sin pasar por un boleto de compra/venta de bonos. Genera la
+ * transferencia (así la ven Cuentas y los totalizadores) más un retiro/aporte enganchado
+ * a esa transferencia en cada cuenta, igual que ya se hace para un aporte o retiro común.
+ */
+export async function convertirDolarMep(fd: FormData) {
+  const userId = await requireUserId();
+  const d = mepSchema.parse(Object.fromEntries(fd));
+  if (d.cuentaOrigenId === d.cuentaDestinoId) throw new Error("Elegí dos cuentas distintas");
+
+  const [origen, destino] = await Promise.all([
+    prisma.account.findFirst({ where: { id: d.cuentaOrigenId, userId, type: "INVESTMENT" } }),
+    prisma.account.findFirst({ where: { id: d.cuentaDestinoId, userId, type: "INVESTMENT" } }),
+  ]);
+  if (!origen || !destino) throw new Error("Elegí dos cuentas de inversión válidas");
+
+  const date = new Date(d.date);
+  if (Number.isNaN(date.getTime())) throw new Error("Fecha inválida");
+
+  await prisma.$transaction(async (tx) => {
+    const transaction = await tx.transaction.create({
+      data: {
+        userId,
+        type: "TRANSFER",
+        amount: d.montoOrigen,
+        toAmount: d.montoDestino,
+        currency: origen.currency,
+        date,
+        description: `Conversión ${origen.name} → ${destino.name}`,
+        note: d.note,
+        accountId: origen.id,
+        toAccountId: destino.id,
+      },
+    });
+    await tx.investMove.create({
+      data: {
+        userId,
+        accountId: origen.id,
+        type: "WITHDRAW",
+        amount: d.montoOrigen,
+        currency: origen.currency,
+        date,
+        note: d.note || `Conversión a ${destino.name}`,
+        transactionId: transaction.id,
+      },
+    });
+    await tx.investMove.create({
+      data: {
+        userId,
+        accountId: destino.id,
+        type: "DEPOSIT",
+        amount: d.montoDestino,
+        currency: destino.currency,
+        date,
+        note: d.note || `Conversión desde ${origen.name}`,
+        transactionId: transaction.id,
+      },
+    });
+  });
+
   refresh();
 }

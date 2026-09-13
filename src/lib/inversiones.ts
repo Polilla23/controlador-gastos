@@ -109,8 +109,11 @@ export async function cargarInversiones(userId: string) {
         // Ganancia total = lo recuperado al vender + lo que queda vale hoy + rentas cobradas − lo invertido.
         // Cuando cantidad=0 (posición cerrada del todo) no le queda valor de mercado, sin importar si se cargó un precio.
         const valorActualParaGanancia = cantidad === 0 ? 0 : valorActual;
-        const costoParaGanancia = cantidad === 0 ? 0 : costoDeLoQueQueda;
-        const ganancia = valorActualParaGanancia != null && costoParaGanancia != null ? redondear(recuperado + valorActualParaGanancia - costoParaGanancia + rentas - invertido) : null;
+        // Mientras se haya rescatado/vendido sólo una parte y todavía quede posición abierta, el resultado
+        // no es definitivo (falta liquidar el resto) -- no mostramos ganancia hasta que se cierre del todo,
+        // para no dar la impresión de una pérdida que en realidad es sólo un retiro parcial sin terminar.
+        const liquidacionParcial = vendidas > 0 && cantidad > 0;
+        const ganancia = !liquidacionParcial && valorActualParaGanancia != null ? redondear(recuperado + valorActualParaGanancia + rentas - invertido) : null;
         const gananciaPct = ganancia != null && invertido ? Math.round((ganancia / invertido) * 100) : null;
 
         return { ...h, cantidad, invertido: redondear(invertido), recuperado: redondear(recuperado), rentas: redondear(rentas), costoPromedio, costoDeLoQueQueda, valorActual, ganancia, gananciaPct, movimientos: movs.length };
