@@ -120,38 +120,32 @@ export async function loadDashboard(userId: string, range: Range, accountIds?: n
     return { label: m.label, value: [...mainIds].reduce((s, id) => s + (bal.get(id) ?? 0), 0) };
   });
 
-  /* ---------- Expenses by category (parent rollup + drill-down) ---------- */
-  const parents = new Map<string, Slice>();
-  for (const t of cur.filter((t) => t.type === "EXPENSE")) {
-    const c = t.category;
-    const p = c?.parent ?? c;
-    const pid = p ? `c${p.id}` : "none";
-    const slice = parents.get(pid) ?? { id: pid, name: p?.name ?? "Sin categoría", value: 0, color: p?.color ?? "#9CA3AF", iconBody: icono(p?.icon)?.body ?? null, children: [] };
-    slice.value += t.amount;
-    if (c && c.parentId) {
-      const kid = slice.children.find((k) => k.id === `c${c.id}`);
-      if (kid) kid.value += t.amount;
-      else slice.children.push({ id: `c${c.id}`, name: c.name, value: t.amount, color: c.color, iconBody: icono(c.icon)?.body ?? null, children: [] });
-    } else {
-      const own = slice.children.find((k) => k.id === "self");
-      if (own) own.value += t.amount;
-      else slice.children.push({ id: "self", name: c ? "Directo en la categoría" : "Sin categoría", value: t.amount, color: p?.color ?? "#9CA3AF", iconBody: icono(p?.icon)?.body ?? null, children: [] });
+  /* ---------- By category (parent rollup + subcategory drill-down), para gastos e ingresos por igual ---------- */
+  function rollupByCategory(rows: typeof cur): Slice[] {
+    const parents = new Map<string, Slice>();
+    for (const t of rows) {
+      const c = t.category;
+      const p = c?.parent ?? c;
+      const pid = p ? `c${p.id}` : "none";
+      const slice = parents.get(pid) ?? { id: pid, name: p?.name ?? "Sin categoría", value: 0, color: p?.color ?? "#9CA3AF", iconBody: icono(p?.icon)?.body ?? null, children: [] };
+      slice.value += t.amount;
+      if (c && c.parentId) {
+        const kid = slice.children.find((k) => k.id === `c${c.id}`);
+        if (kid) kid.value += t.amount;
+        else slice.children.push({ id: `c${c.id}`, name: c.name, value: t.amount, color: c.color, iconBody: icono(c.icon)?.body ?? null, children: [] });
+      } else {
+        const own = slice.children.find((k) => k.id === "self");
+        if (own) own.value += t.amount;
+        else slice.children.push({ id: "self", name: c ? "Directo en la categoría" : "Sin categoría", value: t.amount, color: p?.color ?? "#9CA3AF", iconBody: icono(p?.icon)?.body ?? null, children: [] });
+      }
+      parents.set(pid, slice);
     }
-    parents.set(pid, slice);
+    const out = [...parents.values()].sort((a, b) => b.value - a.value);
+    out.forEach((p) => p.children.sort((a, b) => b.value - a.value));
+    return out;
   }
-  const byCategory = [...parents.values()].sort((a, b) => b.value - a.value);
-  byCategory.forEach((p) => p.children.sort((a, b) => b.value - a.value));
-
-  const incomeParents = new Map<string, Slice>();
-  for (const t of cur.filter((t) => t.type === "INCOME")) {
-    const c = t.category;
-    const p = c?.parent ?? c;
-    const pid = p ? `c${p.id}` : "none";
-    const slice = incomeParents.get(pid) ?? { id: pid, name: p?.name ?? "Sin categoría", value: 0, color: p?.color ?? "#9CA3AF", iconBody: icono(p?.icon)?.body ?? null, children: [] };
-    slice.value += t.amount;
-    incomeParents.set(pid, slice);
-  }
-  const byIncomeCategory = [...incomeParents.values()].sort((a, b) => b.value - a.value);
+  const byCategory = rollupByCategory(cur.filter((t) => t.type === "EXPENSE"));
+  const byIncomeCategory = rollupByCategory(cur.filter((t) => t.type === "INCOME"));
 
   /* ---------- Nature: debo / necesito / quiero ---------- */
   const natureTotals = { MUST: 0, NEED: 0, WANT: 0 } as Record<string, number>;

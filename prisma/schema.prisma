@@ -184,6 +184,7 @@ model Planned {
   user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   type           String // INCOME | EXPENSE
   description    String
+  counterparty   String    @default("") // a quién le pago o quién me paga
   amount         Float
   currency       String
   dueDate        DateTime

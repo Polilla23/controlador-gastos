@@ -10,8 +10,8 @@ import MoneyInput from "./MoneyInput";
 import CategorySelect, { type CategoryOpt } from "./CategorySelect";
 import Tabs from "./Tabs";
 import LinkTransaction from "./LinkTransaction";
-import { addMember, deleteGroupExpense, deleteMember, saldarEntre, saveGroupExpense } from "@/lib/actions-compartidos";
-import { fmtDate, money, toInputDate } from "@/lib/format";
+import { addMember, deleteGroup, deleteGroupExpense, deleteMember, saldarEntre, saveGroup, saveGroupExpense } from "@/lib/actions-compartidos";
+import { CURRENCIES, fmtDate, money, toInputDate } from "@/lib/format";
 import type { AccountOpt } from "./TransactionForm";
 
 type Miembro = { id: number; name: string; email: string; isMe: boolean };
@@ -226,6 +226,33 @@ function SaldarForm({ g, accounts, p }: { g: GrupoDetalle; accounts: AccountOpt[
   );
 }
 
+/** Nombre, moneda y nota del grupo en sí (no confundir con un gasto del grupo). */
+function GroupForm({ g }: { g: GrupoDetalle }) {
+  return (
+    <ActionForm action={saveGroup} submitLabel="Guardar cambios">
+      <input type="hidden" name="id" value={g.id} />
+      <div>
+        <label className="label">Nombre</label>
+        <input name="name" required className="input" defaultValue={g.name} autoFocus />
+      </div>
+      <div>
+        <label className="label">Moneda</label>
+        <select name="currency" className="input" defaultValue={g.currency}>
+          {CURRENCIES.map((c) => (
+            <option key={c} value={c}>
+              {c}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div>
+        <label className="label">Nota</label>
+        <input name="note" className="input" defaultValue={g.note} placeholder="Opcional" />
+      </div>
+    </ActionForm>
+  );
+}
+
 export default function GroupDetail({ g, categories, accounts }: { g: GrupoDetalle; categories: CategoryOpt[]; accounts: AccountOpt[] }) {
   const gastos = (
     <>
@@ -386,8 +413,16 @@ export default function GroupDetail({ g, categories, accounts }: { g: GrupoDetal
         <Link href="/compartidos" className="btn-ghost">
           <ArrowLeft size={16} /> Todos los grupos
         </Link>
-        <div className="flex items-center gap-2 text-sm text-muted">
-          <Users size={15} /> {g.members.length} integrantes · {money(g.total, g.currency)} en total
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="flex items-center gap-2 text-sm text-muted">
+            <Users size={15} /> {g.members.length} integrantes · {money(g.total, g.currency)} en total
+          </span>
+          <Modal title="Editar grupo" triggerClassName="btn-icon" trigger={<Pencil size={15} />}>
+            <GroupForm g={g} />
+          </Modal>
+          <ConfirmButton action={async () => deleteGroup(g.id)} className="btn-icon hover:text-red-500" message={`¿Eliminar el grupo "${g.name}" y todos sus gastos?`}>
+            <Trash2 size={15} />
+          </ConfirmButton>
         </div>
       </div>
 

@@ -29,9 +29,11 @@ export default function DashboardTagFilter({ tags, selected }: { tags: { id: num
         value={selected ?? ""}
         onChange={(e) => go(e.target.value)}
       >
-        <option value="">Todas las etiquetas</option>
+        <option value="" style={{ backgroundColor: "var(--card)", color: "var(--fg)" }}>
+          Todas las etiquetas
+        </option>
         {tags.map((t) => (
-          <option key={t.id} value={t.id}>
+          <option key={t.id} value={t.id} style={{ backgroundColor: "var(--card)", color: "var(--fg)" }}>
             #{t.name}
           </option>
         ))}

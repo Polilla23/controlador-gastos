@@ -39,9 +39,11 @@ export default function SavedFilters({ filtros, scope }: { filtros: FiltroGuarda
       <Filter size={15} className="text-muted" />
       <span className="sr-only">Filtros guardados</span>
       <select className="max-w-36 bg-transparent text-xs font-semibold text-fg outline-none" value={elegido} onChange={(e) => aplicar(e.target.value)}>
-        <option value="">{filtros.length ? "Mis filtros" : "Sin filtros guardados"}</option>
+        <option value="" style={{ backgroundColor: "var(--card)", color: "var(--fg)" }}>
+          {filtros.length ? "Mis filtros" : "Sin filtros guardados"}
+        </option>
         {filtros.map((f) => (
-          <option key={f.id} value={f.id}>
+          <option key={f.id} value={f.id} style={{ backgroundColor: "var(--card)", color: "var(--fg)" }}>
             {f.name}
           </option>
         ))}

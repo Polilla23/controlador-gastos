@@ -16,6 +16,7 @@ export type PlannedRow = {
   id: number;
   type: string;
   description: string;
+  counterparty: string;
   amount: number;
   currency: string;
   dueDate: Date;
@@ -66,6 +67,10 @@ function Fields({ item, type, accounts, categories, tags }: { item?: PlannedRow;
       <div>
         <label className="label">Descripción</label>
         <input name="description" required className="input" defaultValue={item?.description} placeholder={kind === "INCOME" ? "Ej: Sueldo" : "Ej: Metrogas"} />
+      </div>
+      <div>
+        <label className="label">{kind === "INCOME" ? "Quién me paga" : "A quién le pago"}</label>
+        <input name="counterparty" className="input" defaultValue={item?.counterparty} placeholder={kind === "INCOME" ? "Ej: Mi empleador" : "Ej: Metrogas"} />
       </div>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div>
@@ -206,7 +211,10 @@ export default function PlannedBoard({
                   {p.category?.iconBody && <Icono body={p.category.iconBody} size={16} className="text-fg" />}
                 </span>
                 <div className="min-w-0">
-                  <div className="truncate text-sm font-semibold">{p.description}</div>
+                  <div className="truncate text-sm font-semibold">
+                    {p.description}
+                    {p.counterparty && <span className="font-normal text-muted"> · {p.counterparty}</span>}
+                  </div>
                   <div className={`flex items-center gap-1 truncate text-xs ${late ? "text-red-500" : "text-muted"}`}>
                     {late ? "Vencido · " : ""}
                     {fmtDate(p.dueDate)}

@@ -139,8 +139,18 @@ export async function saveCategory(fd: FormData) {
     if (hasChildren && d.parentId) throw new Error("Esta categoría ya tiene subcategorías, no puede depender de otra");
     await prisma.category.update({ where: { id, userId }, data: d });
   } else {
-    const last = await prisma.category.aggregate({ where: { userId }, _max: { sortOrder: true } });
-    await prisma.category.create({ data: { ...d, userId, sortOrder: (last._max.sortOrder ?? 0) + 1 } });
+    // Se inserta alfabéticamente entre sus hermanas (mismo tipo y misma categoría padre) en vez de
+    // ir siempre al final: el orden de las demás no cambia, sólo se corre para hacerle lugar. Después
+    // se puede arrastrar a mano a otra posición, como cualquier categoría.
+    const hermanas = await prisma.category.findMany({
+      where: { userId, kind: d.kind, parentId: d.parentId ?? null },
+      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+    });
+    let pos = hermanas.findIndex((h) => h.name.localeCompare(d.name, "es") > 0);
+    if (pos === -1) pos = hermanas.length;
+    const created = await prisma.category.create({ data: { ...d, userId, sortOrder: pos } });
+    const ordenadas = [...hermanas.slice(0, pos), created, ...hermanas.slice(pos)];
+    await prisma.$transaction(ordenadas.map((c, i) => prisma.category.update({ where: { id: c.id }, data: { sortOrder: i } })));
   }
   refresh();
 }
@@ -423,6 +433,7 @@ export async function deletePlan(id: number) {
 const plannedSchema = z.object({
   type: z.enum(["INCOME", "EXPENSE"]),
   description: z.string().min(1),
+  counterparty: z.string().default(""),
   amount: num.positive(),
   currency: z.string().length(3),
   dueDate: z.string().min(1),
@@ -464,6 +475,7 @@ export async function applyPlannedConfirmation(p: {
   amount: number;
   currency: string;
   description: string;
+  counterparty: string;
   note: string;
   accountId: number | null;
   categoryId: number | null;
@@ -482,6 +494,7 @@ export async function applyPlannedConfirmation(p: {
       currency: p.currency,
       date: new Date(),
       description: p.description,
+      counterparty: p.counterparty,
       note: p.note,
       accountId,
       categoryId: p.categoryId,
