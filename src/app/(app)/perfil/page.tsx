@@ -1,10 +1,10 @@
 import Link from "next/link";
-import { Bell, CalendarDays, MessageCircle, RefreshCw, Send, Smartphone, Trash2, TriangleAlert, Unlink, Upload } from "lucide-react";
+import { Bell, CalendarDays, MessageCircle, RefreshCw, Send, Smartphone, Trash2, Unlink, Upload } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { disconnectGoogleCalendar, limpiarCalendariosDuplicados, regenerateTelegramCode, saveNotificationPrefs, sincronizarGoogleCalendarAhora, unlinkTelegram } from "@/lib/actions";
 import { fmtDate } from "@/lib/format";
-import { googleConfigured, listMisFinanzasCalendars } from "@/lib/google-calendar";
+import { googleConfigured } from "@/lib/google-calendar";
 import PageHeader from "@/components/PageHeader";
 import ConfirmButton from "@/components/ConfirmButton";
 import ActionForm from "@/components/ActionForm";
@@ -20,7 +20,6 @@ export default async function PerfilPage() {
     take: 8,
     include: { transaction: { select: { id: true, description: true } } },
   });
-  const misFinanzas = user.googleEmail ? await listMisFinanzasCalendars(user) : [];
 
   return (
     <>
@@ -110,29 +109,6 @@ export default async function PerfilPage() {
                 Conectado como <b>{user.googleEmail}</b>. Todos los días creamos un evento de todo el día en tu calendario <b>Mis Finanzas</b> por cada vencimiento, con un aviso a las
                 17:00 del día anterior.
               </p>
-              {misFinanzas.length > 1 && (
-                <div className="mt-3 flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm">
-                  <TriangleAlert size={16} className="mt-0.5 shrink-0 text-amber-500" />
-                  <div>
-                    <p>
-                      Encontramos <b>{misFinanzas.length}</b> calendarios &quot;Mis Finanzas&quot; en tu cuenta (pasa cuando desconectás y volvés a conectar). Se usa siempre el marcado
-                      como &quot;en uso&quot;; los demás quedaron sueltos, sin que la app les cree ni actualice eventos.
-                    </p>
-                    <div className="mt-2">
-                      <ConfirmButton
-                        action={async () => {
-                          "use server";
-                          await limpiarCalendariosDuplicados();
-                        }}
-                        className="btn-ghost"
-                        message={`¿Borrar los ${misFinanzas.length - 1} calendarios "Mis Finanzas" duplicados? Se borran junto con todos sus eventos; el que está en uso no se toca.`}
-                      >
-                        <Trash2 size={14} /> Borrar duplicados
-                      </ConfirmButton>
-                    </div>
-                  </div>
-                </div>
-              )}
               <div className="mt-4 flex flex-wrap items-center gap-2">
                 <form
                   action={async () => {
@@ -144,6 +120,16 @@ export default async function PerfilPage() {
                     <RefreshCw size={14} /> Sincronizar ahora
                   </button>
                 </form>
+                <ConfirmButton
+                  action={async () => {
+                    "use server";
+                    await limpiarCalendariosDuplicados();
+                  }}
+                  className="btn-ghost"
+                  message='¿Revisar si hay calendarios "Mis Finanzas" duplicados y borrar los que sobren? El que está en uso no se toca. Si no hay ninguno de más, no hace nada.'
+                >
+                  <Trash2 size={14} /> Limpiar duplicados
+                </ConfirmButton>
                 <ConfirmButton
                   action={async () => {
                     "use server";

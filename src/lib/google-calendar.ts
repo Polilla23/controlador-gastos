@@ -68,33 +68,18 @@ async function clientForUser(user: GoogleUser) {
   return client;
 }
 
-/**
- * Lista los calendarios "Mis Finanzas" que existen hoy en la cuenta de Google conectada.
- * Puede haber más de uno si se desconectó y volvió a conectar Google Calendar alguna vez
- * (desconectar borra la referencia guardada, pero no el calendario real).
- */
-export async function listMisFinanzasCalendars(user: GoogleUser): Promise<{ id: string; enUso: boolean }[]> {
-  try {
-    const auth = await clientForUser(user);
-    if (!auth) return [];
-    const calendar = google.calendar({ version: "v3", auth });
-    const res = await calendar.calendarList.list({ maxResults: 250 });
-    return (res.data.items ?? [])
-      .filter((c) => c.summary === "Mis Finanzas" && c.accessRole === "owner" && c.id)
-      .map((c) => ({ id: c.id!, enUso: c.id === user.googleCalendarId }));
-  } catch (e) {
-    // Es sólo un chequeo informativo: si Google falla acá, no tiene que romper toda la página de Configuraciones.
-    console.error("no se pudo listar los calendarios de Google", e);
-    return [];
-  }
-}
-
 /** Borra todos los calendarios "Mis Finanzas" salvo el que la app tiene guardado (o el primero, si ninguno coincide). */
 export async function cleanupDuplicateCalendars(user: GoogleUser): Promise<{ total: number; deleted: number; keptId: string | null }> {
   const auth = await clientForUser(user);
   if (!auth) return { total: 0, deleted: 0, keptId: user.googleCalendarId };
   const calendar = google.calendar({ version: "v3", auth });
-  const res = await calendar.calendarList.list({ maxResults: 250 });
+  let res;
+  try {
+    res = await calendar.calendarList.list({ maxResults: 250 });
+  } catch (e) {
+    console.error("no se pudo listar los calendarios de Google", e);
+    throw new Error("No pude consultar tus calendarios de Google. Probá de nuevo en un rato, o desconectá y reconectá Google Calendar.");
+  }
   const mios = (res.data.items ?? []).filter((c) => c.summary === "Mis Finanzas" && c.accessRole === "owner" && c.id);
   if (mios.length <= 1) return { total: mios.length, deleted: 0, keptId: user.googleCalendarId ?? mios[0]?.id ?? null };
 
