@@ -68,9 +68,28 @@ export async function cargarInversiones(userId: string) {
     prisma.investMove.findMany({ where: { userId }, orderBy: { date: "desc" } }),
   ]);
 
+  const cuentaIds = cuentas.map((c) => c.id);
+  // Ingresos/gastos/transferencias comunes que también mueven el efectivo de la cuenta de inversión
+  // (ej. una transferencia desde el banco), igual que ya contempla accountBalances().
+  const txs = cuentaIds.length
+    ? await prisma.transaction.findMany({
+        where: { userId, date: { lte: new Date() }, OR: [{ accountId: { in: cuentaIds } }, { toAccountId: { in: cuentaIds } }] },
+        select: { type: true, amount: true, toAmount: true, accountId: true, toAccountId: true },
+      })
+    : [];
+  const efectoTx = new Map<number, number>();
+  for (const t of txs) {
+    if (t.type === "INCOME") efectoTx.set(t.accountId, (efectoTx.get(t.accountId) ?? 0) + t.amount);
+    else if (t.type === "EXPENSE") efectoTx.set(t.accountId, (efectoTx.get(t.accountId) ?? 0) - t.amount);
+    else if (t.toAccountId != null) {
+      efectoTx.set(t.accountId, (efectoTx.get(t.accountId) ?? 0) - t.amount);
+      efectoTx.set(t.toAccountId, (efectoTx.get(t.toAccountId) ?? 0) + (t.toAmount ?? t.amount));
+    }
+  }
+
   const porCuenta = cuentas.map((c) => {
     const movsCuenta = moves.filter((m) => m.accountId === c.id);
-    const efectivo = redondear(c.initialBalance + movsCuenta.reduce((s, m) => s + efectoEnCaja(m.type, m.amount), 0));
+    const efectivo = redondear(c.initialBalance + (efectoTx.get(c.id) ?? 0) + movsCuenta.reduce((s, m) => s + efectoEnCajaTransaccion(m), 0));
 
     const tenencias = holdings
       .filter((h) => h.accountId === c.id)
