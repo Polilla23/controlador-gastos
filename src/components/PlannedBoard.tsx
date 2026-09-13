@@ -25,6 +25,8 @@ export type PlannedRow = {
   note: string;
   autoConfirm: boolean;
   notify: boolean;
+  includeInTelegram: boolean;
+  includeInCalendar: boolean;
   category: { name: string; color: string; iconBody: string | null } | null;
   tags: { id: number; name: string; color: string }[];
 };
@@ -56,6 +58,7 @@ function TagPicker({ tags, initial }: { tags: TagOpt[]; initial: number[] }) {
 
 function Fields({ item, type, accounts, categories, tags }: { item?: PlannedRow; type: string; accounts: AccountOpt[]; categories: CategoryOpt[]; tags: TagOpt[] }) {
   const kind = item?.type ?? type;
+  const [includeInTelegram, setIncludeInTelegram] = useState(item?.includeInTelegram ?? true);
   return (
     <>
       {item && <input type="hidden" name="id" value={item.id} />}
@@ -124,8 +127,28 @@ function Fields({ item, type, accounts, categories, tags }: { item?: PlannedRow;
         <textarea name="note" className="input" rows={2} defaultValue={item?.note} placeholder="Notas opcionales" />
       </div>
       <label className="flex items-center gap-2 text-sm">
-        <input type="checkbox" name="notify" defaultChecked={item?.notify ?? true} className="h-4 w-4 accent-[var(--color-brand-500)]" />
+        <input
+          type="checkbox"
+          name="includeInTelegram"
+          checked={includeInTelegram}
+          onChange={(e) => setIncludeInTelegram(e.target.checked)}
+          className="h-4 w-4 accent-[var(--color-brand-500)]"
+        />
+        Incluir en los mensajes de Telegram
+      </label>
+      <label className={`ml-6 flex items-center gap-2 text-sm ${includeInTelegram ? "" : "opacity-40"}`}>
+        <input
+          type="checkbox"
+          name="notify"
+          disabled={!includeInTelegram}
+          defaultChecked={item?.notify ?? true}
+          className="h-4 w-4 accent-[var(--color-brand-500)]"
+        />
         Avisarme por Telegram antes del vencimiento
+      </label>
+      <label className="flex items-center gap-2 text-sm">
+        <input type="checkbox" name="includeInCalendar" defaultChecked={item?.includeInCalendar ?? true} className="h-4 w-4 accent-[var(--color-brand-500)]" />
+        Incluir en el calendario de Google Calendar
       </label>
       <label className="flex items-center gap-2 text-sm">
         <input type="checkbox" name="autoConfirm" defaultChecked={item?.autoConfirm ?? false} className="h-4 w-4 accent-[var(--color-brand-500)]" />

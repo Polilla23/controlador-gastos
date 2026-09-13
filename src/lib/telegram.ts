@@ -49,7 +49,7 @@ const extractId = (text: string) => {
 async function proximosDelPeriodo(userId: string, start: Date, end: Date): Promise<string> {
   const [items, cards, debts] = await Promise.all([
     prisma.planned.findMany({
-      where: { userId, dueDate: { gte: start, lt: end } },
+      where: { userId, includeInTelegram: true, dueDate: { gte: start, lt: end } },
       include: { category: { include: { parent: true } } },
       orderBy: { dueDate: "asc" },
     }),

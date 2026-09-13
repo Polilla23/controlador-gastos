@@ -11,7 +11,7 @@ function listar(nombres: string[]): string {
 
 async function itemsParaCalendario(userId: string, start: Date, end: Date): Promise<{ dateKey: string; nombre: string }[]> {
   const [items, cards, debts] = await Promise.all([
-    prisma.planned.findMany({ where: { userId, done: false, type: "EXPENSE", dueDate: { gte: start, lt: end } } }),
+    prisma.planned.findMany({ where: { userId, done: false, includeInCalendar: true, type: "EXPENSE", dueDate: { gte: start, lt: end } } }),
     prisma.account.findMany({ where: { userId, type: "CREDIT_CARD", archived: false, dueDay: { not: null } } }),
     prisma.debt.findMany({ where: { userId, status: "OPEN", direction: "I_OWE", dueDate: { gte: start, lt: end } }, include: { payments: true } }),
   ]);

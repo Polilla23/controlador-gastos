@@ -193,6 +193,8 @@ model Planned {
   tags           Tag[]
   note           String    @default("")
   notify         Boolean   @default(true)
+  includeInTelegram Boolean @default(true) // si aparece en /proximos, /proximomes y los avisos
+  includeInCalendar Boolean @default(true) // si genera evento en Google Calendar
   autoConfirm    Boolean   @default(false)
   done           Boolean   @default(false)
   lastNotifiedOn DateTime?

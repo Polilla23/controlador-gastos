@@ -437,9 +437,12 @@ export async function savePlanned(fd: FormData) {
   const tagIds = fd.getAll("tagIds").map(Number).filter(Boolean);
   // Un checkbox sin marcar no manda ningún campo: hay que leerlo literalmente, sin default de Zod
   // (con default, Zod ni siquiera llega a mirar el valor cuando la clave está ausente).
-  const notify = fd.get("notify") === "on";
+  const includeInTelegram = fd.get("includeInTelegram") === "on";
+  const includeInCalendar = fd.get("includeInCalendar") === "on";
+  // Si no lo querés en los mensajes de Telegram, el aviso previo tampoco tiene sentido.
+  const notify = includeInTelegram && fd.get("notify") === "on";
   const autoConfirm = fd.get("autoConfirm") === "on";
-  const base = { ...d, notify, autoConfirm, dueDate: parseInput(d.dueDate), userId, lastNotifiedOn: null };
+  const base = { ...d, notify, autoConfirm, includeInTelegram, includeInCalendar, dueDate: parseInput(d.dueDate), userId, lastNotifiedOn: null };
   if (id) await prisma.planned.update({ where: { id, userId }, data: { ...base, tags: { set: tagIds.map((t) => ({ id: t })) } } });
   else await prisma.planned.create({ data: { ...base, tags: { connect: tagIds.map((t) => ({ id: t })) } } });
   refresh();
@@ -451,7 +454,7 @@ export async function deletePlanned(id: number) {
   refresh();
 }
 
-/** Turns a planned item into a real record; recurring ones roll over to the next date. Shared by the manual "✓" button and the auto-confirm cron step. */
+/** Turns a planned item into a real record (con nota y etiquetas incluidas); recurring ones roll over to the next date. Shared by the manual "✓" button and the auto-confirm cron step. */
 export async function applyPlannedConfirmation(p: {
   id: number;
   userId: string;
@@ -459,10 +462,12 @@ export async function applyPlannedConfirmation(p: {
   amount: number;
   currency: string;
   description: string;
+  note: string;
   accountId: number | null;
   categoryId: number | null;
   recurrence: string;
   dueDate: Date;
+  tags: { id: number }[];
 }) {
   const accountId = p.accountId ?? (await prisma.account.findFirst({ where: { userId: p.userId }, orderBy: { sortOrder: "asc" } }))?.id;
   if (!accountId) throw new Error("Creá una cuenta antes de confirmar el movimiento");
@@ -475,8 +480,10 @@ export async function applyPlannedConfirmation(p: {
       currency: p.currency,
       date: new Date(),
       description: p.description,
+      note: p.note,
       accountId,
       categoryId: p.categoryId,
+      tags: { connect: p.tags.map((t) => ({ id: t.id })) },
     },
   });
 
@@ -496,7 +503,7 @@ export async function applyPlannedConfirmation(p: {
 
 export async function confirmPlanned(id: number) {
   const userId = await requireUserId();
-  const p = await prisma.planned.findFirst({ where: { id, userId } });
+  const p = await prisma.planned.findFirst({ where: { id, userId }, include: { tags: true } });
   if (!p) throw new Error("No existe");
   await applyPlannedConfirmation(p);
   refresh();
@@ -504,7 +511,7 @@ export async function confirmPlanned(id: number) {
 
 /** Cron step: turns due Planned items marked "generar automáticamente" into real transactions, for every user. */
 export async function autoConfirmPlanned() {
-  const due = await prisma.planned.findMany({ where: { autoConfirm: true, done: false, dueDate: { lte: new Date() } } });
+  const due = await prisma.planned.findMany({ where: { autoConfirm: true, done: false, dueDate: { lte: new Date() } }, include: { tags: true } });
   for (const p of due) await applyPlannedConfirmation(p);
   return due.length;
 }
