@@ -25,14 +25,20 @@ const INSTRUMENTOS: Record<string, string> = {
   OTRO: "Otro",
 };
 
+// Para un FCI esto es "suscribir"/"rescatar"; para una caución, "abrir"/"liquidar". El mismo
+// movimiento (BUY/SELL) sirve para los dos, así que la etiqueta nombra ambos usos.
 const MOVIMIENTOS: Record<string, string> = {
-  BUY: "Compra",
-  SELL: "Venta",
+  BUY: "Compra / Suscripción",
+  SELL: "Venta / Rescate",
   DEPOSIT: "Aporte de dinero",
   WITHDRAW: "Retiro de dinero",
   INCOME: "Renta / dividendo",
   FEE: "Comisión",
 };
+
+// De momento sólo cauciones y FCI: los demás instrumentos se habilitan más adelante.
+// Si ya existe una tenencia de otro tipo, se la sigue mostrando, pero no se puede elegir para una nueva.
+const INSTRUMENTOS_HABILITADOS = ["CAUCION", "FCI"];
 
 type Tenencia = {
   id: number;
@@ -86,8 +92,11 @@ export type Cartera = {
 };
 
 function InstrumentoForm({ cuenta, h }: { cuenta: CuentaInversion; h?: Tenencia }) {
-  const [kind, setKind] = useState(h?.kind ?? "CEDEAR");
+  const [kind, setKind] = useState(h?.kind ?? "CAUCION");
   const rentaFija = ["PLAZO_FIJO", "CAUCION", "LETRA", "BONO", "ON"].includes(kind);
+  // Si la tenencia que se edita ya era de otro tipo (cargada antes de esta limitación), la dejamos
+  // en la lista para no romperla, aunque no se pueda elegir para una nueva.
+  const opciones = Object.entries(INSTRUMENTOS).filter(([k]) => INSTRUMENTOS_HABILITADOS.includes(k) || k === h?.kind);
   return (
     <ActionForm action={saveHolding} submitLabel={h ? "Guardar" : "Agregar instrumento"}>
       {h && <input type="hidden" name="id" value={h.id} />}
@@ -96,12 +105,13 @@ function InstrumentoForm({ cuenta, h }: { cuenta: CuentaInversion; h?: Tenencia 
         <div>
           <label className="label">Tipo de instrumento</label>
           <select name="kind" className="input" value={kind} onChange={(e) => setKind(e.target.value)}>
-            {Object.entries(INSTRUMENTOS).map(([k, v]) => (
+            {opciones.map(([k, v]) => (
               <option key={k} value={k}>
                 {v}
               </option>
             ))}
           </select>
+          <p className="mt-1 text-xs text-muted">Por ahora sólo cauciones y fondos comunes de inversión.</p>
         </div>
         <div>
           <label className="label">Ticker / símbolo</label>

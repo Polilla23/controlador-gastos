@@ -92,6 +92,10 @@ export default function TransactionForm({
   const [date, setDate] = useState(toInputDateTime(initial?.date ?? new Date()));
   const [toAmount, setToAmount] = useState(initial?.toAmount?.toString() ?? "");
   const [rateSource, setRateSource] = useState("manual");
+  const [description, setDescription] = useState(initial?.description ?? "");
+  const [note, setNote] = useState(initial?.note ?? "");
+  // Si ya tenía una nota distinta de la descripción, respetamos esa decisión y no la volvemos a pisar.
+  const [noteEdited, setNoteEdited] = useState(!!initial && initial.note !== initial.description);
 
   const account = accounts.find((a) => a.id === accountId);
   const toAccount = accounts.find((a) => a.id === toAccountId);
@@ -212,7 +216,16 @@ export default function TransactionForm({
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div>
           <label className="label">Descripción</label>
-          <input name="description" className="input" defaultValue={initial?.description ?? ""} placeholder="Ej: Supermercado Coto" />
+          <input
+            name="description"
+            className="input"
+            value={description}
+            onChange={(e) => {
+              setDescription(e.target.value);
+              if (!noteEdited) setNote(e.target.value);
+            }}
+            placeholder="Ej: Supermercado Coto"
+          />
         </div>
         {type !== "TRANSFER" && (
           <div>
@@ -306,7 +319,17 @@ export default function TransactionForm({
 
       <div>
         <label className="label">Nota</label>
-        <textarea name="note" className="input" rows={2} defaultValue={initial?.note ?? ""} />
+        <textarea
+          name="note"
+          className="input"
+          rows={2}
+          value={note}
+          onChange={(e) => {
+            setNote(e.target.value);
+            setNoteEdited(true);
+          }}
+          placeholder="Por defecto, igual a la descripción"
+        />
       </div>
     </ActionForm>
   );

@@ -70,7 +70,7 @@ function AccountFields({ account }: { account?: AccountRow }) {
       </div>
       <div>
         <label className="label">Saldo inicial</label>
-        <MoneyInput name="initialBalance" defaultValue={account?.initialBalance ?? 0} />
+        <MoneyInput name="initialBalance" defaultValue={account?.initialBalance ?? 0} allowNegative />
       </div>
 
       {type === "CREDIT_CARD" && (
