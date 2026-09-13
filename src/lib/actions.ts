@@ -12,6 +12,7 @@ import { addMonths, civil, fromCivil, parseInput } from "./tz";
 import { statementMonthForDate } from "./tarjetas";
 import { aplicarAlCrear } from "./reglas";
 import { cleanupDuplicateCalendars } from "./google-calendar";
+import { syncGoogleCalendarForUser } from "./google-calendar-sync";
 
 const num = z.coerce.number();
 
@@ -617,6 +618,14 @@ export async function limpiarCalendariosDuplicados() {
   const userId = await requireUserId();
   const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
   const result = await cleanupDuplicateCalendars(user);
+  revalidatePath("/perfil");
+  return result;
+}
+
+/** Sincroniza Google Calendar ya mismo (en vez de esperar al cron diario). */
+export async function sincronizarGoogleCalendarAhora() {
+  const userId = await requireUserId();
+  const result = await syncGoogleCalendarForUser(userId);
   revalidatePath("/perfil");
   return result;
 }

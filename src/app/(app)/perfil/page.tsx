@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Bell, CalendarDays, MessageCircle, RefreshCw, Send, Smartphone, Trash2, TriangleAlert, Unlink, Upload } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
-import { disconnectGoogleCalendar, limpiarCalendariosDuplicados, regenerateTelegramCode, saveNotificationPrefs, unlinkTelegram } from "@/lib/actions";
+import { disconnectGoogleCalendar, limpiarCalendariosDuplicados, regenerateTelegramCode, saveNotificationPrefs, sincronizarGoogleCalendarAhora, unlinkTelegram } from "@/lib/actions";
 import { fmtDate } from "@/lib/format";
 import { googleConfigured, listMisFinanzasCalendars } from "@/lib/google-calendar";
 import PageHeader from "@/components/PageHeader";
@@ -133,7 +133,17 @@ export default async function PerfilPage() {
                   </div>
                 </div>
               )}
-              <div className="mt-4">
+              <div className="mt-4 flex flex-wrap items-center gap-2">
+                <form
+                  action={async () => {
+                    "use server";
+                    await sincronizarGoogleCalendarAhora();
+                  }}
+                >
+                  <button type="submit" className="btn-ghost">
+                    <RefreshCw size={14} /> Sincronizar ahora
+                  </button>
+                </form>
                 <ConfirmButton
                   action={async () => {
                     "use server";

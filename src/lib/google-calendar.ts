@@ -15,7 +15,7 @@ import { prisma } from "./prisma";
 
 const SCOPES = ["https://www.googleapis.com/auth/calendar.app.created", "https://www.googleapis.com/auth/userinfo.email"];
 
-type GoogleUser = {
+export type GoogleUser = {
   id: string;
   googleAccessToken: string | null;
   googleRefreshToken: string | null;

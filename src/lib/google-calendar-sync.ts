@@ -1,6 +1,6 @@
 import { prisma } from "./prisma";
 import { civil as civilOf, fromCivil, isoDay, startOfDay, addDays } from "./tz";
-import { upsertDueDateEvent } from "./google-calendar";
+import { upsertDueDateEvent, type GoogleUser } from "./google-calendar";
 
 const LOOKAHEAD_DIAS = 45;
 
@@ -35,22 +35,32 @@ async function itemsParaCalendario(userId: string, start: Date, end: Date): Prom
   return out;
 }
 
-/** Un evento por fecha (combinando lo que vence ese mismo día en un solo título), para cada usuario conectado. */
-export async function syncGoogleCalendars() {
-  const users = await prisma.user.findMany({ where: { googleRefreshToken: { not: null } } });
+/** Un evento por fecha (combinando lo que vence ese mismo día en un solo título) para un usuario puntual. */
+async function syncOneUser(user: GoogleUser): Promise<void> {
   const hoy = startOfDay();
   const hasta = addDays(hoy, LOOKAHEAD_DIAS);
-
-  for (const user of users) {
-    const items = await itemsParaCalendario(user.id, hoy, hasta);
-    const porFecha = new Map<string, string[]>();
-    for (const it of items) {
-      if (!porFecha.has(it.dateKey)) porFecha.set(it.dateKey, []);
-      porFecha.get(it.dateKey)!.push(it.nombre);
-    }
-    for (const [dateKey, nombres] of porFecha) {
-      await upsertDueDateEvent(user, dateKey, `Pagar ${listar(nombres)}`);
-    }
+  const items = await itemsParaCalendario(user.id, hoy, hasta);
+  const porFecha = new Map<string, string[]>();
+  for (const it of items) {
+    if (!porFecha.has(it.dateKey)) porFecha.set(it.dateKey, []);
+    porFecha.get(it.dateKey)!.push(it.nombre);
   }
+  for (const [dateKey, nombres] of porFecha) {
+    await upsertDueDateEvent(user, dateKey, `Pagar ${listar(nombres)}`);
+  }
+}
+
+/** Paso del cron diario: sincroniza a todos los usuarios conectados. */
+export async function syncGoogleCalendars() {
+  const users = await prisma.user.findMany({ where: { googleRefreshToken: { not: null } } });
+  for (const user of users) await syncOneUser(user);
   return { usuarios: users.length };
+}
+
+/** Sincroniza ya mismo, para un solo usuario (botón "Sincronizar ahora" en Configuraciones). */
+export async function syncGoogleCalendarForUser(userId: string): Promise<{ synced: boolean }> {
+  const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
+  if (!user.googleRefreshToken) return { synced: false };
+  await syncOneUser(user);
+  return { synced: true };
 }
