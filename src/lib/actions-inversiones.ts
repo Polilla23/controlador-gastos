@@ -151,10 +151,11 @@ export async function saveInvestMove(fd: FormData) {
 }
 
 /**
- * Si el movimiento viene de una conversión entre dos cuentas de inversión (dólar MEP: un
- * retiro y un aporte enganchados a la misma transferencia), hay que borrar el par completo
- * más la transferencia -- si sólo se borra un lado, el efectivo de la otra cuenta y el saldo
- * de Cuentas siguen contando una plata que ya no está en ningún lado.
+ * Si el movimiento tiene una transferencia enganchada (un aporte/retiro común, o los dos lados
+ * de una conversión entre cuentas de inversión), se borra junto con ella -- si sólo se borrara
+ * el movimiento, la transacción quedaría suelta en Transacciones y el saldo de la otra punta
+ * (la cuenta bancaria, o la otra cuenta de inversión en una conversión) seguiría contando una
+ * plata que ya no está en ningún lado.
  */
 export async function deleteInvestMove(id: number) {
   const userId = await requireUserId();
@@ -163,14 +164,12 @@ export async function deleteInvestMove(id: number) {
 
   if (move.transactionId) {
     const hermanos = await prisma.investMove.findMany({ where: { transactionId: move.transactionId, userId } });
-    if (hermanos.length === 2) {
-      await prisma.$transaction([
-        prisma.investMove.deleteMany({ where: { id: { in: hermanos.map((h) => h.id) }, userId } }),
-        prisma.transaction.deleteMany({ where: { id: move.transactionId, userId } }),
-      ]);
-      refresh();
-      return;
-    }
+    await prisma.$transaction([
+      prisma.investMove.deleteMany({ where: { id: { in: hermanos.map((h) => h.id) }, userId } }),
+      prisma.transaction.deleteMany({ where: { id: move.transactionId, userId } }),
+    ]);
+    refresh();
+    return;
   }
 
   await prisma.investMove.deleteMany({ where: { id, userId } });

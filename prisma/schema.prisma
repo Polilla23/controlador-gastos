@@ -101,6 +101,7 @@ model Category {
   planned      Planned[]
   budgets      Budget[]
   rules        Rule[]
+  debts        Debt[]
 
   @@unique([userId, name, parentId])
   @@index([userId])
@@ -118,6 +119,7 @@ model Tag {
   planned      Planned[]
   budgets      Budget[]
   rules        Rule[]
+  debts        Debt[]
 
   @@unique([userId, name])
 }
@@ -295,6 +297,9 @@ model Debt {
   dueDate        DateTime? // cuándo hay que devolverla
   accountId      Int?
   account        Account?      @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  categoryId     Int?
+  category       Category?     @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  tags           Tag[]
   transactionId  Int? // el movimiento generado al crear la deuda, si se registró
   status         String        @default("OPEN") // OPEN | CLOSED
   notify         Boolean       @default(true)
@@ -367,6 +372,7 @@ model ShareGroup {
   currency  String         @default("ARS")
   note      String         @default("")
   archived  Boolean        @default(false)
+  sortOrder Int            @default(0)
   createdAt DateTime       @default(now())
   members   ShareMember[]
   expenses  ShareExpense[]

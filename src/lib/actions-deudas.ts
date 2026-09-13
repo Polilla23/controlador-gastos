@@ -19,6 +19,7 @@ const debtSchema = z.object({
   date: z.string().min(1),
   dueDate: z.string().optional(),
   accountId: z.preprocess((v) => (v === "" || v == null ? null : Number(v)), z.number().int().nullable()),
+  categoryId: z.preprocess((v) => (v === "" || v == null ? null : Number(v)), z.number().int().nullable()),
   notify: z.preprocess((v) => v === "on" || v === "true", z.boolean()).default(true),
 });
 
@@ -32,8 +33,11 @@ export async function saveDebt(fd: FormData) {
   const id = fd.get("id") ? Number(fd.get("id")) : null;
   const d = debtSchema.parse(Object.fromEntries(fd));
   const { mode, existingId } = readLinkMode(fd);
+  const tagIds = fd.getAll("tagIds").map(Number).filter(Boolean);
 
   if (d.accountId && !(await prisma.account.findFirst({ where: { id: d.accountId, userId } }))) throw new Error("Cuenta inválida");
+  if (d.categoryId && !(await prisma.category.findFirst({ where: { id: d.categoryId, userId } }))) throw new Error("Categoría inválida");
+  if (tagIds.length && (await prisma.tag.count({ where: { id: { in: tagIds }, userId } })) !== tagIds.length) throw new Error("Etiqueta inválida");
 
   const data = {
     direction: d.direction,
@@ -44,17 +48,18 @@ export async function saveDebt(fd: FormData) {
     date: parseInput(d.date),
     dueDate: d.dueDate ? parseInput(d.dueDate) : null,
     accountId: d.accountId,
+    categoryId: d.categoryId,
     notify: d.notify,
   };
 
   if (id) {
-    await prisma.debt.update({ where: { id, userId }, data });
+    await prisma.debt.update({ where: { id, userId }, data: { ...data, tags: { set: tagIds.map((t) => ({ id: t })) } } });
   } else if (mode === "existing" && existingId) {
     await assertOwnedTransaction(userId, existingId);
-    await prisma.debt.create({ data: { ...data, userId, transactionId: existingId } });
+    await prisma.debt.create({ data: { ...data, userId, transactionId: existingId, tags: { connect: tagIds.map((t) => ({ id: t })) } } });
   } else if (mode === "new" && d.accountId) {
     const account = await prisma.account.findUniqueOrThrow({ where: { id: d.accountId } });
-    const debt = await prisma.debt.create({ data: { ...data, userId } });
+    const debt = await prisma.debt.create({ data: { ...data, userId, tags: { connect: tagIds.map((t) => ({ id: t })) } } });
     const tx = await prisma.transaction.create({
       data: {
         userId,
@@ -70,7 +75,7 @@ export async function saveDebt(fd: FormData) {
     });
     await prisma.debt.update({ where: { id: debt.id }, data: { transactionId: tx.id } });
   } else {
-    await prisma.debt.create({ data: { ...data, userId } });
+    await prisma.debt.create({ data: { ...data, userId, tags: { connect: tagIds.map((t) => ({ id: t })) } } });
   }
   refresh();
 }

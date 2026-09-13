@@ -9,8 +9,10 @@ import MoneyInput from "./MoneyInput";
 import { addDebtPayment, deleteDebt, deleteDebtPayment, saveDebt, setDebtStatus } from "@/lib/actions-deudas";
 import { CURRENCIES, fmtDate, money, toInputDate } from "@/lib/format";
 import LinkTransaction from "./LinkTransaction";
+import CategorySelect, { type CategoryOpt } from "./CategorySelect";
 
 type Cuenta = { id: number; name: string; currency: string };
+type Etiqueta = { id: number; name: string; color: string };
 
 export type DebtRow = {
   id: number;
@@ -22,12 +24,41 @@ export type DebtRow = {
   date: Date;
   dueDate: Date | null;
   accountId: number | null;
+  categoryId: number | null;
   status: string;
   notify: boolean;
+  category: { name: string; color: string } | null;
+  tags: { id: number; name: string; color: string }[];
   payments: { id: number; amount: number; date: Date; note: string }[];
 };
 
-function Campos({ d, accounts, contrapartes }: { d?: DebtRow; accounts: Cuenta[]; contrapartes: string[] }) {
+function TagPicker({ tags, initial }: { tags: Etiqueta[]; initial: number[] }) {
+  const [sel, setSel] = useState<number[]>(initial);
+  return (
+    <div className="flex flex-wrap gap-2">
+      {sel.map((id) => (
+        <input key={id} type="hidden" name="tagIds" value={id} />
+      ))}
+      {tags.map((t) => {
+        const on = sel.includes(t.id);
+        return (
+          <button
+            key={t.id}
+            type="button"
+            onClick={() => setSel((s) => (on ? s.filter((x) => x !== t.id) : [...s, t.id]))}
+            className={`chip border transition ${on ? "border-transparent text-white" : "border-line text-muted"}`}
+            style={on ? { background: t.color } : undefined}
+          >
+            #{t.name}
+          </button>
+        );
+      })}
+      {tags.length === 0 && <p className="text-xs text-muted">No tenés etiquetas creadas.</p>}
+    </div>
+  );
+}
+
+function Campos({ d, accounts, categories, tags, contrapartes }: { d?: DebtRow; accounts: Cuenta[]; categories: CategoryOpt[]; tags: Etiqueta[]; contrapartes: string[] }) {
   const [direction, setDirection] = useState(d?.direction ?? "I_LENT");
   return (
     <>
@@ -92,17 +123,30 @@ function Campos({ d, accounts, contrapartes }: { d?: DebtRow; accounts: Cuenta[]
         </div>
       </div>
 
-      <div>
-        <label className="label">{direction === "I_LENT" ? "De qué cuenta salió" : "A qué cuenta entró"}</label>
-        <select name="accountId" className="input" defaultValue={d?.accountId ?? ""}>
-          <option value="">Sin definir</option>
-          {accounts.map((a) => (
-            <option key={a.id} value={a.id}>
-              {a.name} ({a.currency})
-            </option>
-          ))}
-        </select>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div>
+          <label className="label">{direction === "I_LENT" ? "De qué cuenta salió" : "A qué cuenta entró"}</label>
+          <select name="accountId" className="input" defaultValue={d?.accountId ?? ""}>
+            <option value="">Sin definir</option>
+            {accounts.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.name} ({a.currency})
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="label">Categoría</label>
+          <CategorySelect categories={categories} defaultValue={d?.categoryId} />
+        </div>
       </div>
+
+      {tags.length > 0 && (
+        <div>
+          <label className="label">Etiquetas</label>
+          <TagPicker tags={tags} initial={d?.tags.map((t) => t.id) ?? []} />
+        </div>
+      )}
 
       {!d && <LinkTransaction newLabel="Crear el movimiento en esa cuenta" />}
 
@@ -171,7 +215,19 @@ function Devolver({ d, accounts }: { d: DebtRow; accounts: Cuenta[] }) {
   );
 }
 
-export default function DebtsBoard({ debts, accounts, contrapartes }: { debts: DebtRow[]; accounts: Cuenta[]; contrapartes: string[] }) {
+export default function DebtsBoard({
+  debts,
+  accounts,
+  categories,
+  tags,
+  contrapartes,
+}: {
+  debts: DebtRow[];
+  accounts: Cuenta[];
+  categories: CategoryOpt[];
+  tags: Etiqueta[];
+  contrapartes: string[];
+}) {
   const hoy = new Date();
   const abiertas = debts.filter((d) => d.status === "OPEN");
   const cerradas = debts.filter((d) => d.status === "CLOSED");
@@ -196,7 +252,17 @@ export default function DebtsBoard({ debts, accounts, contrapartes }: { debts: D
               <div className="truncate text-xs text-muted">
                 {meDeben ? "Te debe" : "Le debés"}
                 {d.description ? ` · ${d.description}` : ""}
+                {d.category ? ` · ${d.category.name}` : ""}
               </div>
+              {d.tags.length > 0 && (
+                <div className="mt-1 flex flex-wrap gap-1">
+                  {d.tags.map((t) => (
+                    <span key={t.id} className="chip text-white" style={{ background: t.color }}>
+                      #{t.name}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-0.5">
@@ -212,7 +278,7 @@ export default function DebtsBoard({ debts, accounts, contrapartes }: { debts: D
             )}
             <Modal title="Editar deuda" triggerClassName="btn-icon" trigger={<Pencil size={15} />}>
               <ActionForm action={saveDebt}>
-                <Campos d={d} accounts={accounts} contrapartes={contrapartes} />
+                <Campos d={d} accounts={accounts} categories={categories} tags={tags} contrapartes={contrapartes} />
               </ActionForm>
             </Modal>
             <ConfirmButton action={async () => deleteDebt(d.id)} className="btn-icon hover:text-red-500" message={`¿Eliminar la deuda con ${d.counterparty}?`}>
@@ -266,7 +332,7 @@ export default function DebtsBoard({ debts, accounts, contrapartes }: { debts: D
       <div className="mb-4 flex justify-end">
         <Modal title="Nueva deuda" trigger={<><Plus size={16} /> Nueva deuda</>}>
           <ActionForm action={saveDebt}>
-            <Campos accounts={accounts} contrapartes={contrapartes} />
+            <Campos accounts={accounts} categories={categories} tags={tags} contrapartes={contrapartes} />
           </ActionForm>
         </Modal>
       </div>

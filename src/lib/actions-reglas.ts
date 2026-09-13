@@ -74,20 +74,76 @@ export async function toggleRule(id: number, active: boolean) {
   refresh();
 }
 
+export type PreviewFila = { id: number; fecha: Date; descripcion: string; reglas: string[]; cambios: string[] };
+
+const cambiosDe = (efecto: ReturnType<typeof efectoDe>, t: { categoryId: number | null; description: string; note: string; counterparty: string; tags: { id: number }[] }, nombreCategoria: Map<number, string>, nombreEtiqueta: Map<number, string>) => {
+  const cambios: string[] = [];
+  if (efecto.categoryId !== undefined && efecto.categoryId !== t.categoryId) {
+    cambios.push(`Categoría → ${efecto.categoryId ? (nombreCategoria.get(efecto.categoryId) ?? "?") : "Sin categoría"}`);
+  }
+  if (efecto.description && efecto.description !== t.description) cambios.push(`Descripción → "${efecto.description}"`);
+  if (efecto.note && efecto.note !== t.note) cambios.push(`Nota → "${efecto.note}"`);
+  if (efecto.counterparty && efecto.counterparty !== t.counterparty) cambios.push(`Quién → "${efecto.counterparty}"`);
+  const actuales = new Set(t.tags.map((x) => x.id));
+  const nuevas = efecto.tagIds.filter((id) => !actuales.has(id));
+  if (nuevas.length) cambios.push(`+ etiqueta${nuevas.length > 1 ? "s" : ""} ${nuevas.map((id) => `#${nombreEtiqueta.get(id) ?? "?"}`).join(" ")}`);
+  return cambios;
+};
+
 /**
- * Pasa las reglas por los registros que ya existen. Devuelve cuántos tocó,
- * para poder mostrarlo. Sólo mira los últimos 1000 para no tardar una eternidad.
+ * Previsualiza qué le pasarían las reglas activas a los registros que ya existen, sin tocar
+ * nada todavía -- para elegir cuáles aplicar de verdad y cuáles dejar como están. Sólo mira los
+ * últimos 1000 para no tardar una eternidad.
  */
-export async function aplicarReglasAExistentes() {
+export async function previsualizarReglas(): Promise<PreviewFila[]> {
   const userId = await requireUserId();
   const reglas = await reglasDe(userId);
   if (!reglas.length) throw new Error("No tenés reglas activas");
+
+  const categoriaIds = [...new Set(reglas.map((r) => r.setCategoryId).filter((x): x is number => x != null))];
+  const categorias = categoriaIds.length ? await prisma.category.findMany({ where: { id: { in: categoriaIds } }, select: { id: true, name: true } }) : [];
+  const nombreCategoria = new Map(categorias.map((c) => [c.id, c.name]));
+  const nombreEtiqueta = new Map(reglas.flatMap((r) => r.setTags.map((t) => [t.id, t.name] as const)));
 
   const registros = await prisma.transaction.findMany({
     where: { userId },
     orderBy: { date: "desc" },
     take: 1000,
-    select: { id: true, type: true, description: true, counterparty: true, note: true, accountId: true, toAccountId: true, categoryId: true },
+    select: {
+      id: true,
+      type: true,
+      description: true,
+      counterparty: true,
+      note: true,
+      accountId: true,
+      toAccountId: true,
+      categoryId: true,
+      date: true,
+      tags: { select: { id: true } },
+    },
+  });
+
+  const out: PreviewFila[] = [];
+  for (const t of registros) {
+    const efecto = efectoDe(reglas, t);
+    if (!efecto.reglas.length) continue;
+    const cambios = cambiosDe(efecto, t, nombreCategoria, nombreEtiqueta);
+    if (!cambios.length) continue;
+    out.push({ id: t.id, fecha: t.date, descripcion: t.description, reglas: efecto.reglas, cambios });
+  }
+  return out;
+}
+
+/** Aplica las reglas activas sólo a los registros elegidos en la previsualización. Devuelve cuántos tocó. */
+export async function aplicarReglasA(ids: number[]) {
+  const userId = await requireUserId();
+  if (!ids.length) return 0;
+  const reglas = await reglasDe(userId);
+  if (!reglas.length) throw new Error("No tenés reglas activas");
+
+  const registros = await prisma.transaction.findMany({
+    where: { userId, id: { in: ids } },
+    select: { id: true, type: true, description: true, counterparty: true, note: true, accountId: true, toAccountId: true, categoryId: true, tags: { select: { id: true } } },
   });
 
   let tocados = 0;

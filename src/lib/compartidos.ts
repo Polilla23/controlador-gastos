@@ -97,7 +97,7 @@ export async function cargarGrupos(userId: string) {
   const grupos = await prisma.shareGroup.findMany({
     where: { userId },
     include: { members: true, expenses: { include: { splits: true } } },
-    orderBy: [{ archived: "asc" }, { createdAt: "desc" }],
+    orderBy: [{ archived: "asc" }, { sortOrder: "asc" }, { createdAt: "desc" }],
   });
 
   return grupos.map((g) => {

@@ -326,7 +326,9 @@ export async function saveTransaction(fd: FormData) {
 
 export async function deleteTransaction(id: number) {
   const userId = await requireUserId();
-  await prisma.transaction.delete({ where: { id, userId } });
+  // Si esta transacción es la transferencia enganchada a un aporte/retiro (o conversión) de
+  // Inversiones, ese movimiento también se borra -- si no, queda contando plata que ya no está.
+  await prisma.$transaction([prisma.investMove.deleteMany({ where: { transactionId: id, userId } }), prisma.transaction.delete({ where: { id, userId } })]);
   refresh();
 }
 
@@ -370,7 +372,10 @@ export async function bulkUpdateTransactions(fd: FormData) {
 
 export async function bulkDeleteTransactions(ids: number[]) {
   const userId = await requireUserId();
-  await prisma.transaction.deleteMany({ where: { id: { in: ids }, userId } });
+  await prisma.$transaction([
+    prisma.investMove.deleteMany({ where: { transactionId: { in: ids }, userId } }),
+    prisma.transaction.deleteMany({ where: { id: { in: ids }, userId } }),
+  ]);
   refresh();
 }
 
@@ -467,37 +472,45 @@ export async function deletePlanned(id: number) {
   refresh();
 }
 
-/** Turns a planned item into a real record (con nota y etiquetas incluidas); recurring ones roll over to the next date. Shared by the manual "✓" button and the auto-confirm cron step. */
-export async function applyPlannedConfirmation(p: {
-  id: number;
-  userId: string;
-  type: string;
-  amount: number;
-  currency: string;
-  description: string;
-  counterparty: string;
-  note: string;
-  accountId: number | null;
-  categoryId: number | null;
-  recurrence: string;
-  dueDate: Date;
-  tags: { id: number }[];
-}) {
-  const accountId = p.accountId ?? (await prisma.account.findFirst({ where: { userId: p.userId }, orderBy: { sortOrder: "asc" } }))?.id;
+/**
+ * Turns a planned item into a real record (con nota y etiquetas incluidas); recurring ones roll
+ * over to the next date. Shared by el "✓" del cron auto-confirm (sin overrides) y el modal de
+ * confirmación manual, que puede pisar fecha/monto/cuenta/categoría/nota antes de crear el
+ * registro -- por ejemplo, si el pago se hizo unos días antes del vencimiento, no hoy.
+ */
+export async function applyPlannedConfirmation(
+  p: {
+    id: number;
+    userId: string;
+    type: string;
+    amount: number;
+    currency: string;
+    description: string;
+    counterparty: string;
+    note: string;
+    accountId: number | null;
+    categoryId: number | null;
+    recurrence: string;
+    dueDate: Date;
+    tags: { id: number }[];
+  },
+  overrides?: { date?: Date; amount?: number; accountId?: number | null; categoryId?: number | null; note?: string },
+) {
+  const accountId = (overrides?.accountId ?? p.accountId) ?? (await prisma.account.findFirst({ where: { userId: p.userId }, orderBy: { sortOrder: "asc" } }))?.id;
   if (!accountId) throw new Error("Creá una cuenta antes de confirmar el movimiento");
 
   await prisma.transaction.create({
     data: {
       userId: p.userId,
       type: p.type,
-      amount: p.amount,
+      amount: overrides?.amount ?? p.amount,
       currency: p.currency,
-      date: new Date(),
+      date: overrides?.date ?? new Date(),
       description: p.description,
       counterparty: p.counterparty,
-      note: p.note,
+      note: overrides?.note ?? p.note,
       accountId,
-      categoryId: p.categoryId,
+      categoryId: overrides?.categoryId !== undefined ? overrides.categoryId : p.categoryId,
       tags: { connect: p.tags.map((t) => ({ id: t.id })) },
     },
   });
@@ -521,6 +534,28 @@ export async function confirmPlanned(id: number) {
   const p = await prisma.planned.findFirst({ where: { id, userId }, include: { tags: true } });
   if (!p) throw new Error("No existe");
   await applyPlannedConfirmation(p);
+  refresh();
+}
+
+/** Confirma un planificado dejando ajustar fecha, monto, cuenta, categoría y nota antes de crear el registro. */
+export async function confirmPlannedWithEdits(fd: FormData) {
+  const userId = await requireUserId();
+  const id = Number(fd.get("id"));
+  const p = await prisma.planned.findFirst({ where: { id, userId }, include: { tags: true } });
+  if (!p) throw new Error("No existe");
+
+  const dateStr = String(fd.get("date") ?? "");
+  const amountStr = fd.get("amount");
+  const accountIdStr = fd.get("accountId");
+  const categoryIdStr = fd.get("categoryId");
+
+  await applyPlannedConfirmation(p, {
+    date: dateStr ? parseInput(dateStr) : undefined,
+    amount: amountStr ? Number(amountStr) : undefined,
+    accountId: accountIdStr ? Number(accountIdStr) : null,
+    categoryId: categoryIdStr ? Number(categoryIdStr) : null,
+    note: fd.get("note") != null ? String(fd.get("note")) : undefined,
+  });
   refresh();
 }
 

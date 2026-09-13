@@ -53,6 +53,20 @@ export async function archiveGroup(id: number, archived: boolean) {
   refresh();
 }
 
+export async function reorderGroups(ids: number[]) {
+  const userId = await requireUserId();
+  await prisma.$transaction(ids.map((id, i) => prisma.shareGroup.updateMany({ where: { id, userId }, data: { sortOrder: i } })));
+  refresh();
+}
+
+/** Categoría fija para asentar cancelaciones de saldo entre dos integrantes que no son yo: no es ni un ingreso ni un egreso mío. */
+async function saldoPagadoCategoryId(userId: string): Promise<number> {
+  const existing = await prisma.category.findFirst({ where: { userId, name: "Saldo pagado" } });
+  if (existing) return existing.id;
+  const created = await prisma.category.create({ data: { userId, name: "Saldo pagado", kind: "EXPENSE", color: "#9CA3AF", icon: "handshake" } });
+  return created.id;
+}
+
 /* ---------- Integrantes ---------- */
 
 export async function addMember(fd: FormData) {
@@ -215,8 +229,11 @@ export async function saldarEntre(fd: FormData) {
     transactionId = existingId;
   }
 
+  // Si ninguno de los dos soy yo, no es un ingreso ni un egreso mío: sólo cancela saldos entre
+  // terceros del grupo, y así se lo etiqueta en vez de dejarlo "sin categoría".
+  const categoryId = !de.isMe && !a.isMe ? await saldoPagadoCategoryId(userId) : null;
   const gasto = await prisma.shareExpense.create({
-    data: { groupId, description: `Pago de ${de.name} a ${a.name}`, amount: monto, date: new Date(), paidById: deId, note, transactionId },
+    data: { groupId, description: `Pago de ${de.name} a ${a.name}`, amount: monto, date: new Date(), paidById: deId, note, transactionId, categoryId },
   });
   await prisma.shareSplit.create({ data: { expenseId: gasto.id, memberId: aId, amount: monto } });
 

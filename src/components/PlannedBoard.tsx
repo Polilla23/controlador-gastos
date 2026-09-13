@@ -7,7 +7,7 @@ import Modal from "./Modal";
 import ConfirmButton from "./ConfirmButton";
 import CategorySelect, { type CategoryOpt } from "./CategorySelect";
 import MoneyInput from "./MoneyInput";
-import { confirmPlanned, deletePlanned, savePlanned } from "@/lib/actions";
+import { confirmPlannedWithEdits, deletePlanned, savePlanned } from "@/lib/actions";
 import { CURRENCIES, RECURRENCES, fmtDate, money, toInputDate } from "@/lib/format";
 import type { AccountOpt, TagOpt } from "./TransactionForm";
 import Icono from "./Icono";
@@ -163,6 +163,49 @@ function Fields({ item, type, accounts, categories, tags }: { item?: PlannedRow;
   );
 }
 
+/** Antes de crear el registro definitivo, deja ajustar fecha, monto, cuenta, categoría y nota -- por si el pago se hizo antes del vencimiento, no justo hoy. */
+function ConfirmarForm({ item, accounts, categories }: { item: PlannedRow; accounts: AccountOpt[]; categories: CategoryOpt[] }) {
+  return (
+    <ActionForm action={confirmPlannedWithEdits} submitLabel={item.type === "INCOME" ? "Registrar ingreso" : "Registrar pago"}>
+      <input type="hidden" name="id" value={item.id} />
+      <p className="rounded-lg bg-subtle px-3 py-2 text-sm text-muted">
+        Se crea el registro de <b className="text-fg">{item.description}</b>. Si lo pagaste/cobraste otro día, o por otro monto o cuenta, ajustalo antes de confirmar.
+      </p>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div>
+          <label className="label">Fecha</label>
+          <input name="date" type="date" required className="input" defaultValue={toInputDate(new Date())} />
+        </div>
+        <div>
+          <label className="label">Monto</label>
+          <MoneyInput name="amount" required defaultValue={item.amount} />
+        </div>
+      </div>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div>
+          <label className="label">Cuenta</label>
+          <select name="accountId" className="input" defaultValue={item.accountId ?? ""}>
+            <option value="">Sin definir</option>
+            {accounts.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.name} ({a.currency})
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="label">Categoría</label>
+          <CategorySelect categories={categories} kind={item.type} defaultValue={item.categoryId} />
+        </div>
+      </div>
+      <div>
+        <label className="label">Nota</label>
+        <textarea name="note" className="input" rows={2} defaultValue={item.note} />
+      </div>
+    </ActionForm>
+  );
+}
+
 export default function PlannedBoard({
   items,
   accounts,
@@ -182,6 +225,66 @@ export default function PlannedBoard({
 }) {
   const rows = items.filter((i) => i.type === type);
   const today = new Date();
+
+  const fila = (p: PlannedRow) => {
+    const late = new Date(p.dueDate) < today;
+    return (
+      <li key={p.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-line px-3 py-2.5">
+        <div className="flex min-w-0 flex-1 items-center gap-3">
+          <span
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg"
+            style={{
+              background: `${p.category?.color ?? (type === "INCOME" ? "#1A9D76" : "#F59E0B")}22`,
+              border: `2px solid ${p.category?.color ?? (type === "INCOME" ? "#1A9D76" : "#F59E0B")}`,
+            }}
+          >
+            {p.category?.iconBody && <Icono body={p.category.iconBody} size={16} className="text-fg" />}
+          </span>
+          <div className="min-w-0">
+            <div className="truncate text-sm font-semibold">
+              {p.description}
+              {p.counterparty && <span className="font-normal text-muted"> · {p.counterparty}</span>}
+            </div>
+            <div className={`flex items-center gap-1 truncate text-xs ${late ? "text-red-500" : "text-muted"}`}>
+              {late ? "Vencido · " : ""}
+              {fmtDate(p.dueDate)}
+              {p.recurrence !== "NONE" && (
+                <>
+                  <Repeat size={11} /> {RECURRENCES[p.recurrence].toLowerCase()}
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+        <div className="flex shrink-0 items-center gap-0.5 max-sm:w-full max-sm:justify-end">
+          <b className={`mr-1 text-sm ${type === "INCOME" ? "text-brand-500" : "text-red-500"}`}>{money(p.amount, p.currency)}</b>
+          <Modal
+            title={type === "INCOME" ? "Registrar ingreso" : "Registrar pago"}
+            triggerClassName="btn-icon hover:text-brand-500"
+            trigger={<Check size={16} />}
+          >
+            <ConfirmarForm item={p} accounts={accounts} categories={categories} />
+          </Modal>
+          <Modal title={`Editar ${p.description}`} triggerClassName="btn-icon" trigger={<Pencil size={15} />}>
+            <ActionForm action={savePlanned}>
+              <Fields item={p} type={type} accounts={accounts} categories={categories} tags={tags} />
+            </ActionForm>
+          </Modal>
+          <ConfirmButton action={async () => deletePlanned(p.id)} className="btn-icon hover:text-red-500" message="¿Eliminar este planificado?">
+            <Trash2 size={15} />
+          </ConfirmButton>
+        </div>
+      </li>
+    );
+  };
+
+  // Agrupados por cuenta (en el orden en que aparecen en Cuentas), así se ve de un vistazo
+  // cuánto sale/entra por cada una -- ej. separar lo de Mercado Pago de lo de la tarjeta.
+  const porCuenta = accounts
+    .map((a) => ({ account: a, rows: rows.filter((r) => r.accountId === a.id) }))
+    .filter((g) => g.rows.length > 0);
+  const sinCuenta = rows.filter((r) => r.accountId == null || !accounts.some((a) => a.id === r.accountId));
+
   return (
     <div className="card">
       <div className="mb-3 flex items-center justify-between">
@@ -195,59 +298,27 @@ export default function PlannedBoard({
 
       {rows.length === 0 && <p className="py-8 text-center text-sm text-muted">{emptyText}</p>}
 
-      <ul className="space-y-1">
-        {rows.map((p) => {
-          const late = new Date(p.dueDate) < today;
-          return (
-            <li key={p.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-line px-3 py-2.5">
-              <div className="flex min-w-0 flex-1 items-center gap-3">
-                <span
-                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg"
-                  style={{
-                    background: `${p.category?.color ?? (type === "INCOME" ? "#1A9D76" : "#F59E0B")}22`,
-                    border: `2px solid ${p.category?.color ?? (type === "INCOME" ? "#1A9D76" : "#F59E0B")}`,
-                  }}
-                >
-                  {p.category?.iconBody && <Icono body={p.category.iconBody} size={16} className="text-fg" />}
-                </span>
-                <div className="min-w-0">
-                  <div className="truncate text-sm font-semibold">
-                    {p.description}
-                    {p.counterparty && <span className="font-normal text-muted"> · {p.counterparty}</span>}
-                  </div>
-                  <div className={`flex items-center gap-1 truncate text-xs ${late ? "text-red-500" : "text-muted"}`}>
-                    {late ? "Vencido · " : ""}
-                    {fmtDate(p.dueDate)}
-                    {p.recurrence !== "NONE" && (
-                      <>
-                        <Repeat size={11} /> {RECURRENCES[p.recurrence].toLowerCase()}
-                      </>
-                    )}
-                  </div>
-                </div>
+      {rows.length > 0 && porCuenta.length + (sinCuenta.length ? 1 : 0) <= 1 ? (
+        <ul className="space-y-1">{rows.map(fila)}</ul>
+      ) : (
+        <div className="space-y-4">
+          {porCuenta.map((g) => (
+            <div key={g.account.id}>
+              <div className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted">
+                <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: g.account.color }} />
+                {g.account.name}
               </div>
-              <div className="flex shrink-0 items-center gap-0.5 max-sm:w-full max-sm:justify-end">
-                <b className={`mr-1 text-sm ${type === "INCOME" ? "text-brand-500" : "text-red-500"}`}>{money(p.amount, p.currency)}</b>
-                <ConfirmButton
-                  action={async () => confirmPlanned(p.id)}
-                  className="btn-icon hover:text-brand-500"
-                  message={type === "INCOME" ? "¿Registrar este ingreso como recibido hoy?" : "¿Registrar este pago como hecho hoy?"}
-                >
-                  <Check size={16} />
-                </ConfirmButton>
-                <Modal title={`Editar ${p.description}`} triggerClassName="btn-icon" trigger={<Pencil size={15} />}>
-                  <ActionForm action={savePlanned}>
-                    <Fields item={p} type={type} accounts={accounts} categories={categories} tags={tags} />
-                  </ActionForm>
-                </Modal>
-                <ConfirmButton action={async () => deletePlanned(p.id)} className="btn-icon hover:text-red-500" message="¿Eliminar este planificado?">
-                  <Trash2 size={15} />
-                </ConfirmButton>
-              </div>
-            </li>
-          );
-        })}
-      </ul>
+              <ul className="space-y-1">{g.rows.map(fila)}</ul>
+            </div>
+          ))}
+          {sinCuenta.length > 0 && (
+            <div>
+              <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted">Sin cuenta definida</div>
+              <ul className="space-y-1">{sinCuenta.map(fila)}</ul>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

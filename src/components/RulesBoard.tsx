@@ -1,14 +1,14 @@
 "use client";
 
-import { useState, useTransition } from "react";
-import { Pencil, Plus, Power, Trash2, Wand2 } from "lucide-react";
+import { useEffect, useState, useTransition } from "react";
+import { Check, Pencil, Plus, Power, Square, SquareCheck, Trash2, Wand2 } from "lucide-react";
 import ActionForm from "./ActionForm";
-import Modal from "./Modal";
+import Modal, { useCloseModal } from "./Modal";
 import ConfirmButton from "./ConfirmButton";
 import CategorySelect, { type CategoryOpt } from "./CategorySelect";
 import MultiSelectFilter from "./MultiSelectFilter";
-import { aplicarReglasAExistentes, deleteRule, saveRule, toggleRule } from "@/lib/actions-reglas";
-import { TX_TYPES } from "@/lib/format";
+import { aplicarReglasA, deleteRule, previsualizarReglas, saveRule, toggleRule, type PreviewFila } from "@/lib/actions-reglas";
+import { fmtDate, TX_TYPES } from "@/lib/format";
 
 type Cuenta = { id: number; name: string; currency: string };
 type Etiqueta = { id: number; name: string; color: string };
@@ -136,30 +136,99 @@ function Campos({ r, accounts, categories, tags }: { r?: RuleRow; accounts: Cuen
   );
 }
 
+/** Muestra qué le harían las reglas activas a los registros existentes, y deja elegir cuáles aplicar de verdad. */
+function PreviewReglas({ onResult }: { onResult: (msg: string) => void }) {
+  const [rows, setRows] = useState<PreviewFila[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [loading, startLoading] = useTransition();
+  const [applying, startApplying] = useTransition();
+  const closeModal = useCloseModal();
+
+  useEffect(() => {
+    startLoading(async () => {
+      try {
+        const data = await previsualizarReglas();
+        setRows(data);
+        setSelected(new Set(data.map((r) => r.id)));
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "No se pudo previsualizar");
+      }
+    });
+  }, []);
+
+  const toggle = (id: number) =>
+    setSelected((s) => {
+      const n = new Set(s);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
+  const todosMarcados = !!rows?.length && selected.size === rows.length;
+
+  const aplicar = () =>
+    startApplying(async () => {
+      try {
+        const n = await aplicarReglasA([...selected]);
+        onResult(n === 0 ? "No hubo registros para cambiar." : `Se actualizaron ${n} registros.`);
+        closeModal();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "No se pudo aplicar");
+      }
+    });
+
+  if (error) return <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>;
+  if (loading || !rows) return <p className="py-6 text-center text-sm text-muted">Buscando registros que coincidan…</p>;
+  if (!rows.length) return <p className="py-6 text-center text-sm text-muted">Ninguno de tus registros existentes cambiaría con las reglas activas.</p>;
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-muted">
+          {rows.length} registro{rows.length > 1 ? "s" : ""} van a cambiar. Destildá los que no quieras tocar.
+        </p>
+        <button type="button" className="btn-ghost text-xs" onClick={() => setSelected(todosMarcados ? new Set() : new Set(rows.map((r) => r.id)))}>
+          {todosMarcados ? "Ninguno" : "Todos"}
+        </button>
+      </div>
+      <ul className="max-h-96 divide-y divide-line overflow-y-auto text-sm">
+        {rows.map((r) => {
+          const on = selected.has(r.id);
+          return (
+            <li key={r.id} className="flex items-start gap-2 py-2.5">
+              <button type="button" onClick={() => toggle(r.id)} className={`mt-0.5 shrink-0 ${on ? "text-brand-500" : "text-muted"}`}>
+                {on ? <SquareCheck size={18} /> : <Square size={18} />}
+              </button>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="truncate font-medium">{r.descripcion}</span>
+                  <span className="shrink-0 text-xs text-muted">{fmtDate(r.fecha)}</span>
+                </div>
+                <p className="text-xs text-muted">{r.cambios.join(" · ")}</p>
+                <p className="text-xs text-muted opacity-70">por: {r.reglas.join(", ")}</p>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+      <div className="flex justify-end gap-2 border-t border-line pt-3">
+        <button type="button" className="btn-primary" disabled={applying || selected.size === 0} onClick={aplicar}>
+          <Check size={15} /> {applying ? "Aplicando…" : `Aplicar a ${selected.size} seleccionados`}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function RulesBoard({ rules, accounts, categories, tags }: { rules: RuleRow[]; accounts: Cuenta[]; categories: CategoryOpt[]; tags: Etiqueta[] }) {
-  const [pending, start] = useTransition();
   const [resultado, setResultado] = useState<string | null>(null);
 
   return (
     <>
       <div className="mb-4 flex flex-wrap justify-end gap-2">
-        <button
-          type="button"
-          className="btn-ghost"
-          disabled={pending || rules.filter((r) => r.active).length === 0}
-          onClick={() =>
-            start(async () => {
-              try {
-                const n = await aplicarReglasAExistentes();
-                setResultado(n === 0 ? "No hubo registros para cambiar." : `Se actualizaron ${n} registros.`);
-              } catch (e) {
-                setResultado(e instanceof Error ? e.message : "No se pudo aplicar");
-              }
-            })
-          }
-        >
-          <Wand2 size={16} /> {pending ? "Aplicando…" : "Aplicar a los registros existentes"}
-        </button>
+        <Modal title="Aplicar a los registros existentes" wide triggerClassName="btn-ghost" trigger={<><Wand2 size={16} /> Aplicar a los registros existentes</>}>
+          <PreviewReglas onResult={setResultado} />
+        </Modal>
         <Modal title="Nueva regla" wide trigger={<><Plus size={16} /> Nueva regla</>}>
           <ActionForm action={saveRule}>
             <Campos accounts={accounts} categories={categories} tags={tags} />
