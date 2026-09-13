@@ -6,6 +6,7 @@ import ActionForm from "./ActionForm";
 import Modal from "./Modal";
 import ConfirmButton from "./ConfirmButton";
 import CategorySelect, { type CategoryOpt } from "./CategorySelect";
+import MultiSelectFilter from "./MultiSelectFilter";
 import { aplicarReglasAExistentes, deleteRule, saveRule, toggleRule } from "@/lib/actions-reglas";
 import { TX_TYPES } from "@/lib/format";
 
@@ -18,10 +19,11 @@ export type RuleRow = {
   active: boolean;
   keywords: string;
   matchType: string;
-  matchAccountId: number | null;
-  matchToAccountId: number | null;
+  matchAccounts: Cuenta[];
+  matchToAccounts: Cuenta[];
   setCategoryId: number | null;
   setDescription: string;
+  setNote: string;
   setCounterparty: string;
   setTags: Etiqueta[];
   categoria: string | null;
@@ -70,39 +72,33 @@ function Campos({ r, accounts, categories, tags }: { r?: RuleRow; accounts: Cuen
             <input name="keywords" className="input" defaultValue={r?.keywords} placeholder="alumbrado, barrido, limpieza" />
             <p className="mt-1 text-xs text-muted">Separadas por coma. Se buscan en la descripción, en quién pagó o cobró, y en la nota.</p>
           </div>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div>
+            <label className="label">Tipo</label>
+            <select name="matchType" className="input" defaultValue={r?.matchType ?? "ANY"}>
+              <option value="ANY">Cualquiera</option>
+              {Object.entries(TX_TYPES).map(([k, v]) => (
+                <option key={k} value={k}>
+                  {v}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <MultiSelectFilter
+              name="matchAccountIds"
+              label="Desde la cuenta"
+              options={accounts.map((a) => ({ id: a.id, label: a.name }))}
+              initial={r?.matchAccounts.map((a) => a.id) ?? []}
+              allLabel="Cualquiera"
+            />
             <div>
-              <label className="label">Tipo</label>
-              <select name="matchType" className="input" defaultValue={r?.matchType ?? "ANY"}>
-                <option value="ANY">Cualquiera</option>
-                {Object.entries(TX_TYPES).map(([k, v]) => (
-                  <option key={k} value={k}>
-                    {v}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="label">Desde la cuenta</label>
-              <select name="matchAccountId" className="input" defaultValue={r?.matchAccountId ?? ""}>
-                <option value="">Cualquiera</option>
-                {accounts.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="label">Hacia la cuenta</label>
-              <select name="matchToAccountId" className="input" defaultValue={r?.matchToAccountId ?? ""}>
-                <option value="">Cualquiera</option>
-                {accounts.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.name}
-                  </option>
-                ))}
-              </select>
+              <MultiSelectFilter
+                name="matchToAccountIds"
+                label="Hacia la cuenta"
+                options={accounts.map((a) => ({ id: a.id, label: a.name }))}
+                initial={r?.matchToAccounts.map((a) => a.id) ?? []}
+                allLabel="Cualquiera"
+              />
               <p className="mt-1 text-xs text-muted">Sólo para transferencias.</p>
             </div>
           </div>
@@ -130,6 +126,10 @@ function Campos({ r, accounts, categories, tags }: { r?: RuleRow; accounts: Cuen
               <input name="setCounterparty" className="input" defaultValue={r?.setCounterparty} placeholder="Ej: Gobierno de la Ciudad" />
             </div>
           </div>
+          <div>
+            <label className="label">Cambiar la nota por</label>
+            <input name="setNote" className="input" defaultValue={r?.setNote} placeholder="Ej: Pago automático por débito" />
+          </div>
         </div>
       </fieldset>
     </>
@@ -139,7 +139,6 @@ function Campos({ r, accounts, categories, tags }: { r?: RuleRow; accounts: Cuen
 export default function RulesBoard({ rules, accounts, categories, tags }: { rules: RuleRow[]; accounts: Cuenta[]; categories: CategoryOpt[]; tags: Etiqueta[] }) {
   const [pending, start] = useTransition();
   const [resultado, setResultado] = useState<string | null>(null);
-  const nombreCuenta = (id: number | null) => accounts.find((a) => a.id === id)?.name;
 
   return (
     <>
@@ -218,14 +217,14 @@ export default function RulesBoard({ rules, accounts, categories, tags }: { rule
                       Es un <b className="text-fg">{TX_TYPES[r.matchType]?.toLowerCase()}</b>
                     </li>
                   )}
-                  {r.matchAccountId && (
+                  {r.matchAccounts.length > 0 && (
                     <li>
-                      Sale de <b className="text-fg">{nombreCuenta(r.matchAccountId)}</b>
+                      Sale de <b className="text-fg">{r.matchAccounts.map((a) => a.name).join(", ")}</b>
                     </li>
                   )}
-                  {r.matchToAccountId && (
+                  {r.matchToAccounts.length > 0 && (
                     <li>
-                      Va hacia <b className="text-fg">{nombreCuenta(r.matchToAccountId)}</b>
+                      Va hacia <b className="text-fg">{r.matchToAccounts.map((a) => a.name).join(", ")}</b>
                     </li>
                   )}
                 </ul>
@@ -241,6 +240,11 @@ export default function RulesBoard({ rules, accounts, categories, tags }: { rule
                   {r.setDescription && (
                     <li>
                       Descripción <b className="text-fg">{r.setDescription}</b>
+                    </li>
+                  )}
+                  {r.setNote && (
+                    <li>
+                      Nota <b className="text-fg">{r.setNote}</b>
                     </li>
                   )}
                   {r.setCounterparty && (

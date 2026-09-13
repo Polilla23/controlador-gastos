@@ -76,6 +76,8 @@ model Account {
   shareExpenses  ShareExpense[]
   holdings       Holding[]
   investMoves    InvestMove[]
+  ruleMatches    Rule[]            @relation("RuleMatchAccounts")
+  ruleMatchesTo  Rule[]            @relation("RuleMatchToAccounts")
 
   @@index([userId])
 }
@@ -340,11 +342,12 @@ model Rule {
   /// Palabras separadas por coma; se buscan en descripción, contraparte y nota.
   keywords        String    @default("")
   matchType       String    @default("ANY") // ANY | INCOME | EXPENSE | TRANSFER
-  matchAccountId  Int?
-  matchToAccountId Int?
+  matchAccounts   Account[] @relation("RuleMatchAccounts")
+  matchToAccounts Account[] @relation("RuleMatchToAccounts")
   setCategoryId   Int?
   setCategory     Category? @relation(fields: [setCategoryId], references: [id], onDelete: SetNull)
   setDescription  String    @default("")
+  setNote         String    @default("")
   setCounterparty String    @default("")
   setTags         Tag[]
   createdAt       DateTime  @default(now())

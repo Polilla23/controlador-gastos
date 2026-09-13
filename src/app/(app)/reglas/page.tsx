@@ -6,7 +6,11 @@ import RulesBoard from "@/components/RulesBoard";
 export default async function ReglasPage() {
   const userId = await requireUserId();
   const [rules, accounts, categories, tags] = await Promise.all([
-    prisma.rule.findMany({ where: { userId }, include: { setTags: true, setCategory: { select: { name: true } } }, orderBy: [{ sortOrder: "asc" }, { id: "asc" }] }),
+    prisma.rule.findMany({
+      where: { userId },
+      include: { setTags: true, setCategory: { select: { name: true } }, matchAccounts: true, matchToAccounts: true },
+      orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
+    }),
     prisma.account.findMany({ where: { userId, archived: false }, orderBy: [{ sortOrder: "asc" }, { id: "asc" }], select: { id: true, name: true, currency: true } }),
     prisma.category.findMany({ where: { userId }, orderBy: { name: "asc" } }),
     prisma.tag.findMany({ where: { userId }, orderBy: { name: "asc" } }),

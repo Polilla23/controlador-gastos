@@ -24,14 +24,18 @@ export type Candidato = {
   toAccountId: number | null;
 };
 
-export type Efecto = { categoryId?: number | null; description?: string; counterparty?: string; tagIds: number[]; reglas: string[] };
+export type Efecto = { categoryId?: number | null; description?: string; note?: string; counterparty?: string; tagIds: number[]; reglas: string[] };
 
 type ReglaConTags = Awaited<ReturnType<typeof reglasDe>>[number];
 
 export async function reglasDe(userId: string) {
   return prisma.rule.findMany({
     where: { userId, active: true },
-    include: { setTags: { select: { id: true, name: true } } },
+    include: {
+      setTags: { select: { id: true, name: true } },
+      matchAccounts: { select: { id: true } },
+      matchToAccounts: { select: { id: true } },
+    },
     orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
   });
 }
@@ -39,8 +43,8 @@ export async function reglasDe(userId: string) {
 /** ¿Este registro cumple los criterios de la regla? */
 export function coincide(regla: ReglaConTags, t: Candidato): boolean {
   if (regla.matchType !== "ANY" && regla.matchType !== t.type) return false;
-  if (regla.matchAccountId && regla.matchAccountId !== t.accountId) return false;
-  if (regla.matchToAccountId && regla.matchToAccountId !== t.toAccountId) return false;
+  if (regla.matchAccounts.length && !regla.matchAccounts.some((a) => a.id === t.accountId)) return false;
+  if (regla.matchToAccounts.length && !regla.matchToAccounts.some((a) => a.id === t.toAccountId)) return false;
 
   const palabras = regla.keywords
     .split(",")
@@ -60,6 +64,7 @@ export function efectoDe(reglas: ReglaConTags[], t: Candidato): Efecto {
     efecto.reglas.push(r.name);
     if (r.setCategoryId) efecto.categoryId = r.setCategoryId;
     if (r.setDescription) efecto.description = r.setDescription;
+    if (r.setNote) efecto.note = r.setNote;
     if (r.setCounterparty) efecto.counterparty = r.setCounterparty;
     for (const tag of r.setTags) if (!efecto.tagIds.includes(tag.id)) efecto.tagIds.push(tag.id);
   }
@@ -78,6 +83,7 @@ export async function aplicarAlCrear(userId: string, transactionId: number, t: C
     data: {
       ...(efecto.categoryId !== undefined ? { categoryId: efecto.categoryId } : {}),
       ...(efecto.description ? { description: efecto.description } : {}),
+      ...(efecto.note ? { note: efecto.note } : {}),
       ...(efecto.counterparty ? { counterparty: efecto.counterparty } : {}),
       ...(efecto.tagIds.length ? { tags: { connect: efecto.tagIds.map((id) => ({ id })) } } : {}),
     },
