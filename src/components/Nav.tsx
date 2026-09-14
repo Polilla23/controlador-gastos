@@ -9,6 +9,7 @@ import {
   LayoutDashboard,
   LogOut,
   Menu,
+  Plus,
   Shapes,
   Tags,
   UserCircle,
@@ -26,33 +27,52 @@ import {
 } from "lucide-react";
 import clsx from "clsx";
 import ThemeToggle from "./ThemeToggle";
+import Modal from "./Modal";
+import TransactionForm, { type AccountOpt, type QuoteOpt, type TagOpt } from "./TransactionForm";
+import type { CategoryOpt } from "./CategorySelect";
 import { signOut } from "@/lib/actions";
 
 const ITEMS = [
-  { href: "/", label: "Resumen", icon: LayoutDashboard },
-  { href: "/transacciones", label: "Transacciones", icon: ArrowLeftRight },
-  { href: "/cuentas", label: "Cuentas", icon: Wallet },
-  { href: "/planificados", label: "Planificados", icon: CalendarPlus },
-  { href: "/presupuestos", label: "Presupuestos y metas", icon: Target },
-  { href: "/inversiones", label: "Inversiones", icon: LineChart },
-  { href: "/compartidos", label: "Gastos compartidos", icon: Users },
-  { href: "/deudas", label: "Deudas", icon: HandCoins },
-  { href: "/cuotas", label: "Cuotas", icon: CalendarClock },
-  { href: "/categorias", label: "Categorías", icon: Shapes },
-  { href: "/etiquetas", label: "Etiquetas", icon: Tags },
-  { href: "/personas", label: "Personas", icon: UserRound },
-  { href: "/filtros", label: "Filtros", icon: Filter },
-  { href: "/monedas", label: "Monedas", icon: Coins },
-  { href: "/reglas", label: "Reglas", icon: Wand2 },
-  { href: "/perfil", label: "Configuraciones", icon: UserCircle },
+  { href: "/", label: "Resumen", shortLabel: "Resumen", icon: LayoutDashboard },
+  { href: "/transacciones", label: "Transacciones", shortLabel: "Transacc.", icon: ArrowLeftRight },
+  { href: "/cuentas", label: "Cuentas", shortLabel: "Cuentas", icon: Wallet },
+  { href: "/planificados", label: "Planificados", shortLabel: "Planif.", icon: CalendarPlus },
+  { href: "/presupuestos", label: "Presupuestos y metas", shortLabel: "Presup.", icon: Target },
+  { href: "/inversiones", label: "Inversiones", shortLabel: "Invers.", icon: LineChart },
+  { href: "/compartidos", label: "Gastos compartidos", shortLabel: "Compart.", icon: Users },
+  { href: "/deudas", label: "Deudas", shortLabel: "Deudas", icon: HandCoins },
+  { href: "/cuotas", label: "Cuotas", shortLabel: "Cuotas", icon: CalendarClock },
+  { href: "/categorias", label: "Categorías", shortLabel: "Categ.", icon: Shapes },
+  { href: "/etiquetas", label: "Etiquetas", shortLabel: "Etiq.", icon: Tags },
+  { href: "/personas", label: "Personas", shortLabel: "Personas", icon: UserRound },
+  { href: "/filtros", label: "Filtros", shortLabel: "Filtros", icon: Filter },
+  { href: "/monedas", label: "Monedas", shortLabel: "Monedas", icon: Coins },
+  { href: "/reglas", label: "Reglas", shortLabel: "Reglas", icon: Wand2 },
+  { href: "/perfil", label: "Configuraciones", shortLabel: "Config.", icon: UserCircle },
 ];
 
-/** Items promoted to the mobile bottom bar; the rest live behind the menu. */
-const BOTTOM = ["/", "/transacciones", "/cuentas", "/planificados"];
+/** Items promovidos a la barra inferior de celular (en este orden); el resto vive detrás del menú. */
+const BOTTOM = ["/", "/transacciones", "/cuotas", "/presupuestos", "/planificados", "/compartidos"];
 
 const isActive = (path: string, href: string) => (href === "/" ? path === "/" : path.startsWith(href));
 
-export default function Nav({ userLabel, avatarUrl }: { userLabel: string; avatarUrl?: string | null }) {
+export default function Nav({
+  userLabel,
+  avatarUrl,
+  accounts,
+  categories,
+  tags,
+  counterparties,
+  quotes,
+}: {
+  userLabel: string;
+  avatarUrl?: string | null;
+  accounts: AccountOpt[];
+  categories: CategoryOpt[];
+  tags: TagOpt[];
+  counterparties: string[];
+  quotes: QuoteOpt[];
+}) {
   const path = usePathname();
   const [open, setOpen] = useState(false);
 
@@ -146,15 +166,25 @@ export default function Nav({ userLabel, avatarUrl }: { userLabel: string; avata
         </div>
       )}
 
+      {/* Botón flotante "+": crear un registro nuevo desde cualquier pantalla, en celular. */}
+      <Modal
+        title="Nuevo registro"
+        triggerClassName="fixed bottom-20 right-4 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-brand-500 text-white shadow-lg transition hover:bg-brand-600 md:hidden"
+        trigger={<Plus size={26} />}
+      >
+        <TransactionForm accounts={accounts} categories={categories} tags={tags} counterparties={counterparties} quotes={quotes} />
+      </Modal>
+
       {/* Mobile bottom bar */}
-      <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-4 border-t border-line bg-card pb-[env(safe-area-inset-bottom)] md:hidden">
-        {ITEMS.filter((i) => BOTTOM.includes(i.href)).map((i) => {
+      <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-6 border-t border-line bg-card pb-[env(safe-area-inset-bottom)] md:hidden">
+        {BOTTOM.map((href) => ITEMS.find((i) => i.href === href)).map((i) => {
+          if (!i) return null;
           const Icon = i.icon;
           const on = isActive(path, i.href);
           return (
-            <Link key={i.href} href={i.href} className={clsx("flex flex-col items-center gap-0.5 py-2 text-[11px] font-medium", on ? "text-brand-500" : "text-muted")}>
-              <Icon size={20} />
-              {i.label}
+            <Link key={i.href} href={i.href} className={clsx("flex flex-col items-center gap-0.5 py-2 text-[10px] font-medium", on ? "text-brand-500" : "text-muted")}>
+              <Icon size={18} />
+              <span className="truncate px-0.5">{i.shortLabel}</span>
             </Link>
           );
         })}

@@ -40,7 +40,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
         <DashboardTagFilter tags={tags} selected={tagId} />
         <SavedFilters filtros={filtros.map((f) => ({ id: f.id, name: f.name, query: f.query as Record<string, string | string[]> }))} scope="DASHBOARD" />
         <DashboardConfig cards={prefs.cards} cardsMobile={prefs.cardsMobile} accounts={data.accounts.map((a) => ({ id: a.id, name: a.name, currency: a.currency, color: a.color, selected: a.selected }))} />
-        <Modal title="Nuevo registro" trigger={<><Plus size={16} /> <span className="hidden sm:inline">Nuevo registro</span></>}>
+        <Modal title="Nuevo registro" triggerClassName="btn-primary hidden md:inline-flex" trigger={<><Plus size={16} /> Nuevo registro</>}>
           <TransactionForm accounts={data.accounts} categories={categories} tags={tags} quotes={quotes} />
         </Modal>
       </PageHeader>
