@@ -199,15 +199,15 @@ function PreviewReglas({ onResult }: { onResult: (msg: string) => void }) {
           {todosMarcados ? "Ninguno" : "Todos"}
         </button>
       </div>
-      <ul className="max-h-96 divide-y divide-line overflow-y-auto text-sm">
+      <ul className="max-h-[32rem] divide-y divide-line overflow-y-auto text-sm">
         {rows.map((r) => {
           const on = selected.has(r.id);
           return (
-            <li key={r.id} className="flex items-start gap-2 py-2.5">
+            <li key={r.id} className="flex items-start gap-3 px-1 py-3.5">
               <button type="button" onClick={() => toggle(r.id)} className={`mt-0.5 shrink-0 ${on ? "text-brand-500" : "text-muted"}`}>
                 {on ? <SquareCheck size={18} /> : <Square size={18} />}
               </button>
-              <div className="min-w-0 flex-1">
+              <div className="min-w-0 flex-1 space-y-1">
                 <div className="flex items-center justify-between gap-2">
                   <span className="truncate font-medium">{r.descripcion}</span>
                   <span className="shrink-0 text-xs text-muted">{fmtDate(r.fecha)}</span>

@@ -128,17 +128,17 @@ export default function Nav({ userLabel, avatarUrl }: { userLabel: string; avata
       {open && (
         <div className="fixed inset-0 z-50 bg-black/40 md:hidden" onClick={() => setOpen(false)}>
           <div className="ml-auto flex h-full w-72 flex-col bg-card p-4 shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <div className="mb-4 flex items-center justify-between">
+            <div className="mb-4 flex shrink-0 items-center justify-between">
               <span className="truncate text-sm text-muted">{userLabel}</span>
               <button type="button" onClick={() => setOpen(false)} className="btn-icon" aria-label="Cerrar menú">
                 <X size={18} />
               </button>
             </div>
-            <nav className="flex flex-1 flex-col gap-1">{ITEMS.map((i) => link(i, () => setOpen(false)))}</nav>
+            <nav className="flex flex-1 flex-col gap-1 overflow-y-auto">{ITEMS.map((i) => link(i, () => setOpen(false)))}</nav>
             <button
               type="button"
               onClick={() => signOut()}
-              className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-muted hover:bg-subtle hover:text-fg"
+              className="flex shrink-0 items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-muted hover:bg-subtle hover:text-fg"
             >
               <LogOut size={18} /> Cerrar sesión
             </button>

@@ -60,13 +60,27 @@ function TagPicker({ tags, initial }: { tags: TagOpt[]; initial: number[] }) {
 function Fields({ item, type, accounts, categories, tags }: { item?: PlannedRow; type: string; accounts: AccountOpt[]; categories: CategoryOpt[]; tags: TagOpt[] }) {
   const kind = item?.type ?? type;
   const [includeInTelegram, setIncludeInTelegram] = useState(item?.includeInTelegram ?? true);
+  const [description, setDescription] = useState(item?.description ?? "");
+  const [note, setNote] = useState(item?.note ?? "");
+  // Si ya tenía una nota distinta de la descripción, respetamos esa decisión y no la volvemos a pisar.
+  const [noteEdited, setNoteEdited] = useState(!!item && item.note !== item.description);
   return (
     <>
       {item && <input type="hidden" name="id" value={item.id} />}
       <input type="hidden" name="type" value={kind} />
       <div>
         <label className="label">Descripción</label>
-        <input name="description" required className="input" defaultValue={item?.description} placeholder={kind === "INCOME" ? "Ej: Sueldo" : "Ej: Metrogas"} />
+        <input
+          name="description"
+          required
+          className="input"
+          value={description}
+          onChange={(e) => {
+            setDescription(e.target.value);
+            if (!noteEdited) setNote(e.target.value);
+          }}
+          placeholder={kind === "INCOME" ? "Ej: Sueldo" : "Ej: Metrogas"}
+        />
       </div>
       <div>
         <label className="label">{kind === "INCOME" ? "Quién me paga" : "A quién le pago"}</label>
@@ -129,7 +143,17 @@ function Fields({ item, type, accounts, categories, tags }: { item?: PlannedRow;
       )}
       <div>
         <label className="label">Notas</label>
-        <textarea name="note" className="input" rows={2} defaultValue={item?.note} placeholder="Notas opcionales" />
+        <textarea
+          name="note"
+          className="input"
+          rows={2}
+          value={note}
+          onChange={(e) => {
+            setNote(e.target.value);
+            setNoteEdited(true);
+          }}
+          placeholder="Por defecto, igual a la descripción"
+        />
       </div>
       <label className="flex items-center gap-2 text-sm">
         <input

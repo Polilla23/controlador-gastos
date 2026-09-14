@@ -128,7 +128,7 @@ export const CARDS: CardDef[] = [
     id: "movimientos",
     title: "Últimos movimientos",
     question: "¿Qué registré últimamente?",
-    explanation: "Los últimos 8 movimientos, ordenados por cuándo los cargaste (no por la fecha del movimiento en sí).",
+    explanation: "Los últimos movimientos (hasta 30 con \"Ver más\"), ordenados por cuándo los cargaste (no por la fecha del movimiento en sí).",
     span: 1,
   },
   {

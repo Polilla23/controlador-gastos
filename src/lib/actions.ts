@@ -88,8 +88,24 @@ export async function saveAccount(fd: FormData) {
           vencimientoActual: null,
           vencimientoProximo: null,
         };
-  if (id) await prisma.account.update({ where: { id, userId }, data });
-  else {
+  if (id) {
+    await prisma.account.update({ where: { id, userId }, data });
+    // Si se corrigió el cierre/vencimiento de una tarjeta, los registros que ya estaban cargados
+    // pueden haber quedado en el resumen equivocado: se recalculan todos con las fechas nuevas.
+    if (data.type === "CREDIT_CARD" && data.closingDay) {
+      const txs = await prisma.transaction.findMany({ where: { userId, accountId: id }, select: { id: true, date: true } });
+      const porMes = new Map<string, number[]>();
+      for (const t of txs) {
+        const sm = statementMonthForDate(t.date, data);
+        if (!sm) continue;
+        if (!porMes.has(sm)) porMes.set(sm, []);
+        porMes.get(sm)!.push(t.id);
+      }
+      if (porMes.size) {
+        await prisma.$transaction([...porMes].map(([sm, txIds]) => prisma.transaction.updateMany({ where: { id: { in: txIds } }, data: { statementMonth: sm } })));
+      }
+    }
+  } else {
     const last = await prisma.account.aggregate({ where: { userId }, _max: { sortOrder: true } });
     await prisma.account.create({ data: { ...data, userId, sortOrder: (last._max.sortOrder ?? 0) + 1 } });
   }

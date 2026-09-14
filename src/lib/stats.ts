@@ -266,7 +266,7 @@ export async function loadDashboard(userId: string, range: Range, accountIds?: n
   // fecha futura tapa algo que se acaba de cargar recién.
   const recent = [...txs]
     .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
-    .slice(0, 8)
+    .slice(0, 30) // la tarjeta muestra 8 y deja pedir más, hasta este tope
     .map((t) => ({ ...t, iconBody: t.category?.icon ? (icono(t.category.icon)?.body ?? null) : null }));
 
   return {

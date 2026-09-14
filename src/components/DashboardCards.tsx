@@ -197,7 +197,18 @@ function Pronostico({ d }: { d: Dashboard }) {
   );
 }
 
+/** Botón que va apareciendo debajo de una lista recortada, para pedir más de a un poco. */
+function VerMas({ total, shown, step, onClick }: { total: number; shown: number; step: number; onClick: () => void }) {
+  if (shown >= total) return null;
+  return (
+    <button type="button" onClick={onClick} className="mt-2 w-full rounded-lg py-1.5 text-center text-xs font-semibold text-brand-500 hover:bg-subtle">
+      Ver {Math.min(step, total - shown)} más
+    </button>
+  );
+}
+
 function ProximosPagos({ d }: { d: Dashboard }) {
+  const [shown, setShown] = useState(6);
   if (!d.planned.length)
     return (
       <div className="py-6 text-center">
@@ -209,8 +220,9 @@ function ProximosPagos({ d }: { d: Dashboard }) {
     );
   const today = new Date();
   return (
+    <>
     <ul className="mt-1 divide-y divide-line text-sm">
-      {d.planned.slice(0, 6).map((p) => {
+      {d.planned.slice(0, shown).map((p) => {
         const late = new Date(p.dueDate) < today;
         return (
           <li key={p.id} className="flex items-center justify-between gap-2 py-2.5">
@@ -235,6 +247,8 @@ function ProximosPagos({ d }: { d: Dashboard }) {
         );
       })}
     </ul>
+    <VerMas total={d.planned.length} shown={shown} step={6} onClick={() => setShown((s) => s + 6)} />
+    </>
   );
 }
 
@@ -313,6 +327,7 @@ function Tarjetas({ d }: { d: Dashboard }) {
 }
 
 function Cuotas({ d }: { d: Dashboard }) {
+  const [shown, setShown] = useState(5);
   if (!d.plans.length)
     return (
       <div className="py-6 text-center">
@@ -323,8 +338,9 @@ function Cuotas({ d }: { d: Dashboard }) {
       </div>
     );
   return (
+    <>
     <ul className="mt-1 space-y-3 text-sm">
-      {d.plans.slice(0, 5).map((p) => (
+      {d.plans.slice(0, shown).map((p) => (
         <li key={p.id}>
           <div className="mb-1 flex items-center justify-between gap-2">
             <span className="truncate font-medium">{p.description}</span>
@@ -343,6 +359,8 @@ function Cuotas({ d }: { d: Dashboard }) {
         </li>
       ))}
     </ul>
+    <VerMas total={d.plans.length} shown={shown} step={5} onClick={() => setShown((s) => s + 5)} />
+    </>
   );
 }
 
@@ -376,10 +394,12 @@ function Libro({ d }: { d: Dashboard }) {
 }
 
 function Movimientos({ d }: { d: Dashboard }) {
+  const [shown, setShown] = useState(8);
   if (!d.recent.length) return <Empty>Todavía no hay movimientos.</Empty>;
   return (
+    <>
     <ul className="mt-1 divide-y divide-line">
-      {d.recent.map((t) => (
+      {d.recent.slice(0, shown).map((t) => (
         <li key={t.id} className="flex items-center justify-between gap-2 py-2.5">
           <span className="flex min-w-0 items-center gap-3">
             <span
@@ -402,6 +422,8 @@ function Movimientos({ d }: { d: Dashboard }) {
         </li>
       ))}
     </ul>
+    <VerMas total={d.recent.length} shown={shown} step={8} onClick={() => setShown((s) => s + 8)} />
+    </>
   );
 }
 
