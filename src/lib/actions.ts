@@ -11,7 +11,6 @@ import { storeAttachment, removeStored } from "./storage";
 import { addMonths, civil, fromCivil, parseInput } from "./tz";
 import { statementMonthForDate } from "./tarjetas";
 import { aplicarAlCrear } from "./reglas";
-import { cleanupDuplicateCalendars } from "./google-calendar";
 import { syncGoogleCalendarForUser } from "./google-calendar-sync";
 
 const num = z.coerce.number();
@@ -675,15 +674,6 @@ export async function disconnectGoogleCalendar() {
     data: { googleAccessToken: null, googleRefreshToken: null, googleTokenExpiry: null, googleCalendarId: null, googleEmail: null },
   });
   revalidatePath("/perfil");
-}
-
-/** Borra los calendarios "Mis Finanzas" duplicados de Google (por ej. de reconexiones viejas) y deja sólo el que está en uso. */
-export async function limpiarCalendariosDuplicados() {
-  const userId = await requireUserId();
-  const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
-  const result = await cleanupDuplicateCalendars(user);
-  revalidatePath("/perfil");
-  return result;
 }
 
 /** Sincroniza Google Calendar ya mismo (en vez de esperar al cron diario). */

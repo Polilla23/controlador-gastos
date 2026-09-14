@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Bell, CalendarDays, KeyRound, MessageCircle, RefreshCw, Send, Smartphone, Trash2, Unlink, Upload, UserRound } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
-import { disconnectGoogleCalendar, limpiarCalendariosDuplicados, regenerateTelegramCode, saveNotificationPrefs, sincronizarGoogleCalendarAhora, unlinkTelegram } from "@/lib/actions";
+import { disconnectGoogleCalendar, regenerateTelegramCode, saveNotificationPrefs, sincronizarGoogleCalendarAhora, unlinkTelegram } from "@/lib/actions";
 import { changePassword, removeAvatar, updateProfile } from "@/lib/actions-perfil";
 import { fmtDate } from "@/lib/format";
 import { googleConfigured } from "@/lib/google-calendar";
@@ -213,16 +213,6 @@ async function renderPerfil(user: Awaited<ReturnType<typeof requireUser>>) {
                     <RefreshCw size={14} /> Sincronizar ahora
                   </button>
                 </form>
-                <ConfirmButton
-                  action={async () => {
-                    "use server";
-                    await limpiarCalendariosDuplicados();
-                  }}
-                  className="btn-ghost"
-                  message='¿Revisar si hay calendarios "Mis Finanzas" duplicados y borrar los que sobren? El que está en uso no se toca. Si no hay ninguno de más, no hace nada.'
-                >
-                  <Trash2 size={14} /> Limpiar duplicados
-                </ConfirmButton>
                 <ConfirmButton
                   action={async () => {
                     "use server";

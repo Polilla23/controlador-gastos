@@ -68,53 +68,21 @@ async function clientForUser(user: GoogleUser) {
   return client;
 }
 
-/** Borra todos los calendarios "Mis Finanzas" salvo el que la app tiene guardado (o el primero, si ninguno coincide). */
-export async function cleanupDuplicateCalendars(user: GoogleUser): Promise<{ total: number; deleted: number; keptId: string | null }> {
-  const auth = await clientForUser(user);
-  if (!auth) return { total: 0, deleted: 0, keptId: user.googleCalendarId };
-  const calendar = google.calendar({ version: "v3", auth });
-  let res;
-  try {
-    res = await calendar.calendarList.list({ maxResults: 250 });
-  } catch (e) {
-    console.error("no se pudo listar los calendarios de Google", e);
-    throw new Error("No pude consultar tus calendarios de Google. Probá de nuevo en un rato, o desconectá y reconectá Google Calendar.");
-  }
-  const mios = (res.data.items ?? []).filter((c) => c.summary === "Mis Finanzas" && c.accessRole === "owner" && c.id);
-  if (mios.length <= 1) return { total: mios.length, deleted: 0, keptId: user.googleCalendarId ?? mios[0]?.id ?? null };
-
-  const keptId = mios.some((c) => c.id === user.googleCalendarId) ? user.googleCalendarId! : mios[0].id!;
-  let deleted = 0;
-  for (const c of mios) {
-    if (c.id === keptId) continue;
-    try {
-      await calendar.calendars.delete({ calendarId: c.id! });
-      deleted++;
-    } catch (e) {
-      console.error("no se pudo borrar el calendario duplicado", c.id, e);
-    }
-  }
-  if (user.googleCalendarId !== keptId) await prisma.user.update({ where: { id: user.id }, data: { googleCalendarId: keptId } });
-  return { total: mios.length, deleted, keptId };
-}
-
 /**
- * Crea el calendario dedicado del usuario y devuelve su id. Si ya había uno de una
- * conexión anterior (desconectar borra sólo la referencia guardada, no el calendario
- * real), lo reutiliza en vez de crear otro — así no se acumulan duplicados al reconectar.
+ * Crea el calendario dedicado del usuario y devuelve su id.
+ *
+ * El scope "calendar.app.created" (elegido a propósito: sólo puede tocar lo que la
+ * propia app crea, no el resto del calendario del usuario) NO permite listar los
+ * calendarios existentes (`calendarList.list` tira "Insufficient Permission") — así
+ * que no hay forma de buscar un calendario huérfano de una conexión anterior. Nos
+ * apoyamos únicamente en `googleCalendarId` guardado en la base como fuente de verdad:
+ * si no está, se crea uno nuevo directamente.
  */
 async function ensureCalendar(user: GoogleUser): Promise<string | null> {
   if (user.googleCalendarId) return user.googleCalendarId;
   const auth = await clientForUser(user);
   if (!auth) return null;
   const calendar = google.calendar({ version: "v3", auth });
-
-  const existentes = await calendar.calendarList.list({ maxResults: 250 });
-  const previo = (existentes.data.items ?? []).find((c) => c.summary === "Mis Finanzas" && c.accessRole === "owner" && c.id);
-  if (previo?.id) {
-    await prisma.user.update({ where: { id: user.id }, data: { googleCalendarId: previo.id } });
-    return previo.id;
-  }
 
   const created = await calendar.calendars.insert({ requestBody: { summary: "Mis Finanzas", timeZone: "America/Argentina/Buenos_Aires" } });
   const id = created.data.id;
