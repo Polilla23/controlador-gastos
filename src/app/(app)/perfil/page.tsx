@@ -84,7 +84,14 @@ async function renderPerfil(user: Awaited<ReturnType<typeof requireUser>>) {
             </ActionForm>
             {avatarUrl && (
               <div className="mt-2 flex justify-end">
-                <ConfirmButton action={async () => removeAvatar()} className="btn-ghost" message="¿Sacar la foto de perfil?">
+                <ConfirmButton
+                  action={async () => {
+                    "use server";
+                    await removeAvatar();
+                  }}
+                  className="btn-ghost"
+                  message="¿Sacar la foto de perfil?"
+                >
                   <Trash2 size={14} /> Sacar foto
                 </ConfirmButton>
               </div>
