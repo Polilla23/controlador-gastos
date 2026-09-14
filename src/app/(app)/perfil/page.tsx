@@ -16,13 +16,36 @@ import DangerZone from "@/components/DangerZone";
 export default async function PerfilPage() {
   const user = await requireUser();
   const bot = process.env.NEXT_PUBLIC_TELEGRAM_BOT;
-  const avatarUrl = user.avatarPath ? await signedUrl(user.avatarPath, 3600).catch(() => null) : null;
-  const recent = await prisma.attachment.findMany({
-    where: { source: "TELEGRAM", transaction: { userId: user.id } },
-    orderBy: { createdAt: "desc" },
-    take: 8,
-    include: { transaction: { select: { id: true, description: true } } },
-  });
+
+  // Si algo acá falla, Next.js oculta el mensaje real detrás de un error genérico en producción.
+  // Lo atajamos nosotros para mostrarlo en la página y poder diagnosticarlo, en vez de romper todo.
+  let avatarUrl: string | null = null;
+  let recent: { id: number; createdAt: Date; transaction: { id: number; description: string } }[] = [];
+  let loadError: string | null = null;
+  try {
+    avatarUrl = user.avatarPath ? await signedUrl(user.avatarPath, 3600).catch(() => null) : null;
+    recent = await prisma.attachment.findMany({
+      where: { source: "TELEGRAM", transaction: { userId: user.id } },
+      orderBy: { createdAt: "desc" },
+      take: 8,
+      include: { transaction: { select: { id: true, description: true } } },
+    });
+  } catch (e) {
+    console.error("perfil: fallo cargando datos", e);
+    loadError = e instanceof Error ? e.message : String(e);
+  }
+
+  if (loadError) {
+    return (
+      <>
+        <PageHeader title="Configuraciones" subtitle={user.email} />
+        <div className="card border-red-500/30">
+          <h2 className="mb-1 font-bold text-red-500">No pude cargar esta sección</h2>
+          <p className="whitespace-pre-wrap text-sm text-muted">{loadError}</p>
+        </div>
+      </>
+    );
+  }
 
   return (
     <>
