@@ -15,17 +15,31 @@ import { civil, fromCivil } from "./tz";
 export function statementMonthFor(date: Date, closingDay: number | null | undefined, dueDay: number | null | undefined): string | null {
   if (!closingDay) return null;
   const c = civil(date);
-  // El consumo entra en el resumen que cierra este mes si es anterior al cierre.
-  let payYear = c.y;
-  let payMonth = c.m + 1; // el resumen que cierra este mes se paga al mes siguiente
-  if (c.d > closingDay) payMonth += 1; // pasó el cierre: va al resumen siguiente
 
-  // Si el vencimiento cae antes que el cierre dentro del mes, se paga un mes después.
-  if (dueDay && closingDay && dueDay < closingDay) payMonth += 0; // el vencimiento ya es del mes siguiente
+  // Mes/año del cierre que le toca a este consumo: el de este mes si todavía no
+  // pasó el día de cierre, si no el del mes siguiente.
+  let closeYear = c.y;
+  let closeMonth = c.m;
+  if (c.d > closingDay) {
+    closeMonth += 1;
+    if (closeMonth > 12) {
+      closeMonth = 1;
+      closeYear += 1;
+    }
+  }
 
-  while (payMonth > 12) {
-    payMonth -= 12;
-    payYear += 1;
+  // El vencimiento de ese resumen cae el mismo mes del cierre si el día de
+  // vencimiento es igual o posterior al día de cierre (ej: cierra el 1, vence el
+  // 9); si es un día anterior en el mes (ej: cierra el 27, vence el 5), el
+  // vencimiento es recién al mes siguiente del cierre.
+  let payYear = closeYear;
+  let payMonth = closeMonth;
+  if (!dueDay || dueDay < closingDay) {
+    payMonth += 1;
+    if (payMonth > 12) {
+      payMonth = 1;
+      payYear += 1;
+    }
   }
   return `${payYear}-${String(payMonth).padStart(2, "0")}`;
 }
@@ -99,15 +113,31 @@ export function proximosCierres(account: CardDates, today: Date = new Date()) {
  */
 export function statementMonthForDate(date: Date, account: CardDates): string | null {
   if (!account.closingDay) return null;
-  const guardados = [account.cierreAnterior, account.cierreActual, account.cierreProximo].filter((d): d is Date => !!d).sort((a, b) => a.getTime() - b.getTime());
-  const cierreQueAplica = guardados.find((d) => date <= d);
-  if (cierreQueAplica) {
-    const c = civil(cierreQueAplica);
-    let payMonth = c.m + 1;
+  const pares = [
+    { cierre: account.cierreAnterior, vencimiento: account.vencimientoAnterior },
+    { cierre: account.cierreActual, vencimiento: account.vencimientoActual },
+    { cierre: account.cierreProximo, vencimiento: account.vencimientoProximo },
+  ]
+    .filter((p): p is { cierre: Date; vencimiento: Date | null | undefined } => !!p.cierre)
+    .sort((a, b) => a.cierre.getTime() - b.cierre.getTime());
+  const queAplica = pares.find((p) => date <= p.cierre);
+  if (queAplica) {
+    // Preferimos el vencimiento guardado de ese mismo cierre (fuente de verdad si
+    // el usuario lo corrigió a mano); si no está cargado, lo derivamos del día del
+    // mes de vencimiento tomando como base el mes/año del propio cierre.
+    if (queAplica.vencimiento) {
+      const v = civil(queAplica.vencimiento);
+      return `${v.y}-${String(v.m).padStart(2, "0")}`;
+    }
+    const c = civil(queAplica.cierre);
+    let payMonth = c.m;
     let payYear = c.y;
-    while (payMonth > 12) {
-      payMonth -= 12;
-      payYear += 1;
+    if (!account.dueDay || account.dueDay < account.closingDay) {
+      payMonth += 1;
+      if (payMonth > 12) {
+        payMonth = 1;
+        payYear += 1;
+      }
     }
     return `${payYear}-${String(payMonth).padStart(2, "0")}`;
   }
