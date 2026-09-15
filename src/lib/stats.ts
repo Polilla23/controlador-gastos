@@ -1,6 +1,6 @@
 import { prisma } from "./prisma";
 import { monthKey, monthLabel, previousRange, type Range } from "./format";
-import { addDays, fromCivil, civil, startOfDay, startOfMonth } from "./tz";
+import { addDays, addMonths, fromCivil, civil, startOfDay, startOfMonth } from "./tz";
 import { icono } from "./iconos";
 import { efectoEnCajaTransaccion, portfolioValueByAccount } from "./inversiones";
 
@@ -16,7 +16,14 @@ const redondear = (n: number) => Math.round(n * 100) / 100 || 0;
  * Everything the dashboard cards need, computed in one pass.
  * `accountIds` restricts which accounts count towards the KPIs.
  */
-export async function loadDashboard(userId: string, range: Range, accountIds?: number[], tagId?: number, trendRange?: { from: string; to: string }) {
+export async function loadDashboard(
+  userId: string,
+  range: Range,
+  accountIds?: number[],
+  tagId?: number,
+  trendRange?: { from: string; to: string },
+  compareMonths?: number,
+) {
   const now = new Date();
   const prev = previousRange(range);
 
@@ -92,7 +99,11 @@ export async function loadDashboard(userId: string, range: Range, accountIds?: n
   const mainIds = new Set(scoped.filter((a) => a.currency === mainCurrency).map((a) => a.id));
 
   const netWorth = redondear(scoped.filter((a) => a.currency === mainCurrency).reduce((s, a) => s + a.balance, 0));
-  const netWorthPrev = redondear([...mainIds].reduce((s, id) => s + (balanceAt(range.start).get(id) ?? 0), 0));
+  // Por defecto se compara contra el arranque del período elegido (Mes/Semana/Año/etc.); si el
+  // usuario eligió una comparación explícita ("hace 3 meses"), se ignora el período y se compara
+  // siempre contra esa cantidad de meses atrás desde hoy.
+  const compareAt = compareMonths ? addMonths(startOfDay(now), -compareMonths) : range.start;
+  const netWorthPrev = redondear([...mainIds].reduce((s, id) => s + (balanceAt(compareAt).get(id) ?? 0), 0));
 
   /* ---------- Movement helpers ---------- */
   const inRange = (d: Date, s: Date, e: Date) => d >= s && d < e;
@@ -276,6 +287,7 @@ export async function loadDashboard(userId: string, range: Range, accountIds?: n
     currencyTotals,
     netWorth,
     netWorthPrev,
+    compareMonths: compareMonths ?? null,
     income,
     expense,
     incomePrev,

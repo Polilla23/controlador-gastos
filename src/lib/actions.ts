@@ -8,7 +8,7 @@ import { prisma } from "./prisma";
 import { requireUserId } from "./auth";
 import { supabaseServer } from "./supabase";
 import { storeAttachment, removeStored } from "./storage";
-import { addMonths, civil, fromCivil, parseInput } from "./tz";
+import { addDays, addMonths, civil, fromCivil, parseInput, startOfDay } from "./tz";
 import { statementMonthForDate } from "./tarjetas";
 import { aplicarAlCrear } from "./reglas";
 import { syncGoogleCalendarForUser } from "./google-calendar-sync";
@@ -74,7 +74,7 @@ export async function saveAccount(fd: FormData) {
   const d = accountSchema.parse(Object.fromEntries(fd));
   const data =
     d.type === "CREDIT_CARD"
-      ? d
+      ? deriveCardDates(d)
       : {
           ...d,
           creditLimit: null,
@@ -231,6 +231,22 @@ const txSchema = z.object({
   warrantyMonths: optInt,
   installments: z.coerce.number().int().min(1).max(120).default(1),
 });
+
+/**
+ * A partir del cierre/vencimiento "actual" (los únicos dos campos que el usuario corrige a
+ * mano) y el día del mes configurado, deriva el anterior y el próximo automáticamente -- así
+ * no hace falta mantener las seis fechas al día, sólo esas dos.
+ */
+function deriveCardDates<T extends { closingDay: number | null; dueDay: number | null; cierreActual: Date | null; vencimientoActual: Date | null }>(d: T) {
+  const paso = (actual: Date | null, day: number | null) => {
+    if (!actual || !day) return { anterior: null as Date | null, proximo: null as Date | null };
+    const c = civil(actual);
+    return { anterior: fromCivil(c.y, c.m - 1, day, 12), proximo: fromCivil(c.y, c.m + 1, day, 12) };
+  };
+  const cierre = paso(d.cierreActual, d.closingDay);
+  const vencimiento = paso(d.vencimientoActual, d.dueDay);
+  return { ...d, cierreAnterior: cierre.anterior, cierreProximo: cierre.proximo, vencimientoAnterior: vencimiento.anterior, vencimientoProximo: vencimiento.proximo };
+}
 
 /** Per-installment amounts; the last one absorbs the rounding remainder. */
 function splitAmount(total: number, n: number) {
@@ -574,18 +590,31 @@ export async function confirmPlannedWithEdits(fd: FormData) {
   refresh();
 }
 
-/** Cron step: turns due Planned items marked "generar automáticamente" into real transactions, for every user. */
+/**
+ * Cron step: turns due Planned items marked "generar automáticamente" into real transactions,
+ * for every user.
+ *
+ * `dueDate` se guarda anclado al mediodía hora Argentina (ver `parseInput` en `tz.ts`), pero el
+ * cron corre a las 12:00 UTC = 09:00 AR (antes del mediodía) — comparar contra `new Date()` a
+ * secas hacía que lo vencido "hoy" recién se tomara como vencido al día siguiente. Se compara
+ * en cambio contra el final del día de hoy (hora AR), así cualquier cosa vencida en el día ya
+ * se genera en la corrida del cron de ese mismo día, sin depender de a qué hora corre.
+ */
 export async function autoConfirmPlanned() {
-  const due = await prisma.planned.findMany({ where: { autoConfirm: true, done: false, dueDate: { lte: new Date() } }, include: { tags: true } });
+  const finDeHoy = addDays(startOfDay(), 1);
+  const due = await prisma.planned.findMany({ where: { autoConfirm: true, done: false, dueDate: { lt: finDeHoy } }, include: { tags: true } });
   for (const p of due) await applyPlannedConfirmation(p);
   return due.length;
 }
 
 /**
  * Cron: cuando el cierre/vencimiento "actual" guardado de una tarjeta ya pasó, lo corre un
- * lugar (anterior←actual, actual←próximo) y estima el próximo por el día del mes, para no
- * perder una corrección manual previa. Si nunca se cargaron a mano, no hay nada que rotar
- * (se siguen calculando en vivo).
+ * lugar (anterior←actual, actual←próximo) y estima el próximo por el día del mes, para que el
+ * usuario nunca tenga que tocar más que "actual" a mano (si el banco corrió la fecha ese mes,
+ * la corrige ahí y listo). Si el próximo nunca se llegó a calcular (no debería pasar si se guardó
+ * desde el formulario, que ya lo deriva solo), se estima en el momento para no quedar trabado
+ * repitiendo la misma fecha. Si no hay "actual" cargado, no hay nada que rotar (se sigue
+ * calculando en vivo desde el día del mes).
  */
 export async function rollCardDates() {
   const hoy = new Date();
@@ -602,21 +631,27 @@ export async function rollCardDates() {
       vencimientoProximo?: Date;
     } = {};
     if (c.cierreActual && c.cierreActual < hoy) {
-      data.cierreAnterior = c.cierreActual;
-      const nuevoActual = c.cierreProximo ?? c.cierreActual;
-      data.cierreActual = nuevoActual;
-      if (c.closingDay) {
-        const cc = civil(nuevoActual);
-        data.cierreProximo = fromCivil(cc.y, cc.m + 1, c.closingDay, 12);
+      const ac = civil(c.cierreActual);
+      const nuevoActual = c.cierreProximo ?? (c.closingDay ? fromCivil(ac.y, ac.m + 1, c.closingDay, 12) : null);
+      if (nuevoActual) {
+        data.cierreAnterior = c.cierreActual;
+        data.cierreActual = nuevoActual;
+        if (c.closingDay) {
+          const cc = civil(nuevoActual);
+          data.cierreProximo = fromCivil(cc.y, cc.m + 1, c.closingDay, 12);
+        }
       }
     }
     if (c.vencimientoActual && c.vencimientoActual < hoy) {
-      data.vencimientoAnterior = c.vencimientoActual;
-      const nuevoActual = c.vencimientoProximo ?? c.vencimientoActual;
-      data.vencimientoActual = nuevoActual;
-      if (c.dueDay) {
-        const vc = civil(nuevoActual);
-        data.vencimientoProximo = fromCivil(vc.y, vc.m + 1, c.dueDay, 12);
+      const ac = civil(c.vencimientoActual);
+      const nuevoActual = c.vencimientoProximo ?? (c.dueDay ? fromCivil(ac.y, ac.m + 1, c.dueDay, 12) : null);
+      if (nuevoActual) {
+        data.vencimientoAnterior = c.vencimientoActual;
+        data.vencimientoActual = nuevoActual;
+        if (c.dueDay) {
+          const vc = civil(nuevoActual);
+          data.vencimientoProximo = fromCivil(vc.y, vc.m + 1, c.dueDay, 12);
+        }
       }
     }
     if (Object.keys(data).length) await prisma.account.update({ where: { id: c.id }, data });

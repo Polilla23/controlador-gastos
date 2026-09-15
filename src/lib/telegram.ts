@@ -1,9 +1,10 @@
 import { prisma } from "./prisma";
 import { storeAttachment } from "./storage";
 import { money, fmtDate, fmtDayMonth } from "./format";
-import { APP_TZ, addDays, civil as civilOf, fromCivil, startOfDay } from "./tz";
+import { APP_TZ, addDays, civil as civilOf, fromCivil, monthKey, startOfDay } from "./tz";
 import { cargarPresupuestos } from "./presupuestos";
 import { accountBalances } from "./balances";
+import { proximosCierres } from "./tarjetas";
 
 const api = (method: string) => `https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/${method}`;
 
@@ -72,15 +73,18 @@ async function proximosDelPeriodo(userId: string, start: Date, end: Date): Promi
   };
 
   for (const card of cards) {
-    const c = civilOf(start);
-    let due = fromCivil(c.y, c.m, card.dueDay!, 12);
-    if (due < start) due = fromCivil(c.y, c.m + 1, card.dueDay!, 12);
-    if (due < start || due >= end) continue;
+    // Vencimiento de esta tarjeta que cae dentro del período (respeta las fechas concretas
+    // guardadas en la cuenta si están cargadas, en vez de asumir siempre el mismo día del mes).
+    const { vencimientoAnterior, vencimientoActual, vencimientoProximo } = proximosCierres(card);
+    const due = [vencimientoAnterior, vencimientoActual, vencimientoProximo].find((d): d is Date => !!d && d >= start && d < end);
+    if (!due) continue;
+    // Sólo lo que corresponde a ESE resumen (statementMonth), no el saldo acumulado de toda la
+    // tarjeta — si no, un consumo de un mes que todavía no vence se sumaba igual.
     const txs = await prisma.transaction.findMany({
-      where: { userId, accountId: card.id, date: { lte: new Date() } },
+      where: { userId, accountId: card.id, statementMonth: monthKey(due) },
       select: { type: true, amount: true },
     });
-    const usado = txs.reduce((s, t) => s + (t.type === "EXPENSE" ? t.amount : -t.amount), 0) - card.initialBalance;
+    const usado = txs.reduce((s, t) => s + (t.type === "EXPENSE" ? t.amount : -t.amount), 0);
     // Pagada si hay un movimiento "Pago Tarjeta..." de/hacia esta cuenta dentro del período.
     const pago = await prisma.transaction.findFirst({
       where: {

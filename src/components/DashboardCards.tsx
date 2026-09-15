@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { ArrowDownLeft, ArrowUpRight, HelpCircle } from "lucide-react";
 import type { Dashboard } from "@/lib/stats";
 import { CARDS } from "@/lib/cards";
@@ -29,13 +30,44 @@ type Props = { data: Dashboard; cards: string[]; cardsMobile: string[] };
 
 /* ---------- Individual cards ---------- */
 
+const PRESET_LABEL: Record<string, string> = { dia: "día anterior", semana: "semana anterior", mes: "mes anterior", anio: "año anterior", rango: "período anterior" };
+
+/** Selector de contra qué se compara el "Saldo actual": el período elegido arriba (por defecto), o una cantidad fija de meses atrás. */
+function CompareControl({ compareMonths }: { compareMonths: number | null }) {
+  const router = useRouter();
+  const path = usePathname();
+  const params = useSearchParams();
+  return (
+    <select
+      className="rounded border-none bg-transparent text-xs text-muted underline decoration-dotted hover:text-fg"
+      value={compareMonths ? String(compareMonths) : ""}
+      onChange={(e) => {
+        const next = new URLSearchParams(params.toString());
+        if (e.target.value) next.set("cmp", e.target.value);
+        else next.delete("cmp");
+        router.push(`${path}?${next.toString()}`);
+      }}
+    >
+      <option value="">vs. el período elegido arriba</option>
+      <option value="1">vs. hace 1 mes</option>
+      <option value="3">vs. hace 3 meses</option>
+      <option value="6">vs. hace 6 meses</option>
+      <option value="12">vs. hace 12 meses</option>
+    </select>
+  );
+}
+
 function Patrimonio({ d }: { d: Dashboard }) {
+  const label = d.compareMonths ? `hace ${d.compareMonths} mes${d.compareMonths > 1 ? "es" : ""}` : (PRESET_LABEL[d.range.preset] ?? "período anterior");
   return (
     <>
       <div className="kpi-value">{money(d.netWorth, d.mainCurrency)}</div>
       <div className="mt-2 flex items-center gap-2">
         <Delta value={pct(d.netWorth, d.netWorthPrev)} />
-        <span className="text-xs text-muted">vs. período anterior</span>
+        <span className="text-xs text-muted">vs. {label}</span>
+      </div>
+      <div className="mt-1">
+        <CompareControl compareMonths={d.compareMonths} />
       </div>
       <Sparkline data={d.balanceTrend} currency={d.mainCurrency} />
     </>
@@ -197,13 +229,24 @@ function Pronostico({ d }: { d: Dashboard }) {
   );
 }
 
-/** Botón que va apareciendo debajo de una lista recortada, para pedir más de a un poco. */
-function VerMas({ total, shown, step, onClick }: { total: number; shown: number; step: number; onClick: () => void }) {
-  if (shown >= total) return null;
+/** Botones debajo de una lista recortada: pedir más de a un poco, o volver al tamaño inicial sin recargar la página. */
+function VerMas({ total, shown, initial, step, onMore, onLess }: { total: number; shown: number; initial: number; step: number; onMore: () => void; onLess: () => void }) {
+  const hayMas = shown < total;
+  const hayMenos = shown > initial;
+  if (!hayMas && !hayMenos) return null;
   return (
-    <button type="button" onClick={onClick} className="mt-2 w-full rounded-lg py-1.5 text-center text-xs font-semibold text-brand-500 hover:bg-subtle">
-      Ver {Math.min(step, total - shown)} más
-    </button>
+    <div className="mt-2 flex gap-2">
+      {hayMas && (
+        <button type="button" onClick={onMore} className="flex-1 rounded-lg py-1.5 text-center text-xs font-semibold text-brand-500 hover:bg-subtle">
+          Ver {Math.min(step, total - shown)} más
+        </button>
+      )}
+      {hayMenos && (
+        <button type="button" onClick={onLess} className="flex-1 rounded-lg py-1.5 text-center text-xs font-semibold text-muted hover:bg-subtle">
+          Ver menos
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -247,7 +290,7 @@ function ProximosPagos({ d }: { d: Dashboard }) {
         );
       })}
     </ul>
-    <VerMas total={d.planned.length} shown={shown} step={6} onClick={() => setShown((s) => s + 6)} />
+    <VerMas total={d.planned.length} shown={shown} initial={6} step={6} onMore={() => setShown((s) => s + 6)} onLess={() => setShown(6)} />
     </>
   );
 }
@@ -359,7 +402,7 @@ function Cuotas({ d }: { d: Dashboard }) {
         </li>
       ))}
     </ul>
-    <VerMas total={d.plans.length} shown={shown} step={5} onClick={() => setShown((s) => s + 5)} />
+    <VerMas total={d.plans.length} shown={shown} initial={5} step={5} onMore={() => setShown((s) => s + 5)} onLess={() => setShown(5)} />
     </>
   );
 }
@@ -422,7 +465,7 @@ function Movimientos({ d }: { d: Dashboard }) {
         </li>
       ))}
     </ul>
-    <VerMas total={d.recent.length} shown={shown} step={8} onClick={() => setShown((s) => s + 8)} />
+    <VerMas total={d.recent.length} shown={shown} initial={8} step={8} onMore={() => setShown((s) => s + 8)} onLess={() => setShown(8)} />
     </>
   );
 }

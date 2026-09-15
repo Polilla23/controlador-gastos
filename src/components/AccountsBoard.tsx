@@ -97,32 +97,20 @@ function AccountFields({ account }: { account?: AccountRow }) {
           {fechas && (
             <>
               <p className="text-xs font-semibold uppercase tracking-wide text-muted">Fechas concretas (opcional, corrige lo calculado del día del mes)</p>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                <div>
-                  <label className="label">Cierre anterior</label>
-                  <input name="cierreAnterior" type="date" className="input" defaultValue={fechas.cierreAnterior ? toInputDate(fechas.cierreAnterior) : ""} />
-                </div>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div>
                   <label className="label">Cierre actual</label>
                   <input name="cierreActual" type="date" className="input" defaultValue={fechas.cierreActual ? toInputDate(fechas.cierreActual) : ""} />
                 </div>
                 <div>
-                  <label className="label">Próximo cierre</label>
-                  <input name="cierreProximo" type="date" className="input" defaultValue={fechas.cierreProximo ? toInputDate(fechas.cierreProximo) : ""} />
-                </div>
-                <div>
-                  <label className="label">Vencimiento anterior</label>
-                  <input name="vencimientoAnterior" type="date" className="input" defaultValue={fechas.vencimientoAnterior ? toInputDate(fechas.vencimientoAnterior) : ""} />
-                </div>
-                <div>
                   <label className="label">Vencimiento actual</label>
                   <input name="vencimientoActual" type="date" className="input" defaultValue={fechas.vencimientoActual ? toInputDate(fechas.vencimientoActual) : ""} />
                 </div>
-                <div>
-                  <label className="label">Próximo vencimiento</label>
-                  <input name="vencimientoProximo" type="date" className="input" defaultValue={fechas.vencimientoProximo ? toInputDate(fechas.vencimientoProximo) : ""} />
-                </div>
               </div>
+              <p className="text-xs text-muted">
+                Con esto alcanza: el anterior y el próximo cierre/vencimiento se calculan solos a partir de éstos y del día del mes de arriba, y se van corriendo
+                automáticamente un mes cuando el actual vence. Sólo corregí &quot;actual&quot; el mes que el banco te corra la fecha.
+              </p>
             </>
           )}
         </div>

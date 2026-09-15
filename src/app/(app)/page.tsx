@@ -23,9 +23,10 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   const sp = await searchParams;
   const tagId = sp.etiqueta ? Number(sp.etiqueta) : undefined;
   const trendRange = sp.tDesde && sp.tHasta ? { from: sp.tDesde, to: sp.tHasta } : undefined;
+  const compareMonths = sp.cmp ? Number(sp.cmp) : undefined;
 
   const [data, categories, tags, filtros, { lista: quotes }] = await Promise.all([
-    loadDashboard(user.id, range, prefs.accountIds, tagId, trendRange),
+    loadDashboard(user.id, range, prefs.accountIds, tagId, trendRange, compareMonths),
     prisma.category.findMany({ where: { userId: user.id }, orderBy: { name: "asc" } }),
     prisma.tag.findMany({ where: { userId: user.id }, orderBy: { name: "asc" } }),
     prisma.savedFilter.findMany({ where: { userId: user.id, scope: "DASHBOARD" }, orderBy: { name: "asc" } }),
