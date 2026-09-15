@@ -93,3 +93,25 @@ body {
 .recharts-text {
   fill: var(--muted);
 }
+
+/* Scroll fino para las cards resizeables del Resumen: la barra clásica del SO (con flechas
+   arriba/abajo) queda tapada por el asa de resize de la esquina cuando la card es chica --
+   una barra angosta sin flechas no tiene ese problema. */
+.dash-card-scroll {
+  scrollbar-width: thin;
+}
+.dash-card-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+.dash-card-scroll::-webkit-scrollbar-thumb {
+  background: var(--line);
+  border-radius: 3px;
+}
+.dash-card-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* El asa de resize (react-resizable) usa una flechita gris fija -- en modo oscuro casi no se ve. */
+.dark .react-resizable-handle {
+  opacity: 0.6;
+}

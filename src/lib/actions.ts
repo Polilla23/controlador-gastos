@@ -735,6 +735,14 @@ export async function saveDashboardSizes(sizes: Record<string, { w: number; h: n
   await prisma.user.update({ where: { id: userId }, data: { dashboard: { ...current, sizes } } });
 }
 
+/** Guarda el orden de las cards de escritorio cuando se arrastran directamente en Resumen (con el asa), sin pasar por "Personalizar". */
+export async function saveDashboardOrder(cards: string[]) {
+  const userId = await requireUserId();
+  const user = await prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { dashboard: true } });
+  const current = (user.dashboard as Record<string, unknown> | null) ?? {};
+  await prisma.user.update({ where: { id: userId }, data: { dashboard: { ...current, cards } } });
+}
+
 
 /* ---------- Dividir y clonar registros ---------- */
 

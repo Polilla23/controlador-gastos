@@ -4,13 +4,13 @@ import { useState, useTransition, type ReactNode } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { ArrowDownLeft, ArrowUpRight, HelpCircle } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, GripVertical, HelpCircle } from "lucide-react";
 import GridLayout, { WidthProvider, type Layout } from "react-grid-layout";
 import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
 import type { Dashboard } from "@/lib/stats";
 import { CARDS, type CardDef, type CardSize } from "@/lib/cards";
-import { saveDashboardSizes } from "@/lib/actions";
+import { saveDashboardOrder, saveDashboardSizes } from "@/lib/actions";
 import { money, fmtDate, fmtDayMonth, pct, NATURES, NATURE_COLORS, ACCOUNT_TYPES, accountLabel } from "@/lib/format";
 import { Delta, Empty } from "./ui";
 import Icono from "./Icono";
@@ -38,7 +38,7 @@ function buildLayout(ids: string[], defs: Map<string, CardDef>, sizes: Record<st
       y += rowH;
       rowH = 0;
     }
-    out.push({ i: id, x, y, w, h, minW: 1, minH: 4 });
+    out.push({ i: id, x, y, w, h, minW: 1, minH: 5 });
     x += w;
     rowH = Math.max(rowH, h);
   }
@@ -595,7 +595,7 @@ export default function DashboardCards({ data, cards, cardsMobile, sizes }: Prop
     }
   };
 
-  const cardInner = (id: string) => {
+  const cardInner = (id: string, handle?: ReactNode) => {
     const def = defs.get(id);
     if (!def) return null;
     const open = explained.has(id);
@@ -603,6 +603,7 @@ export default function DashboardCards({ data, cards, cardsMobile, sizes }: Prop
     return (
       <>
         <h2 className="flex items-center gap-1.5 font-bold">
+          {handle}
           {def.title}
           <button type="button" onClick={() => toggleExplain(id)} className="text-muted" aria-label="Cómo se calcula">
             <HelpCircle size={13} className="shrink-0 cursor-pointer" />
@@ -643,8 +644,15 @@ export default function DashboardCards({ data, cards, cardsMobile, sizes }: Prop
   );
 }
 
-/** El grid redimensionable de escritorio: arranca del layout guardado y persiste sólo w/h al soltar el resize. */
-function DesktopGrid({ ids, defs, sizes, renderCard }: { ids: string[]; defs: Map<string, CardDef>; sizes: Record<string, CardSize>; renderCard: (id: string) => ReactNode }) {
+const DRAG_HANDLE = (
+  <span className="card-drag-handle mr-0.5 flex h-5 w-5 shrink-0 cursor-grab items-center justify-center rounded text-muted active:cursor-grabbing" title="Arrastrar para reordenar">
+    <GripVertical size={14} />
+  </span>
+);
+
+/** El grid redimensionable de escritorio: arranca del layout guardado, persiste w/h al soltar el
+ * resize y el orden (arrastrando desde el asa) al soltar el drag. */
+function DesktopGrid({ ids, defs, sizes, renderCard }: { ids: string[]; defs: Map<string, CardDef>; sizes: Record<string, CardSize>; renderCard: (id: string, handle?: ReactNode) => ReactNode }) {
   const [layout, setLayout] = useState<Layout[]>(() => buildLayout(ids, defs, sizes));
   const [, startSave] = useTransition();
   const persistSizes = (next: Layout[]) => {
@@ -652,11 +660,27 @@ function DesktopGrid({ ids, defs, sizes, renderCard }: { ids: string[]; defs: Ma
     for (const item of next) map[item.i] = { w: item.w, h: item.h };
     startSave(() => saveDashboardSizes(map));
   };
+  const persistOrder = (next: Layout[]) => {
+    const order = [...next].sort((a, b) => a.y - b.y || a.x - b.x).map((item) => item.i);
+    startSave(() => saveDashboardOrder(order));
+  };
   return (
-    <ResizableGrid layout={layout} cols={GRID_COLS} rowHeight={ROW_H} margin={[16, 16]} isDraggable={false} isResizable resizeHandles={["se"]} onLayoutChange={setLayout} onResizeStop={persistSizes}>
+    <ResizableGrid
+      layout={layout}
+      cols={GRID_COLS}
+      rowHeight={ROW_H}
+      margin={[16, 16]}
+      isDraggable
+      draggableHandle=".card-drag-handle"
+      isResizable
+      resizeHandles={["se"]}
+      onLayoutChange={setLayout}
+      onResizeStop={persistSizes}
+      onDragStop={persistOrder}
+    >
       {ids.map((id) => (
-        <div key={id} className="card overflow-y-auto">
-          {renderCard(id)}
+        <div key={id} className="card dash-card-scroll overflow-y-auto pb-5">
+          {renderCard(id, DRAG_HANDLE)}
         </div>
       ))}
     </ResizableGrid>
