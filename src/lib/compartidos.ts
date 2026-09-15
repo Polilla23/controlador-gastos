@@ -42,7 +42,7 @@ export async function cargarGrupo(userId: string, groupId: number) {
     where: { id: groupId, userId },
     include: {
       members: { orderBy: { id: "asc" } },
-      expenses: { include: { splits: true, paidBy: true }, orderBy: { date: "desc" } },
+      expenses: { include: { splits: true, paidBy: true, tags: true }, orderBy: { date: "desc" } },
     },
   });
   if (!group) return null;

@@ -10,53 +10,53 @@ datasource db {
 
 // id = Supabase Auth user id (uuid). Created on first login.
 model User {
-  id             String            @id
-  email          String            @unique
-  name           String            @default("")
-  avatarPath     String? // path del avatar en el bucket de Storage
-  telegramChatId String?           @unique
-  telegramCode   String?           @unique // one-time code used to link the chat
-  notifyDays     Int               @default(3) // days before a due date to warn
-  notifyHour     Int               @default(9) // local hour for the daily digest
-  dashboard      Json? // { cards: string[], cardsMobile?: string[], accountIds: number[] }
+  id                 String            @id
+  email              String            @unique
+  name               String            @default("")
+  avatarPath         String? // path del avatar en el bucket de Storage
+  telegramChatId     String?           @unique
+  telegramCode       String?           @unique // one-time code used to link the chat
+  notifyDays         Int               @default(3) // days before a due date to warn
+  notifyHour         Int               @default(9) // local hour for the daily digest
+  dashboard          Json? // { cards: string[], cardsMobile?: string[], accountIds: number[] }
   googleAccessToken  String? // Google Calendar OAuth
   googleRefreshToken String?
   googleTokenExpiry  DateTime?
   googleCalendarId   String? // calendario dedicado creado para la app
   googleEmail        String? // sólo para mostrar la cuenta conectada
-  createdAt      DateTime          @default(now())
-  accounts       Account[]
-  categories     Category[]
-  tags           Tag[]
-  transactions   Transaction[]
-  plans          InstallmentPlan[]
-  planned        Planned[]
-  filters        SavedFilter[]
-  budgets        Budget[]
-  goals          Goal[]
-  debts          Debt[]
-  rules          Rule[]
-  groups         ShareGroup[]
-  holdings       Holding[]
-  investMoves    InvestMove[]
+  createdAt          DateTime          @default(now())
+  accounts           Account[]
+  categories         Category[]
+  tags               Tag[]
+  transactions       Transaction[]
+  plans              InstallmentPlan[]
+  planned            Planned[]
+  filters            SavedFilter[]
+  budgets            Budget[]
+  goals              Goal[]
+  debts              Debt[]
+  rules              Rule[]
+  groups             ShareGroup[]
+  holdings           Holding[]
+  investMoves        InvestMove[]
 }
 
 model Account {
-  id             Int               @id @default(autoincrement())
-  userId         String
-  user           User              @relation(fields: [userId], references: [id], onDelete: Cascade)
-  name           String
-  icon           String? // ícono elegido en el selector (ej "mdi:bank")
-  type           String // CASH | BANK | CREDIT_CARD | WALLET | SAVINGS | INVESTMENT
-  currency       String // ARS | USD | ...
-  color          String            @default("#1A9D76")
-  initialBalance Float             @default(0)
-  sortOrder      Int               @default(0)
-  includeInStats Boolean           @default(true) // counts towards dashboard KPIs
-  archived       Boolean           @default(false)
-  creditLimit    Float? // CREDIT_CARD only
-  closingDay     Int? // CREDIT_CARD: statement closing day of month
-  dueDay         Int? // CREDIT_CARD: payment due day of month
+  id                  Int                @id @default(autoincrement())
+  userId              String
+  user                User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name                String
+  icon                String? // ícono elegido en el selector (ej "mdi:bank")
+  type                String // CASH | BANK | CREDIT_CARD | WALLET | SAVINGS | INVESTMENT
+  currency            String // ARS | USD | ...
+  color               String             @default("#1A9D76")
+  initialBalance      Float              @default(0)
+  sortOrder           Int                @default(0)
+  includeInStats      Boolean            @default(true) // counts towards dashboard KPIs
+  archived            Boolean            @default(false)
+  creditLimit         Float? // CREDIT_CARD only
+  closingDay          Int? // CREDIT_CARD: statement closing day of month
+  dueDay              Int? // CREDIT_CARD: payment due day of month
   // CREDIT_CARD: fechas concretas, editables a mano. Mientras estén vacías se calculan en vivo
   // desde closingDay/dueDay; una vez cargadas, son la fuente de verdad hasta el próximo rollover.
   cierreAnterior      DateTime?
@@ -65,20 +65,20 @@ model Account {
   vencimientoAnterior DateTime?
   vencimientoActual   DateTime?
   vencimientoProximo  DateTime?
-  lastNotifiedOn DateTime? // dedupes the card due-date reminder
-  createdAt      DateTime          @default(now())
-  transactions   Transaction[]     @relation("AccountTx")
-  transfersIn    Transaction[]     @relation("ToAccountTx")
-  installments   InstallmentPlan[]
-  planned        Planned[]
-  budgets        Budget[]
-  debts          Debt[]
-  goalContributions GoalContribution[]
-  shareExpenses  ShareExpense[]
-  holdings       Holding[]
-  investMoves    InvestMove[]
-  ruleMatches    Rule[]            @relation("RuleMatchAccounts")
-  ruleMatchesTo  Rule[]            @relation("RuleMatchToAccounts")
+  lastNotifiedOn      DateTime? // dedupes the card due-date reminder
+  createdAt           DateTime           @default(now())
+  transactions        Transaction[]      @relation("AccountTx")
+  transfersIn         Transaction[]      @relation("ToAccountTx")
+  installments        InstallmentPlan[]
+  planned             Planned[]
+  budgets             Budget[]
+  debts               Debt[]
+  goalContributions   GoalContribution[]
+  shareExpenses       ShareExpense[]
+  holdings            Holding[]
+  investMoves         InvestMove[]
+  ruleMatches         Rule[]             @relation("RuleMatchAccounts")
+  ruleMatchesTo       Rule[]             @relation("RuleMatchToAccounts")
 
   @@index([userId])
 }
@@ -108,52 +108,53 @@ model Category {
 }
 
 model Tag {
-  id           Int           @id @default(autoincrement())
-  userId       String
-  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  name         String
-  color        String        @default("#24C092")
-  icon         String? // nombre del ícono elegido en el selector
-  sortOrder    Int           @default(0)
-  transactions Transaction[]
-  planned      Planned[]
-  budgets      Budget[]
-  rules        Rule[]
-  debts        Debt[]
+  id            Int            @id @default(autoincrement())
+  userId        String
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name          String
+  color         String         @default("#24C092")
+  icon          String? // nombre del ícono elegido en el selector
+  sortOrder     Int            @default(0)
+  transactions  Transaction[]
+  planned       Planned[]
+  budgets       Budget[]
+  rules         Rule[]
+  debts         Debt[]
+  shareExpenses ShareExpense[]
 
   @@unique([userId, name])
 }
 
 model Transaction {
-  id            Int              @id @default(autoincrement())
-  userId        String
-  user          User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  type          String // INCOME | EXPENSE | TRANSFER
-  amount        Float
-  currency      String
-  date          DateTime // includes time of day
-  dueDate       DateTime? // optional payment deadline (e.g. a bill)
-  paid          Boolean          @default(true)
-  description   String           @default("")
-  note          String           @default("")
-  counterparty  String           @default("") // quién me pagó o a quién le pagué
+  id             Int              @id @default(autoincrement())
+  userId         String
+  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type           String // INCOME | EXPENSE | TRANSFER
+  amount         Float
+  currency       String
+  date           DateTime // includes time of day
+  dueDate        DateTime? // optional payment deadline (e.g. a bill)
+  paid           Boolean          @default(true)
+  description    String           @default("")
+  note           String           @default("")
+  counterparty   String           @default("") // quién me pagó o a quién le pagué
   warrantyMonths Int? // garantía del producto, en meses
-  splitGroup    String? // agrupa los registros nacidos de dividir uno solo
-  fxRate        Float? // cotización usada para convertir a la moneda principal
+  splitGroup     String? // agrupa los registros nacidos de dividir uno solo
+  fxRate         Float? // cotización usada para convertir a la moneda principal
   statementMonth String? // "YYYY-MM": resumen de tarjeta en el que cae el consumo
-  accountId     Int
-  account       Account          @relation("AccountTx", fields: [accountId], references: [id], onDelete: Cascade)
-  toAccountId   Int?
-  toAccount     Account?         @relation("ToAccountTx", fields: [toAccountId], references: [id], onDelete: Cascade)
-  toAmount      Float? // amount received in destination currency (transfers)
-  categoryId    Int?
-  category      Category?        @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  tags          Tag[]
-  planId        Int?
-  plan          InstallmentPlan? @relation(fields: [planId], references: [id], onDelete: Cascade)
-  installmentNo Int?
-  attachments   Attachment[]
-  createdAt     DateTime         @default(now())
+  accountId      Int
+  account        Account          @relation("AccountTx", fields: [accountId], references: [id], onDelete: Cascade)
+  toAccountId    Int?
+  toAccount      Account?         @relation("ToAccountTx", fields: [toAccountId], references: [id], onDelete: Cascade)
+  toAmount       Float? // amount received in destination currency (transfers)
+  categoryId     Int?
+  category       Category?        @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  tags           Tag[]
+  planId         Int?
+  plan           InstallmentPlan? @relation(fields: [planId], references: [id], onDelete: Cascade)
+  installmentNo  Int?
+  attachments    Attachment[]
+  createdAt      DateTime         @default(now())
 
   @@index([userId, date])
   @@index([accountId])
@@ -182,29 +183,37 @@ model InstallmentPlan {
 
 /// Future money: expected income (salary, refunds) and upcoming bills.
 model Planned {
-  id             Int       @id @default(autoincrement())
-  userId         String
-  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  type           String // INCOME | EXPENSE
-  description    String
-  counterparty   String    @default("") // a quién le pago o quién me paga
-  amount         Float
-  currency       String
-  dueDate        DateTime
-  recurrence     String    @default("NONE") // NONE | WEEKLY | MONTHLY | YEARLY
-  accountId      Int?
-  account        Account?  @relation(fields: [accountId], references: [id], onDelete: SetNull)
-  categoryId     Int?
-  category       Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  tags           Tag[]
-  note           String    @default("")
-  notify         Boolean   @default(true)
-  includeInTelegram Boolean @default(true) // si aparece en /proximos, /proximomes y los avisos
-  includeInCalendar Boolean @default(true) // si genera evento en Google Calendar
-  autoConfirm    Boolean   @default(false)
-  done           Boolean   @default(false)
-  lastNotifiedOn DateTime?
-  createdAt      DateTime  @default(now())
+  id                Int          @id @default(autoincrement())
+  userId            String
+  user              User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type              String // INCOME | EXPENSE
+  description       String
+  counterparty      String       @default("") // a quién le pago o quién me paga
+  amount            Float
+  currency          String
+  dueDate           DateTime
+  recurrence        String       @default("NONE") // NONE | WEEKLY | MONTHLY | YEARLY
+  accountId         Int?
+  account           Account?     @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  categoryId        Int?
+  category          Category?    @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  tags              Tag[]
+  note              String       @default("")
+  /// Si está cargado, al confirmarlo la transacción se genera sólo por MI parte (el % de
+  /// `shareMember` dentro de este grupo), no por el monto total -- ej. "Expensas $500.000" con
+  /// 50/50 configurado genera un egreso de $250.000, no de $500.000.
+  shareGroupId      Int?
+  shareGroup        ShareGroup?  @relation(fields: [shareGroupId], references: [id], onDelete: SetNull)
+  /// Con quién del grupo se comparte (no yo -- el otro integrante), sólo para mostrarlo.
+  shareMemberId     Int?
+  shareMember       ShareMember? @relation("GastoCompartidoCon", fields: [shareMemberId], references: [id], onDelete: SetNull)
+  notify            Boolean      @default(true)
+  includeInTelegram Boolean      @default(true) // si aparece en /proximos, /proximomes y los avisos
+  includeInCalendar Boolean      @default(true) // si genera evento en Google Calendar
+  autoConfirm       Boolean      @default(false)
+  done              Boolean      @default(false)
+  lastNotifiedOn    DateTime?
+  createdAt         DateTime     @default(now())
 
   @@index([userId, dueDate])
 }
@@ -281,7 +290,9 @@ model GoalContribution {
   @@index([goalId, date])
 }
 
-/* ---------- Deudas ---------- */
+/**
+ * ---------- Deudas ----------
+ */
 
 /// Plata prestada o pedida prestada, fuera del circuito de gastos.
 model Debt {
@@ -323,47 +334,53 @@ model DebtPayment {
   @@index([debtId])
 }
 
-/* ---------- Cotizaciones ---------- */
+/**
+ * ---------- Cotizaciones ----------
+ */
 
 /// Última cotización conocida de cada tipo de dólar, cacheada de dolarapi.com.
 model Quote {
-  id        Int      @id @default(autoincrement())
-  code      String   @unique // oficial | blue | bolsa | contadoconliqui | tarjeta | cripto | mayorista
+  id        Int       @id @default(autoincrement())
+  code      String    @unique // oficial | blue | bolsa | contadoconliqui | tarjeta | cripto | mayorista
   name      String
   buy       Float?
   sell      Float?
-  fetchedAt DateTime @default(now())
+  fetchedAt DateTime  @default(now())
   quotedAt  DateTime?
 }
 
-/* ---------- Reglas de automatización ---------- */
+/**
+ * ---------- Reglas de automatización ----------
+ */
 
 /// Aplica categoría, etiquetas y descripción a los registros que coinciden.
 model Rule {
-  id              Int       @id @default(autoincrement())
-  userId          String
-  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  name            String
-  active          Boolean   @default(true)
-  sortOrder       Int       @default(0)
+  id                  Int       @id @default(autoincrement())
+  userId              String
+  user                User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name                String
+  active              Boolean   @default(true)
+  sortOrder           Int       @default(0)
   /// Palabras separadas por coma; se buscan en descripción, contraparte y nota.
-  keywords        String    @default("")
-  matchType       String    @default("ANY") // ANY | INCOME | EXPENSE | TRANSFER
-  matchAccounts   Account[] @relation("RuleMatchAccounts")
-  matchToAccounts Account[] @relation("RuleMatchToAccounts")
-  matchCounterparties String[] @default([]) // vacío = cualquiera; si no, tiene que ser alguna de estas personas
-  setCategoryId   Int?
-  setCategory     Category? @relation(fields: [setCategoryId], references: [id], onDelete: SetNull)
-  setDescription  String    @default("")
-  setNote         String    @default("")
-  setCounterparty String    @default("")
-  setTags         Tag[]
-  createdAt       DateTime  @default(now())
+  keywords            String    @default("")
+  matchType           String    @default("ANY") // ANY | INCOME | EXPENSE | TRANSFER
+  matchAccounts       Account[] @relation("RuleMatchAccounts")
+  matchToAccounts     Account[] @relation("RuleMatchToAccounts")
+  matchCounterparties String[]  @default([]) // vacío = cualquiera; si no, tiene que ser alguna de estas personas
+  setCategoryId       Int?
+  setCategory         Category? @relation(fields: [setCategoryId], references: [id], onDelete: SetNull)
+  setDescription      String    @default("")
+  setNote             String    @default("")
+  setCounterparty     String    @default("")
+  setTags             Tag[]
+  createdAt           DateTime  @default(now())
 
   @@index([userId, active])
 }
 
-/* ---------- Gastos compartidos ---------- */
+/**
+ * ---------- Gastos compartidos ----------
+ */
 
 model ShareGroup {
   id        Int            @id @default(autoincrement())
@@ -377,40 +394,47 @@ model ShareGroup {
   createdAt DateTime       @default(now())
   members   ShareMember[]
   expenses  ShareExpense[]
+  planned   Planned[]
 
   @@index([userId, archived])
 }
 
 model ShareMember {
-  id        Int            @id @default(autoincrement())
-  groupId   Int
-  group     ShareGroup     @relation(fields: [groupId], references: [id], onDelete: Cascade)
-  name      String
-  email     String         @default("")
+  id             Int            @id @default(autoincrement())
+  groupId        Int
+  group          ShareGroup     @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  name           String
+  email          String         @default("")
   /// Si es el propio dueño del grupo, para saber qué saldo es "mío".
-  isMe      Boolean        @default(false)
-  paid      ShareExpense[] @relation("PagadoPor")
-  splits    ShareSplit[]
+  isMe           Boolean        @default(false)
+  /// % preseteado para dividir los gastos nuevos del grupo (opcional). Si todos los integrantes
+  /// lo tienen cargado y suma ~100, el formulario de gasto nuevo arranca en modo "Porcentajes"
+  /// con estos valores ya puestos, en vez de partes iguales.
+  defaultPercent Float?
+  paid           ShareExpense[] @relation("PagadoPor")
+  splits         ShareSplit[]
+  planned        Planned[]      @relation("GastoCompartidoCon")
 
   @@index([groupId])
 }
 
 model ShareExpense {
-  id          Int          @id @default(autoincrement())
-  groupId     Int
-  group       ShareGroup   @relation(fields: [groupId], references: [id], onDelete: Cascade)
-  description String
-  amount      Float
-  date        DateTime
-  paidById    Int
-  paidBy      ShareMember  @relation("PagadoPor", fields: [paidById], references: [id], onDelete: Cascade)
-  categoryId  Int?
-  accountId   Int? // de qué cuenta salió, cuando yo (isMe) pagué
-  account     Account?     @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  id            Int          @id @default(autoincrement())
+  groupId       Int
+  group         ShareGroup   @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  description   String
+  amount        Float
+  date          DateTime
+  paidById      Int
+  paidBy        ShareMember  @relation("PagadoPor", fields: [paidById], references: [id], onDelete: Cascade)
+  categoryId    Int?
+  accountId     Int? // de qué cuenta salió, cuando yo (isMe) pagué
+  account       Account?     @relation(fields: [accountId], references: [id], onDelete: SetNull)
   transactionId Int? // el movimiento generado cuando yo (isMe) pagué, si se registró
-  note        String       @default("")
-  createdAt   DateTime     @default(now())
-  splits      ShareSplit[]
+  note          String       @default("")
+  tags          Tag[]
+  createdAt     DateTime     @default(now())
+  splits        ShareSplit[]
 
   @@index([groupId, date])
 }
@@ -427,7 +451,9 @@ model ShareSplit {
   @@index([expenseId])
 }
 
-/* ---------- Inversiones ---------- */
+/**
+ * ---------- Inversiones ----------
+ */
 
 /// Una tenencia dentro de una cuenta de inversión (un CEDEAR, un FCI, un plazo fijo…).
 model Holding {
@@ -455,22 +481,22 @@ model Holding {
 
 /// Compras, ventas, aportes y rentas dentro de una cuenta de inversión.
 model InvestMove {
-  id        Int      @id @default(autoincrement())
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  accountId Int
-  account   Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  holdingId Int?
-  holding   Holding? @relation(fields: [holdingId], references: [id], onDelete: Cascade)
-  type      String // BUY | SELL | DEPOSIT | WITHDRAW | INCOME (renta) | FEE
-  quantity  Float? // nominales, cuotapartes…
-  price     Float? // precio unitario
-  amount    Float // plata que entra o sale de la cuenta
-  currency  String   @default("ARS")
-  date      DateTime
+  id            Int      @id @default(autoincrement())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accountId     Int
+  account       Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  holdingId     Int?
+  holding       Holding? @relation(fields: [holdingId], references: [id], onDelete: Cascade)
+  type          String // BUY | SELL | DEPOSIT | WITHDRAW | INCOME (renta) | FEE
+  quantity      Float? // nominales, cuotapartes…
+  price         Float? // precio unitario
+  amount        Float // plata que entra o sale de la cuenta
+  currency      String   @default("ARS")
+  date          DateTime
   transactionId Int? // sólo DEPOSIT/WITHDRAW: el movimiento (transferencia) generado, si se registró
-  note      String   @default("")
-  createdAt DateTime @default(now())
+  note          String   @default("")
+  createdAt     DateTime @default(now())
 
   @@index([userId, date])
   @@index([accountId])

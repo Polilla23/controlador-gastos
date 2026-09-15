@@ -81,6 +81,16 @@ export async function addMember(fd: FormData) {
   refresh();
 }
 
+/** % por defecto con el que a este integrante le toca dividir los gastos nuevos del grupo (null = sin definir, se sigue repartiendo en partes iguales). */
+export async function setMemberPercent(id: number, percent: number | null) {
+  const userId = await requireUserId();
+  const m = await prisma.shareMember.findUnique({ where: { id }, include: { group: true } });
+  if (!m || m.group.userId !== userId) throw new Error("No autorizado");
+  if (percent != null && (percent < 0 || percent > 100)) throw new Error("Tiene que ser entre 0 y 100");
+  await prisma.shareMember.update({ where: { id }, data: { defaultPercent: percent } });
+  refresh();
+}
+
 export async function deleteMember(id: number) {
   const userId = await requireUserId();
   const m = await prisma.shareMember.findUnique({ where: { id }, include: { group: true, splits: true, paid: true } });
@@ -113,6 +123,7 @@ export async function saveGroupExpense(fd: FormData) {
   const userId = await requireUserId();
   const id = fd.get("id") ? Number(fd.get("id")) : null;
   const d = expenseSchema.parse(Object.fromEntries(fd));
+  const tagIds = fd.getAll("tagIds").map(Number).filter(Boolean);
 
   const group = await prisma.shareGroup.findFirst({ where: { id: d.groupId, userId }, include: { members: true } });
   if (!group) throw new Error("El grupo no existe");
@@ -152,7 +163,7 @@ export async function saveGroupExpense(fd: FormData) {
   if (id) {
     await prisma.$transaction([
       prisma.shareSplit.deleteMany({ where: { expenseId: id } }),
-      prisma.shareExpense.update({ where: { id }, data }),
+      prisma.shareExpense.update({ where: { id }, data: { ...data, tags: { set: tagIds.map((tid) => ({ id: tid })) } } }),
       prisma.shareSplit.createMany({ data: participantes.map((mid, i) => ({ expenseId: id, memberId: mid, amount: montos[i] })) }),
     ]);
     refresh();
@@ -168,7 +179,7 @@ export async function saveGroupExpense(fd: FormData) {
     transactionId = existingId;
   }
 
-  const gasto = await prisma.shareExpense.create({ data: { ...data, transactionId } });
+  const gasto = await prisma.shareExpense.create({ data: { ...data, transactionId, tags: { connect: tagIds.map((tid) => ({ id: tid })) } } });
   await prisma.shareSplit.createMany({ data: participantes.map((mid, i) => ({ expenseId: gasto.id, memberId: mid, amount: montos[i] })) });
 
   if (isMine && mode === "new" && d.accountId) {
@@ -183,8 +194,9 @@ export async function saveGroupExpense(fd: FormData) {
         date: data.date,
         description: d.description,
         categoryId: d.categoryId,
-        note: `Gasto compartido "${group.name}" #${gasto.id}`,
+        note: d.note || `Gasto compartido "${group.name}" #${gasto.id}`,
         accountId: d.accountId,
+        tags: { connect: tagIds.map((tid) => ({ id: tid })) },
       },
     });
     await prisma.shareExpense.update({ where: { id: gasto.id }, data: { transactionId: tx.id } });

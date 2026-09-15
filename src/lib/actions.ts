@@ -476,6 +476,8 @@ const plannedSchema = z.object({
   recurrence: z.enum(["NONE", "WEEKLY", "MONTHLY", "YEARLY"]).default("NONE"),
   accountId: optInt,
   categoryId: optInt,
+  shareGroupId: optInt,
+  shareMemberId: optInt,
   note: z.string().default(""),
 });
 
@@ -491,6 +493,10 @@ export async function savePlanned(fd: FormData) {
   // Si no lo querés en los mensajes de Telegram, el aviso previo tampoco tiene sentido.
   const notify = includeInTelegram && fd.get("notify") === "on";
   const autoConfirm = fd.get("autoConfirm") === "on";
+  if (d.shareGroupId) {
+    const member = d.shareMemberId ? await prisma.shareMember.findFirst({ where: { id: d.shareMemberId, groupId: d.shareGroupId, group: { userId } } }) : null;
+    if (!member) throw new Error("Elegí con quién del grupo se comparte");
+  }
   const base = { ...d, notify, autoConfirm, includeInTelegram, includeInCalendar, dueDate: parseInput(d.dueDate), userId, lastNotifiedOn: null };
   if (id) await prisma.planned.update({ where: { id, userId }, data: { ...base, tags: { set: tagIds.map((t) => ({ id: t })) } } });
   else await prisma.planned.create({ data: { ...base, tags: { connect: tagIds.map((t) => ({ id: t })) } } });
@@ -524,17 +530,26 @@ export async function applyPlannedConfirmation(
     recurrence: string;
     dueDate: Date;
     tags: { id: number }[];
+    shareGroupId?: number | null;
   },
   overrides?: { date?: Date; amount?: number; accountId?: number | null; categoryId?: number | null; note?: string },
 ) {
   const accountId = (overrides?.accountId ?? p.accountId) ?? (await prisma.account.findFirst({ where: { userId: p.userId }, orderBy: { sortOrder: "asc" } }))?.id;
   if (!accountId) throw new Error("Creá una cuenta antes de confirmar el movimiento");
 
+  // Gasto compartido con % preseteado: el movimiento se registra sólo por MI parte del total, no
+  // por el monto entero -- salvo que ya se haya pisado el monto a mano al confirmar.
+  let amount = overrides?.amount ?? p.amount;
+  if (p.shareGroupId && overrides?.amount === undefined) {
+    const yo = await prisma.shareMember.findFirst({ where: { groupId: p.shareGroupId, isMe: true } });
+    if (yo?.defaultPercent != null) amount = Math.round(p.amount * (yo.defaultPercent / 100) * 100) / 100;
+  }
+
   await prisma.transaction.create({
     data: {
       userId: p.userId,
       type: p.type,
-      amount: overrides?.amount ?? p.amount,
+      amount,
       currency: p.currency,
       date: overrides?.date ?? new Date(),
       description: p.description,

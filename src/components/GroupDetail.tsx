@@ -10,11 +10,11 @@ import MoneyInput from "./MoneyInput";
 import CategorySelect, { type CategoryOpt } from "./CategorySelect";
 import Tabs from "./Tabs";
 import LinkTransaction from "./LinkTransaction";
-import { addMember, deleteGroup, deleteGroupExpense, deleteMember, saldarEntre, saveGroup, saveGroupExpense } from "@/lib/actions-compartidos";
-import { CURRENCIES, fmtDate, money, toInputDate } from "@/lib/format";
-import type { AccountOpt } from "./TransactionForm";
+import { addMember, deleteGroup, deleteGroupExpense, deleteMember, saldarEntre, saveGroup, saveGroupExpense, setMemberPercent } from "@/lib/actions-compartidos";
+import { CURRENCIES, fmtDate, money, toInputDateTime } from "@/lib/format";
+import type { AccountOpt, TagOpt } from "./TransactionForm";
 
-type Miembro = { id: number; name: string; email: string; isMe: boolean };
+type Miembro = { id: number; name: string; email: string; isMe: boolean; defaultPercent: number | null };
 type Gasto = {
   id: number;
   description: string;
@@ -25,6 +25,7 @@ type Gasto = {
   categoria: string | null;
   accountId: number | null;
   note: string;
+  tags: { id: number; name: string; color: string }[];
   splits: { id: number; memberId: number; amount: number }[];
   paidBy: { name: string };
 };
@@ -46,15 +47,24 @@ export type GrupoDetalle = {
 };
 
 /** Formulario de gasto con los tres modos de reparto. */
-function GastoForm({ g, categories, accounts, gasto }: { g: GrupoDetalle; categories: CategoryOpt[]; accounts: AccountOpt[]; gasto?: Gasto }) {
+function GastoForm({ g, categories, accounts, tags, gasto }: { g: GrupoDetalle; categories: CategoryOpt[]; accounts: AccountOpt[]; tags: TagOpt[]; gasto?: Gasto }) {
   const meId = g.members.find((m) => m.isMe)?.id;
-  const [modo, setModo] = useState<"EQUAL" | "EXACT" | "PERCENT">("EQUAL");
+  // Si todos los integrantes tienen un % preseteado (que suma ~100), un gasto nuevo arranca ya
+  // dividido así en vez de en partes iguales -- es justamente lo que "preseteado" quiere decir.
+  const sumaPercDefault = g.members.reduce((s, m) => s + (m.defaultPercent ?? 0), 0);
+  const hayPercDefault = !gasto && g.members.length > 0 && g.members.every((m) => m.defaultPercent != null) && Math.abs(sumaPercDefault - 100) < 0.5;
+  const [modo, setModo] = useState<"EQUAL" | "EXACT" | "PERCENT">(hayPercDefault ? "PERCENT" : "EQUAL");
   const [monto, setMonto] = useState(gasto?.amount?.toString() ?? "");
   const [paidById, setPaidById] = useState<number>(gasto?.paidById ?? meId ?? g.members[0]?.id ?? 0);
   const [participantes, setParticipantes] = useState<number[]>(gasto ? gasto.splits.map((s) => s.memberId) : g.members.map((m) => m.id));
   const [valores, setValores] = useState<Record<number, string>>(
-    gasto ? Object.fromEntries(gasto.splits.map((s) => [s.memberId, String(s.amount)])) : {},
+    gasto
+      ? Object.fromEntries(gasto.splits.map((s) => [s.memberId, String(s.amount)]))
+      : hayPercDefault
+        ? Object.fromEntries(g.members.map((m) => [m.id, String(m.defaultPercent)]))
+        : {},
   );
+  const [tagIds, setTagIds] = useState<number[]>(gasto?.tags.map((t) => t.id) ?? []);
   const isMine = paidById === meId;
 
   const total = Number(monto) || 0;
@@ -78,8 +88,8 @@ function GastoForm({ g, categories, accounts, gasto }: { g: GrupoDetalle; catego
           <MoneyInput name="amount" required defaultValue={gasto?.amount} onValueChange={setMonto} />
         </div>
         <div>
-          <label className="label">Fecha</label>
-          <input name="date" type="date" required className="input" defaultValue={toInputDate(gasto?.date ? new Date(gasto.date) : new Date())} />
+          <label className="label">Fecha y hora</label>
+          <input name="date" type="datetime-local" required className="input" defaultValue={toInputDateTime(gasto?.date ? new Date(gasto.date) : new Date())} />
         </div>
       </div>
 
@@ -180,6 +190,31 @@ function GastoForm({ g, categories, accounts, gasto }: { g: GrupoDetalle; catego
         {participantes.length === 0 && <p className="mt-2 text-sm text-red-500">Elegí al menos un integrante.</p>}
       </fieldset>
 
+      {tags.length > 0 && (
+        <div>
+          <label className="label">Etiquetas</label>
+          <div className="flex flex-wrap gap-2">
+            {tagIds.map((id) => (
+              <input key={id} type="hidden" name="tagIds" value={id} />
+            ))}
+            {tags.map((t) => {
+              const on = tagIds.includes(t.id);
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => setTagIds((s) => (on ? s.filter((x) => x !== t.id) : [...s, t.id]))}
+                  className={`chip border transition ${on ? "border-transparent text-white" : "border-line text-muted"}`}
+                  style={on ? { background: t.color } : undefined}
+                >
+                  #{t.name}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       <div>
         <label className="label">Nota</label>
         <input name="note" className="input" defaultValue={gasto?.note} />
@@ -253,12 +288,33 @@ function GroupForm({ g }: { g: GrupoDetalle }) {
   );
 }
 
-export default function GroupDetail({ g, categories, accounts }: { g: GrupoDetalle; categories: CategoryOpt[]; accounts: AccountOpt[] }) {
+/** Input chiquito de "% por defecto" de un integrante: guarda solo al perder el foco, sin formulario aparte. */
+function PercentInput({ memberId, initial }: { memberId: number; initial: number | null }) {
+  const [value, setValue] = useState(initial != null ? String(initial) : "");
+  return (
+    <span className="flex items-center gap-1">
+      <input
+        type="number"
+        min="0"
+        max="100"
+        step="0.1"
+        placeholder="—"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onBlur={() => setMemberPercent(memberId, value === "" ? null : Number(value))}
+        className="input w-16 py-1 text-right"
+      />
+      <span className="text-xs text-muted">%</span>
+    </span>
+  );
+}
+
+export default function GroupDetail({ g, categories, accounts, tags }: { g: GrupoDetalle; categories: CategoryOpt[]; accounts: AccountOpt[]; tags: TagOpt[] }) {
   const gastos = (
     <>
       <div className="mb-4 flex justify-end">
         <Modal title="Nuevo gasto del grupo" wide trigger={<><Plus size={16} /> Nuevo gasto</>}>
-          <GastoForm g={g} categories={categories} accounts={accounts} />
+          <GastoForm g={g} categories={categories} accounts={accounts} tags={tags} />
         </Modal>
       </div>
       {g.expenses.length === 0 && <div className="card py-10 text-center text-sm text-muted">Todavía no hay gastos en este grupo.</div>}
@@ -275,7 +331,7 @@ export default function GroupDetail({ g, categories, accounts }: { g: GrupoDetal
             <div className="flex shrink-0 items-center gap-1">
               <b>{money(e.amount, g.currency)}</b>
               <Modal title={`Editar ${e.description}`} wide triggerClassName="btn-icon" trigger={<Pencil size={15} />}>
-                <GastoForm g={g} categories={categories} accounts={accounts} gasto={e} />
+                <GastoForm g={g} categories={categories} accounts={accounts} tags={tags} gasto={e} />
               </Modal>
               <ConfirmButton action={async () => deleteGroupExpense(e.id)} className="btn-icon hover:text-red-500" message={`¿Eliminar "${e.description}"?`}>
                 <Trash2 size={15} />
@@ -372,6 +428,7 @@ export default function GroupDetail({ g, categories, accounts }: { g: GrupoDetal
       </div>
       <div className="card md:col-span-2">
         <h3 className="mb-3 font-bold">Integrantes</h3>
+        <p className="mb-2 text-xs text-muted">% por defecto: si lo cargás para todos y suma 100%, un gasto nuevo arranca ya dividido así.</p>
         <ul className="divide-y divide-line">
           {g.members.map((m) => (
             <li key={m.id} className="flex items-center justify-between gap-2 py-2 text-sm">
@@ -380,11 +437,14 @@ export default function GroupDetail({ g, categories, accounts }: { g: GrupoDetal
                 {m.isMe && <span className="ml-1 text-xs text-muted">(vos)</span>}
                 {m.email && <span className="block text-xs text-muted">{m.email}</span>}
               </span>
-              {!m.isMe && (
-                <ConfirmButton action={async () => deleteMember(m.id)} className="btn-icon hover:text-red-500" message={`¿Sacar a ${m.name} del grupo?`}>
-                  <Trash2 size={15} />
-                </ConfirmButton>
-              )}
+              <span className="flex items-center gap-2">
+                <PercentInput memberId={m.id} initial={m.defaultPercent} />
+                {!m.isMe && (
+                  <ConfirmButton action={async () => deleteMember(m.id)} className="btn-icon hover:text-red-500" message={`¿Sacar a ${m.name} del grupo?`}>
+                    <Trash2 size={15} />
+                  </ConfirmButton>
+                )}
+              </span>
             </li>
           ))}
         </ul>

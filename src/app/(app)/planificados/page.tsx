@@ -9,11 +9,12 @@ import PlannedTotals from "@/components/PlannedTotals";
 
 export default async function PlanificadosPage() {
   const userId = await requireUserId();
-  const [rows, accounts, categories, tags, { lista: quotes }] = await Promise.all([
+  const [rows, accounts, categories, tags, groups, { lista: quotes }] = await Promise.all([
     prisma.planned.findMany({ where: { userId, done: false }, orderBy: { dueDate: "asc" }, include: { category: true, tags: true } }),
     prisma.account.findMany({ where: { userId, archived: false }, orderBy: [{ sortOrder: "asc" }, { id: "asc" }] }),
     prisma.category.findMany({ where: { userId }, orderBy: { name: "asc" } }),
     prisma.tag.findMany({ where: { userId }, orderBy: { name: "asc" } }),
+    prisma.shareGroup.findMany({ where: { userId, archived: false }, include: { members: true }, orderBy: { sortOrder: "asc" } }),
     cotizaciones(),
   ]);
   const items = rows.map((p) => ({
@@ -45,6 +46,7 @@ export default async function PlanificadosPage() {
           accounts={accounts}
           categories={categories}
           tags={tags}
+          groups={groups}
           type="EXPENSE"
           title="Pagos y vencimientos"
           emptyText="No tenés vencimientos cargados. Agregá el alquiler, las expensas o la factura de luz."
@@ -54,6 +56,7 @@ export default async function PlanificadosPage() {
           accounts={accounts}
           categories={categories}
           tags={tags}
+          groups={groups}
           type="INCOME"
           title="Ingresos previstos"
           emptyText="Cargá tu sueldo o un reintegro que estés esperando."

@@ -30,6 +30,14 @@ export type PlannedRow = {
   includeInCalendar: boolean;
   category: { name: string; color: string; iconBody: string | null } | null;
   tags: { id: number; name: string; color: string }[];
+  shareGroupId: number | null;
+  shareMemberId: number | null;
+};
+
+export type ShareGroupOpt = {
+  id: number;
+  name: string;
+  members: { id: number; name: string; isMe: boolean; defaultPercent: number | null }[];
 };
 
 function TagPicker({ tags, initial }: { tags: TagOpt[]; initial: number[] }) {
@@ -57,13 +65,20 @@ function TagPicker({ tags, initial }: { tags: TagOpt[]; initial: number[] }) {
   );
 }
 
-function Fields({ item, type, accounts, categories, tags }: { item?: PlannedRow; type: string; accounts: AccountOpt[]; categories: CategoryOpt[]; tags: TagOpt[] }) {
+function Fields({ item, type, accounts, categories, tags, groups }: { item?: PlannedRow; type: string; accounts: AccountOpt[]; categories: CategoryOpt[]; tags: TagOpt[]; groups: ShareGroupOpt[] }) {
   const kind = item?.type ?? type;
   const [includeInTelegram, setIncludeInTelegram] = useState(item?.includeInTelegram ?? true);
   const [description, setDescription] = useState(item?.description ?? "");
   const [note, setNote] = useState(item?.note ?? "");
   // Si ya tenía una nota distinta de la descripción, respetamos esa decisión y no la volvemos a pisar.
   const [noteEdited, setNoteEdited] = useState(!!item && item.note !== item.description);
+  const [compartido, setCompartido] = useState(!!item?.shareGroupId);
+  const [shareGroupId, setShareGroupId] = useState<number | "">(item?.shareGroupId ?? groups[0]?.id ?? "");
+  const grupoElegido = groups.find((g) => g.id === shareGroupId);
+  const otros = grupoElegido?.members.filter((m) => !m.isMe) ?? [];
+  const [shareMemberId, setShareMemberId] = useState<number | "">(item?.shareMemberId ?? otros[0]?.id ?? "");
+  const yo = grupoElegido?.members.find((m) => m.isMe);
+  const miPorcentaje = yo?.defaultPercent;
   return (
     <>
       {item && <input type="hidden" name="id" value={item.id} />}
@@ -141,6 +156,47 @@ function Fields({ item, type, accounts, categories, tags }: { item?: PlannedRow;
           <TagPicker tags={tags} initial={item?.tags.map((t) => t.id) ?? []} />
         </div>
       )}
+
+      {kind === "EXPENSE" && groups.length > 0 && (
+        <div className="space-y-3 rounded-xl border border-dashed border-line p-3">
+          <label className="flex items-center gap-2 text-sm font-medium">
+            <input type="checkbox" checked={compartido} onChange={(e) => setCompartido(e.target.checked)} className="h-4 w-4 accent-[var(--color-brand-500)]" />
+            ¿Es un gasto compartido?
+          </label>
+          {compartido && (
+            <>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <label className="label">Grupo</label>
+                  <select name="shareGroupId" className="input" value={shareGroupId} onChange={(e) => setShareGroupId(Number(e.target.value))}>
+                    {groups.map((g) => (
+                      <option key={g.id} value={g.id}>
+                        {g.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="label">Con quién lo compartís</label>
+                  <select name="shareMemberId" className="input" value={shareMemberId} onChange={(e) => setShareMemberId(Number(e.target.value))}>
+                    {otros.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <p className="text-xs text-muted">
+                {miPorcentaje != null
+                  ? `Al confirmarlo, el monto que se registra en Transacciones es sólo tu parte: ${miPorcentaje}% del total.`
+                  : "Este integrante todavía no tiene un % por defecto cargado (se configura en Gastos compartidos → Integrantes) -- mientras tanto, al confirmar se registra el monto completo."}
+              </p>
+            </>
+          )}
+        </div>
+      )}
+
       <div>
         <label className="label">Notas</label>
         <textarea
@@ -188,21 +244,33 @@ function Fields({ item, type, accounts, categories, tags }: { item?: PlannedRow;
 }
 
 /** Antes de crear el registro definitivo, deja ajustar fecha, monto, cuenta, categoría y nota -- por si el pago se hizo antes del vencimiento, no justo hoy. */
-function ConfirmarForm({ item, accounts, categories }: { item: PlannedRow; accounts: AccountOpt[]; categories: CategoryOpt[] }) {
+function ConfirmarForm({ item, accounts, categories, groups }: { item: PlannedRow; accounts: AccountOpt[]; categories: CategoryOpt[]; groups: ShareGroupOpt[] }) {
+  // Si es un gasto compartido con % preseteado, el monto que se propone confirmar es sólo mi
+  // parte, no el total -- el usuario puede seguir pisándolo a mano si hace falta.
+  const grupo = item.shareGroupId ? groups.find((g) => g.id === item.shareGroupId) : undefined;
+  const miPorcentaje = grupo?.members.find((m) => m.isMe)?.defaultPercent;
+  const conParte = grupo && miPorcentaje != null ? Math.round(item.amount * (miPorcentaje / 100) * 100) / 100 : null;
+  const compartidoCon = grupo?.members.find((m) => m.id === item.shareMemberId)?.name;
   return (
     <ActionForm action={confirmPlannedWithEdits} submitLabel={item.type === "INCOME" ? "Registrar ingreso" : "Registrar pago"}>
       <input type="hidden" name="id" value={item.id} />
       <p className="rounded-lg bg-subtle px-3 py-2 text-sm text-muted">
         Se crea el registro de <b className="text-fg">{item.description}</b>. Si lo pagaste/cobraste otro día, o por otro monto o cuenta, ajustalo antes de confirmar.
       </p>
+      {conParte != null && (
+        <p className="rounded-lg bg-brand-500/10 px-3 py-2 text-sm text-brand-500">
+          Gasto compartido{compartidoCon ? ` con ${compartidoCon}` : ""} · total {money(item.amount, item.currency)} · tu parte ({miPorcentaje}%):{" "}
+          <b>{money(conParte, item.currency)}</b>
+        </p>
+      )}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div>
           <label className="label">Fecha</label>
           <input name="date" type="date" required className="input" defaultValue={toInputDate(new Date())} />
         </div>
         <div>
-          <label className="label">Monto</label>
-          <MoneyInput name="amount" required defaultValue={item.amount} />
+          <label className="label">Monto{conParte != null ? " (tu parte)" : ""}</label>
+          <MoneyInput name="amount" required defaultValue={conParte ?? item.amount} />
         </div>
       </div>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -235,6 +303,7 @@ export default function PlannedBoard({
   accounts,
   categories,
   tags,
+  groups,
   type,
   title,
   emptyText,
@@ -243,6 +312,7 @@ export default function PlannedBoard({
   accounts: AccountOpt[];
   categories: CategoryOpt[];
   tags: TagOpt[];
+  groups: ShareGroupOpt[];
   type: "INCOME" | "EXPENSE";
   title: string;
   emptyText: string;
@@ -287,11 +357,11 @@ export default function PlannedBoard({
             triggerClassName="btn-icon hover:text-brand-500"
             trigger={<Check size={16} />}
           >
-            <ConfirmarForm item={p} accounts={accounts} categories={categories} />
+            <ConfirmarForm item={p} accounts={accounts} categories={categories} groups={groups} />
           </Modal>
           <Modal title={`Editar ${p.description}`} triggerClassName="btn-icon" trigger={<Pencil size={15} />}>
             <ActionForm action={savePlanned}>
-              <Fields item={p} type={type} accounts={accounts} categories={categories} tags={tags} />
+              <Fields item={p} type={type} accounts={accounts} categories={categories} tags={tags} groups={groups} />
             </ActionForm>
           </Modal>
           <ConfirmButton action={async () => deletePlanned(p.id)} className="btn-icon hover:text-red-500" message="¿Eliminar este planificado?">
@@ -315,7 +385,7 @@ export default function PlannedBoard({
         <h2 className="font-bold">{title}</h2>
         <Modal title={type === "INCOME" ? "Nuevo ingreso previsto" : "Nuevo vencimiento"} triggerClassName="btn-ghost" trigger={<><Plus size={16} /> Nuevo</>}>
           <ActionForm action={savePlanned}>
-            <Fields type={type} accounts={accounts} categories={categories} tags={tags} />
+            <Fields type={type} accounts={accounts} categories={categories} tags={tags} groups={groups} />
           </ActionForm>
         </Modal>
       </div>

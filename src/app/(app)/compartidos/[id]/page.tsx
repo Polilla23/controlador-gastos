@@ -8,17 +8,18 @@ import GroupDetail from "@/components/GroupDetail";
 export default async function GrupoPage({ params }: { params: Promise<{ id: string }> }) {
   const userId = await requireUserId();
   const { id } = await params;
-  const [grupo, categories, accounts] = await Promise.all([
+  const [grupo, categories, accounts, tags] = await Promise.all([
     cargarGrupo(userId, Number(id)),
     prisma.category.findMany({ where: { userId }, orderBy: { name: "asc" } }),
     prisma.account.findMany({ where: { userId, archived: false }, orderBy: [{ sortOrder: "asc" }, { id: "asc" }] }),
+    prisma.tag.findMany({ where: { userId }, orderBy: { name: "asc" } }),
   ]);
   if (!grupo) notFound();
 
   return (
     <>
       <PageHeader title={grupo.name} subtitle={grupo.note || "Gastos compartidos del grupo"} />
-      <GroupDetail g={grupo} categories={categories} accounts={accounts} />
+      <GroupDetail g={grupo} categories={categories} accounts={accounts} tags={tags} />
     </>
   );
 }
