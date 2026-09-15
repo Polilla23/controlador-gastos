@@ -2,7 +2,7 @@ import { prisma } from "./prisma";
 import { monthKey, monthLabel, previousRange, type Range } from "./format";
 import { addDays, addMonths, fromCivil, civil, startOfDay, startOfMonth } from "./tz";
 import { icono } from "./iconos";
-import { efectoEnCajaTransaccion, portfolioValueByAccount } from "./inversiones";
+import { efectoEnCajaTransaccion, portfolioByInstrument, portfolioValueByAccount } from "./inversiones";
 
 export type Slice = { id: string; name: string; value: number; color: string; iconBody: string | null; children: Slice[] };
 
@@ -81,7 +81,9 @@ export async function loadDashboard(
   // para los puntos históricos de la tendencia: no hay precios históricos guardados.
   for (const m of investMoves) balances.set(m.accountId, (balances.get(m.accountId) ?? 0) + efectoEnCajaTransaccion(m));
   const hayInversion = allAccounts.some((a) => a.type === "INVESTMENT");
-  const portafolio = hayInversion ? await portfolioValueByAccount(userId) : new Map<number, number>();
+  const [portafolio, investmentMix] = hayInversion
+    ? await Promise.all([portfolioValueByAccount(userId), portfolioByInstrument(userId)])
+    : [new Map<number, number>(), []];
   for (const a of allAccounts) {
     if (a.type === "INVESTMENT") balances.set(a.id, (balances.get(a.id) ?? 0) + (portafolio.get(a.id) ?? 0));
   }
@@ -288,6 +290,7 @@ export async function loadDashboard(
     netWorth,
     netWorthPrev,
     compareMonths: compareMonths ?? null,
+    investmentMix,
     income,
     expense,
     incomePrev,

@@ -1,4 +1,5 @@
 import { prisma } from "./prisma";
+import { cotizaciones } from "./cotizaciones";
 
 /**
  * Cartera de inversiones. Cada cuenta de tipo "Cuenta de inversión" tiene
@@ -20,6 +21,19 @@ export const INSTRUMENTOS: Record<string, string> = {
   CAUCION: "Caución",
   CRIPTO: "Cripto",
   OTRO: "Otro",
+};
+
+export const INSTRUMENTO_COLORS: Record<string, string> = {
+  ACCION: "#1A9D76",
+  CEDEAR: "#3B82F6",
+  BONO: "#F59E0B",
+  LETRA: "#8B5CF6",
+  ON: "#EC4899",
+  FCI: "#06B6D4",
+  PLAZO_FIJO: "#84CC16",
+  CAUCION: "#EF4444",
+  CRIPTO: "#F97316",
+  OTRO: "#6B7280",
 };
 
 export const MOVIMIENTOS: Record<string, string> = {
@@ -176,4 +190,37 @@ export async function cargarInversiones(userId: string) {
 export async function portfolioValueByAccount(userId: string): Promise<Map<number, number>> {
   const { cuentas } = await cargarInversiones(userId);
   return new Map(cuentas.map((c) => [c.id, c.valorCartera]));
+}
+
+/**
+ * Composición del portafolio por tipo de instrumento (caución, CEDEAR, FCI, etc.), sumando todas
+ * las cuentas de inversión sin importar la moneda -- a diferencia de `porInstrumento` en
+ * `cargarInversiones` (que suma los valores en su moneda original sin convertir, útil sólo para
+ * el desglose por cuenta), acá lo no-ARS se convierte al dólar MEP para poder dar un % sobre el
+ * total combinado. Si todavía no hay cotización guardada, esa parte queda afuera del total (mejor
+ * mostrar de menos que un porcentaje inventado).
+ */
+export async function portfolioByInstrument(userId: string): Promise<{ kind: string; nombre: string; color: string; valor: number; pct: number }[]> {
+  const [{ cuentas }, { lista: quotes }] = await Promise.all([cargarInversiones(userId), cotizaciones()]);
+  const mep = quotes.find((q) => q.code === "bolsa")?.sell ?? null;
+
+  const porInstrumento = new Map<string, number>();
+  for (const c of cuentas) {
+    for (const t of c.abiertas) {
+      const valor = t.valorActual ?? t.costoDeLoQueQueda ?? 0;
+      const enArs = t.currency === "ARS" ? valor : mep != null ? valor * mep : null;
+      if (enArs == null) continue;
+      porInstrumento.set(t.kind, (porInstrumento.get(t.kind) ?? 0) + enArs);
+    }
+  }
+  const total = [...porInstrumento.values()].reduce((s, v) => s + v, 0);
+  return [...porInstrumento.entries()]
+    .map(([kind, valor]) => ({
+      kind,
+      nombre: INSTRUMENTOS[kind] ?? kind,
+      color: INSTRUMENTO_COLORS[kind] ?? "#6B7280",
+      valor: redondear(valor),
+      pct: total ? Math.round((valor / total) * 100) : 0,
+    }))
+    .sort((a, b) => b.valor - a.valor);
 }

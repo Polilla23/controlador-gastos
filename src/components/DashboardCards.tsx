@@ -1,17 +1,49 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition, type ReactNode } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { ArrowDownLeft, ArrowUpRight, HelpCircle } from "lucide-react";
+import GridLayout, { WidthProvider, type Layout } from "react-grid-layout";
+import "react-grid-layout/css/styles.css";
+import "react-resizable/css/styles.css";
 import type { Dashboard } from "@/lib/stats";
-import { CARDS } from "@/lib/cards";
+import { CARDS, type CardDef, type CardSize } from "@/lib/cards";
+import { saveDashboardSizes } from "@/lib/actions";
 import { money, fmtDate, fmtDayMonth, pct, NATURES, NATURE_COLORS, ACCOUNT_TYPES, accountLabel } from "@/lib/format";
 import { Delta, Empty } from "./ui";
 import Icono from "./Icono";
 import CierresVencimientos from "./CierresVencimientos";
 import TrendRangeControl from "./TrendRangeControl";
+
+const ResizableGrid = WidthProvider(GridLayout);
+const GRID_COLS = 3;
+const ROW_H = 28;
+
+/** Layout inicial: respeta el orden elegido en "Personalizar" y el span de catálogo como ancho
+ * por defecto, salvo que el usuario ya haya estirado esa card a mano (en `sizes`). */
+function buildLayout(ids: string[], defs: Map<string, CardDef>, sizes: Record<string, CardSize>): Layout[] {
+  let x = 0;
+  let y = 0;
+  let rowH = 0;
+  const out: Layout[] = [];
+  for (const id of ids) {
+    const def = defs.get(id);
+    if (!def) continue;
+    const w = Math.min(sizes[id]?.w ?? def.span, GRID_COLS);
+    const h = sizes[id]?.h ?? 11;
+    if (x + w > GRID_COLS) {
+      x = 0;
+      y += rowH;
+      rowH = 0;
+    }
+    out.push({ i: id, x, y, w, h, minW: 1, minH: 4 });
+    x += w;
+    rowH = Math.max(rowH, h);
+  }
+  return out;
+}
 
 /* Recharts pesa ~400 KB: se carga aparte, ya en el navegador, con un hueco mientras tanto. */
 function box(h: string) {
@@ -23,10 +55,11 @@ const Sparkline = dynamic(() => import("./charts").then((m) => m.Sparkline), { s
 const BalanceTrend = dynamic(() => import("./charts").then((m) => m.BalanceTrend), { ssr: false, loading: box("mt-2 h-56") });
 const CashflowTrend = dynamic(() => import("./charts").then((m) => m.CashflowTrend), { ssr: false, loading: box("mt-2 h-56") });
 const CategoryDonut = dynamic(() => import("./charts").then((m) => m.CategoryDonut), { ssr: false, loading: box("mt-2 h-40") });
+const InvestmentMixDonut = dynamic(() => import("./charts").then((m) => m.InvestmentMixDonut), { ssr: false, loading: box("mt-2 h-40") });
 const ForecastBars = dynamic(() => import("./charts").then((m) => m.ForecastBars), { ssr: false, loading: box("mt-3 h-48") });
 const RatioDonut = dynamic(() => import("./charts").then((m) => m.RatioDonut), { ssr: false, loading: box("h-32 w-32 shrink-0 rounded-full") });
 
-type Props = { data: Dashboard; cards: string[]; cardsMobile: string[] };
+type Props = { data: Dashboard; cards: string[]; cardsMobile: string[]; sizes: Record<string, CardSize> };
 
 /* ---------- Individual cards ---------- */
 
@@ -501,7 +534,7 @@ function Cuentas({ d }: { d: Dashboard }) {
 
 /* ---------- Renderer ---------- */
 
-export default function DashboardCards({ data, cards, cardsMobile }: Props) {
+export default function DashboardCards({ data, cards, cardsMobile, sizes }: Props) {
   const defs = new Map(CARDS.map((c) => [c.id, c]));
   // El "?" se toca/tapea para mostrar la explicación (el hover con `title` no funciona en celular).
   const [explained, setExplained] = useState<Set<string>>(new Set());
@@ -512,6 +545,7 @@ export default function DashboardCards({ data, cards, cardsMobile }: Props) {
       else next.add(id);
       return next;
     });
+
   const body = (id: string) => {
     switch (id) {
       case "patrimonio":
@@ -530,6 +564,8 @@ export default function DashboardCards({ data, cards, cardsMobile }: Props) {
         return <CategoryDonut slices={data.byCategory} currency={data.mainCurrency} empty="Sin gastos en este período." />;
       case "ingresos-categoria":
         return <CategoryDonut slices={data.byIncomeCategory} currency={data.mainCurrency} empty="Sin ingresos en este período." />;
+      case "portafolio-instrumentos":
+        return <InvestmentMixDonut mix={data.investmentMix} />;
       case "top-gastos":
         return <TopGastos d={data} />;
       case "naturaleza":
@@ -559,37 +595,70 @@ export default function DashboardCards({ data, cards, cardsMobile }: Props) {
     }
   };
 
-  const grid = (ids: string[]) =>
-    ids.map((id) => {
-      const def = defs.get(id);
-      if (!def) return null;
-      const open = explained.has(id);
-      const conRango = id === "tendencia-saldo" || id === "tendencia-flujo";
-      return (
-        <section key={id} className={`card ${def.span === 3 ? "md:col-span-2 xl:col-span-3" : def.span === 2 ? "md:col-span-2" : ""}`}>
-          <h2 className="flex items-center gap-1.5 font-bold">
-            {def.title}
-            <button type="button" onClick={() => toggleExplain(id)} className="text-muted" aria-label="Cómo se calcula">
-              <HelpCircle size={13} className="shrink-0 cursor-pointer" />
-            </button>
-            {conRango && (
-              <span className="ml-auto">
-                <TrendRangeControl from={data.trendFrom} to={data.trendTo} />
-              </span>
-            )}
-          </h2>
-          <p className="mb-1 text-xs text-muted">{def.question}</p>
-          {open && <p className="mb-2 rounded-lg bg-subtle px-2.5 py-2 text-xs text-muted">{def.explanation}</p>}
-          {body(id)}
-        </section>
-      );
-    });
+  const cardInner = (id: string) => {
+    const def = defs.get(id);
+    if (!def) return null;
+    const open = explained.has(id);
+    const conRango = id === "tendencia-saldo" || id === "tendencia-flujo";
+    return (
+      <>
+        <h2 className="flex items-center gap-1.5 font-bold">
+          {def.title}
+          <button type="button" onClick={() => toggleExplain(id)} className="text-muted" aria-label="Cómo se calcula">
+            <HelpCircle size={13} className="shrink-0 cursor-pointer" />
+          </button>
+          {conRango && (
+            <span className="ml-auto">
+              <TrendRangeControl from={data.trendFrom} to={data.trendTo} />
+            </span>
+          )}
+        </h2>
+        <p className="mb-1 text-xs text-muted">{def.question}</p>
+        {open && <p className="mb-2 rounded-lg bg-subtle px-2.5 py-2 text-xs text-muted">{def.explanation}</p>}
+        {body(id)}
+      </>
+    );
+  };
 
-  // El orden puede ser distinto en celular; se renderizan las dos grillas y CSS muestra la que corresponde.
+  const knownCards = cards.filter((id) => defs.has(id));
+  const knownCardsMobile = cardsMobile.filter((id) => defs.has(id));
+
+  // El orden puede ser distinto en celular; ahí se sigue apilando en una sola columna sin resize
+  // (estirar con el dedo es poco práctico). En la web, cada card se puede estirar a mano.
   return (
     <>
-      <div className="grid grid-cols-1 gap-4 md:hidden">{grid(cardsMobile)}</div>
-      <div className="hidden md:grid md:grid-cols-2 md:gap-4 xl:grid-cols-3">{grid(cards)}</div>
+      <div className="grid grid-cols-1 gap-4 md:hidden">
+        {knownCardsMobile.map((id) => (
+          <section key={id} className="card">
+            {cardInner(id)}
+          </section>
+        ))}
+      </div>
+      <div className="hidden md:block">
+        {/* La key remonta el grid (y resetea su layout interno) cuando cambia el orden guardado
+            en "Personalizar" -- así no hace falta un efecto sincronizando estado post-render. */}
+        <DesktopGrid key={knownCards.join("|")} ids={knownCards} defs={defs} sizes={sizes} renderCard={cardInner} />
+      </div>
     </>
+  );
+}
+
+/** El grid redimensionable de escritorio: arranca del layout guardado y persiste sólo w/h al soltar el resize. */
+function DesktopGrid({ ids, defs, sizes, renderCard }: { ids: string[]; defs: Map<string, CardDef>; sizes: Record<string, CardSize>; renderCard: (id: string) => ReactNode }) {
+  const [layout, setLayout] = useState<Layout[]>(() => buildLayout(ids, defs, sizes));
+  const [, startSave] = useTransition();
+  const persistSizes = (next: Layout[]) => {
+    const map: Record<string, CardSize> = {};
+    for (const item of next) map[item.i] = { w: item.w, h: item.h };
+    startSave(() => saveDashboardSizes(map));
+  };
+  return (
+    <ResizableGrid layout={layout} cols={GRID_COLS} rowHeight={ROW_H} margin={[16, 16]} isDraggable={false} isResizable resizeHandles={["se"]} onLayoutChange={setLayout} onResizeStop={persistSizes}>
+      {ids.map((id) => (
+        <div key={id} className="card overflow-y-auto">
+          {renderCard(id)}
+        </div>
+      ))}
+    </ResizableGrid>
   );
 }

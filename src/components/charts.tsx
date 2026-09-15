@@ -203,6 +203,41 @@ export function CategoryDonut({ slices, currency, empty }: { slices: Slice[]; cu
   );
 }
 
+/** Composición del portafolio de inversión por tipo de instrumento (todas las cuentas, convertido a ARS). */
+export function InvestmentMixDonut({ mix }: { mix: { kind: string; nombre: string; color: string; valor: number; pct: number }[] }) {
+  if (!mix.length) return <Empty>Todavía no tenés tenencias cargadas.</Empty>;
+  return (
+    <div className="mt-2 flex flex-col items-center gap-4 sm:flex-row">
+      <div className="h-40 w-40 shrink-0">
+        <ResponsiveContainer>
+          <PieChart>
+            <Pie data={mix} dataKey="valor" nameKey="nombre" innerRadius={46} outerRadius={72} paddingAngle={2} stroke="none">
+              {mix.map((m) => (
+                <Cell key={m.kind} fill={m.color} />
+              ))}
+            </Pie>
+            <Tooltip formatter={(v, _n, p) => [`${money(Number(v), "ARS")} · ${p.payload.pct}%`, p.payload.nombre]} />
+          </PieChart>
+        </ResponsiveContainer>
+      </div>
+      <ul className="w-full min-w-0 flex-1 space-y-1.5 text-sm">
+        {mix.map((m) => (
+          <li key={m.kind} className="flex items-center justify-between gap-2">
+            <span className="flex min-w-0 items-center gap-2">
+              <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: m.color }} />
+              <span className="truncate">{m.nombre}</span>
+            </span>
+            <span className="flex shrink-0 items-center gap-2 text-muted">
+              <b className="text-fg">{money(m.valor, "ARS")}</b>
+              {m.pct}%
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 export function ForecastBars({ rows, currency }: { rows: { label: string; value: number; fill: string }[]; currency: string }) {
   return (
     <div className="mt-3 h-48">

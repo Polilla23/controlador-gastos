@@ -132,6 +132,14 @@ export const CARDS: CardDef[] = [
     span: 1,
   },
   {
+    id: "portafolio-instrumentos",
+    title: "Portafolio",
+    question: "¿Qué instrumentos componen mi portafolio?",
+    explanation:
+      "Suma el valor actual de las tenencias abiertas de todas las cuentas de inversión, agrupadas por tipo de instrumento (caución, CEDEARs, FCI, etc.). Lo que está en USD se convierte a ARS con el dólar MEP para poder dar un % combinado; si todavía no hay cotización guardada, esa parte queda afuera del total.",
+    span: 1,
+  },
+  {
     id: "cierres-tarjetas",
     title: "Cierres y vencimientos",
     question: "¿Cuándo cierra y vence cada tarjeta?",
@@ -151,7 +159,18 @@ export const DEFAULT_CARDS = [
   "movimientos",
 ];
 
-export type DashboardPrefs = { cards: string[]; cardsMobile: string[]; accountIds: number[] };
+export type CardSize = { w: number; h: number };
+export type DashboardPrefs = { cards: string[]; cardsMobile: string[]; accountIds: number[]; sizes: Record<string, CardSize> };
+
+function readSizes(v: unknown): Record<string, CardSize> {
+  if (!v || typeof v !== "object") return {};
+  const out: Record<string, CardSize> = {};
+  for (const [id, s] of Object.entries(v as Record<string, unknown>)) {
+    const size = s as Partial<CardSize> | undefined;
+    if (size && Number.isFinite(size.w) && Number.isFinite(size.h)) out[id] = { w: Number(size.w), h: Number(size.h) };
+  }
+  return out;
+}
 
 export function readPrefs(raw: unknown): DashboardPrefs {
   const v = (raw ?? {}) as Partial<DashboardPrefs>;
@@ -163,5 +182,6 @@ export function readPrefs(raw: unknown): DashboardPrefs {
     cards: resolvedCards,
     cardsMobile: cardsMobile.length ? cardsMobile : resolvedCards,
     accountIds: Array.isArray(v.accountIds) ? v.accountIds.map(Number) : [],
+    sizes: readSizes(v.sizes),
   };
 }

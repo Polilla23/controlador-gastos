@@ -721,8 +721,18 @@ export async function sincronizarGoogleCalendarAhora() {
 
 export async function saveDashboard(cards: string[], accountIds: number[], cardsMobile?: string[]) {
   const userId = await requireUserId();
-  await prisma.user.update({ where: { id: userId }, data: { dashboard: { cards, cardsMobile: cardsMobile ?? cards, accountIds } } });
+  const user = await prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { dashboard: true } });
+  const current = (user.dashboard as Record<string, unknown> | null) ?? {};
+  await prisma.user.update({ where: { id: userId }, data: { dashboard: { ...current, cards, cardsMobile: cardsMobile ?? cards, accountIds } } });
   refresh();
+}
+
+/** Guarda el ancho/alto que el usuario le dio a mano a cada card en Resumen (arrastrando la esquina), sin tocar el resto de las preferencias del dashboard. */
+export async function saveDashboardSizes(sizes: Record<string, { w: number; h: number }>) {
+  const userId = await requireUserId();
+  const user = await prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { dashboard: true } });
+  const current = (user.dashboard as Record<string, unknown> | null) ?? {};
+  await prisma.user.update({ where: { id: userId }, data: { dashboard: { ...current, sizes } } });
 }
 
 
