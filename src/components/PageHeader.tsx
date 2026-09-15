@@ -12,7 +12,7 @@ export default function PageHeader({ title, subtitle, children, sticky = false }
           : "mb-5 flex flex-wrap items-center justify-between gap-3 max-sm:justify-center max-sm:text-center"
       }
     >
-      <div>
+      <div className={sticky ? "max-sm:hidden" : undefined}>
         <h1 className="text-xl font-bold sm:text-2xl">{title}</h1>
         {subtitle && <p className="text-sm text-muted">{subtitle}</p>}
       </div>

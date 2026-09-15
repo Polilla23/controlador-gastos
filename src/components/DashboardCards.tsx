@@ -39,7 +39,7 @@ function CompareControl({ compareMonths }: { compareMonths: number | null }) {
   const params = useSearchParams();
   return (
     <select
-      className="rounded border-none bg-transparent text-xs text-muted underline decoration-dotted hover:text-fg"
+      className="rounded border-none bg-transparent text-xs font-semibold text-fg outline-none"
       value={compareMonths ? String(compareMonths) : ""}
       onChange={(e) => {
         const next = new URLSearchParams(params.toString());
@@ -48,11 +48,21 @@ function CompareControl({ compareMonths }: { compareMonths: number | null }) {
         router.push(`${path}?${next.toString()}`);
       }}
     >
-      <option value="">vs. el período elegido arriba</option>
-      <option value="1">vs. hace 1 mes</option>
-      <option value="3">vs. hace 3 meses</option>
-      <option value="6">vs. hace 6 meses</option>
-      <option value="12">vs. hace 12 meses</option>
+      <option value="" style={{ backgroundColor: "var(--card)", color: "var(--fg)" }}>
+        vs. el período elegido arriba
+      </option>
+      <option value="1" style={{ backgroundColor: "var(--card)", color: "var(--fg)" }}>
+        vs. hace 1 mes
+      </option>
+      <option value="3" style={{ backgroundColor: "var(--card)", color: "var(--fg)" }}>
+        vs. hace 3 meses
+      </option>
+      <option value="6" style={{ backgroundColor: "var(--card)", color: "var(--fg)" }}>
+        vs. hace 6 meses
+      </option>
+      <option value="12" style={{ backgroundColor: "var(--card)", color: "var(--fg)" }}>
+        vs. hace 12 meses
+      </option>
     </select>
   );
 }

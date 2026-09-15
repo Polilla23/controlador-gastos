@@ -185,7 +185,10 @@ export function CategoryDonut({ slices, currency, empty }: { slices: Slice[]; cu
                         </span>
                         {c.name}
                       </span>
-                      <b>{money(c.value, currency)}</b>
+                      <span className="flex items-center gap-2">
+                        <b>{money(c.value, currency)}</b>
+                        <span className="text-xs text-muted">{Math.round((c.value / open.value) * 100)}%</span>
+                      </span>
                     </li>
                   ))}
                 </ul>
