@@ -727,20 +727,24 @@ export async function saveDashboard(cards: string[], accountIds: number[], cards
   refresh();
 }
 
-/** Guarda el ancho/alto que el usuario le dio a mano a cada card en Resumen (arrastrando la esquina), sin tocar el resto de las preferencias del dashboard. */
-export async function saveDashboardSizes(sizes: Record<string, { w: number; h: number }>) {
+/**
+ * Guarda de una sola vez el orden y el tamaño de las cards cuando se ajustan directamente en
+ * Resumen (arrastrando el asa o la esquina), sin pasar por "Personalizar" -- separado para web
+ * (`mobile: false`, ancho y alto libres) y celular (`mobile: true`, siempre una columna, sólo
+ * cambia el alto). Se guardan juntas en una sola escritura para no pisarse entre un resize y un
+ * reorden hechos justo seguidos (cada uno leía-modificaba-escribía el mismo JSON por separado).
+ * Se acota w/h a un mínimo sensato: un valor en 0 (o negativo, por algún evento de resize a
+ * medias) dejaría esa card invisible para siempre, porque `?? valorPorDefecto` no reemplaza un
+ * 0 -- sólo `null`/`undefined`.
+ */
+export async function saveDashboardLayout(mobile: boolean, cards: string[], sizes: Record<string, { w: number; h: number }>) {
   const userId = await requireUserId();
   const user = await prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { dashboard: true } });
   const current = (user.dashboard as Record<string, unknown> | null) ?? {};
-  await prisma.user.update({ where: { id: userId }, data: { dashboard: { ...current, sizes } } });
-}
-
-/** Guarda el orden de las cards de escritorio cuando se arrastran directamente en Resumen (con el asa), sin pasar por "Personalizar". */
-export async function saveDashboardOrder(cards: string[]) {
-  const userId = await requireUserId();
-  const user = await prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { dashboard: true } });
-  const current = (user.dashboard as Record<string, unknown> | null) ?? {};
-  await prisma.user.update({ where: { id: userId }, data: { dashboard: { ...current, cards } } });
+  const clean = Object.fromEntries(Object.entries(sizes).map(([id, s]) => [id, { w: Math.max(1, Math.round(s.w)), h: Math.max(5, Math.round(s.h)) }]));
+  const patch = mobile ? { cardsMobile: cards, sizesMobile: clean } : { cards, sizes: clean };
+  await prisma.user.update({ where: { id: userId }, data: { dashboard: { ...current, ...patch } } });
+  refresh();
 }
 
 

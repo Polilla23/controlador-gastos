@@ -46,7 +46,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
         </Modal>
       </PageHeader>
 
-      <DashboardCards data={data} cards={prefs.cards} cardsMobile={prefs.cardsMobile} sizes={prefs.sizes} />
+      <DashboardCards data={data} cards={prefs.cards} cardsMobile={prefs.cardsMobile} sizes={prefs.sizes} sizesMobile={prefs.sizesMobile} />
     </>
   );
 }

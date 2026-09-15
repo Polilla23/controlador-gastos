@@ -72,8 +72,11 @@ body {
   .btn-icon {
     @apply inline-flex cursor-pointer items-center justify-center rounded-lg p-2 text-muted transition hover:bg-subtle hover:text-fg;
   }
+  /* text-base (16px) en celular: por debajo de eso, iOS Safari hace zoom-in solo al tocar el
+     campo y no vuelve a alejarlo solo -- queda "pegado" el zoom hasta que el usuario lo aleja a
+     mano, incluso navegando a otra sección. De sm para arriba usa el tamaño chico de siempre. */
   .input {
-    @apply w-full rounded-xl border border-line bg-card px-3 py-2 text-sm text-fg outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-400/20;
+    @apply w-full rounded-xl border border-line bg-card px-3 py-2 text-base text-fg outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-400/20 sm:text-sm;
   }
   .label {
     @apply mb-1 block text-xs font-semibold uppercase tracking-wide text-muted;

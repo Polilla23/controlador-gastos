@@ -10,7 +10,7 @@ import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
 import type { Dashboard } from "@/lib/stats";
 import { CARDS, type CardDef, type CardSize } from "@/lib/cards";
-import { saveDashboardOrder, saveDashboardSizes } from "@/lib/actions";
+import { saveDashboardLayout } from "@/lib/actions";
 import { money, fmtDate, fmtDayMonth, pct, NATURES, NATURE_COLORS, ACCOUNT_TYPES, accountLabel } from "@/lib/format";
 import { Delta, Empty } from "./ui";
 import Icono from "./Icono";
@@ -23,7 +23,7 @@ const ROW_H = 28;
 
 /** Layout inicial: respeta el orden elegido en "Personalizar" y el span de catálogo como ancho
  * por defecto, salvo que el usuario ya haya estirado esa card a mano (en `sizes`). */
-function buildLayout(ids: string[], defs: Map<string, CardDef>, sizes: Record<string, CardSize>): Layout[] {
+function buildLayout(ids: string[], defs: Map<string, CardDef>, sizes: Record<string, CardSize>, cols: number): Layout[] {
   let x = 0;
   let y = 0;
   let rowH = 0;
@@ -31,9 +31,9 @@ function buildLayout(ids: string[], defs: Map<string, CardDef>, sizes: Record<st
   for (const id of ids) {
     const def = defs.get(id);
     if (!def) continue;
-    const w = Math.min(sizes[id]?.w ?? def.span, GRID_COLS);
+    const w = Math.min(sizes[id]?.w ?? def.span, cols);
     const h = sizes[id]?.h ?? 11;
-    if (x + w > GRID_COLS) {
+    if (x + w > cols) {
       x = 0;
       y += rowH;
       rowH = 0;
@@ -59,7 +59,7 @@ const InvestmentMixDonut = dynamic(() => import("./charts").then((m) => m.Invest
 const ForecastBars = dynamic(() => import("./charts").then((m) => m.ForecastBars), { ssr: false, loading: box("mt-3 h-48") });
 const RatioDonut = dynamic(() => import("./charts").then((m) => m.RatioDonut), { ssr: false, loading: box("h-32 w-32 shrink-0 rounded-full") });
 
-type Props = { data: Dashboard; cards: string[]; cardsMobile: string[]; sizes: Record<string, CardSize> };
+type Props = { data: Dashboard; cards: string[]; cardsMobile: string[]; sizes: Record<string, CardSize>; sizesMobile: Record<string, CardSize> };
 
 /* ---------- Individual cards ---------- */
 
@@ -534,7 +534,7 @@ function Cuentas({ d }: { d: Dashboard }) {
 
 /* ---------- Renderer ---------- */
 
-export default function DashboardCards({ data, cards, cardsMobile, sizes }: Props) {
+export default function DashboardCards({ data, cards, cardsMobile, sizes, sizesMobile }: Props) {
   const defs = new Map(CARDS.map((c) => [c.id, c]));
   // El "?" se toca/tapea para mostrar la explicación (el hover con `title` no funciona en celular).
   const [explained, setExplained] = useState<Set<string>>(new Set());
@@ -624,21 +624,16 @@ export default function DashboardCards({ data, cards, cardsMobile, sizes }: Prop
   const knownCards = cards.filter((id) => defs.has(id));
   const knownCardsMobile = cardsMobile.filter((id) => defs.has(id));
 
-  // El orden puede ser distinto en celular; ahí se sigue apilando en una sola columna sin resize
-  // (estirar con el dedo es poco práctico). En la web, cada card se puede estirar a mano.
+  // Tanto en celular como en la web se puede estirar y reordenar cada card directamente en
+  // Resumen (además de "Personalizar"); en celular queda todo en una sola columna, así que sólo
+  // cambia el alto.
   return (
     <>
-      <div className="grid grid-cols-1 gap-4 md:hidden">
-        {knownCardsMobile.map((id) => (
-          <section key={id} className="card">
-            {cardInner(id)}
-          </section>
-        ))}
+      <div className="md:hidden">
+        <CardsGrid key={knownCardsMobile.join("|")} ids={knownCardsMobile} defs={defs} sizes={sizesMobile} cols={1} mobile renderCard={cardInner} />
       </div>
       <div className="hidden md:block">
-        {/* La key remonta el grid (y resetea su layout interno) cuando cambia el orden guardado
-            en "Personalizar" -- así no hace falta un efecto sincronizando estado post-render. */}
-        <DesktopGrid key={knownCards.join("|")} ids={knownCards} defs={defs} sizes={sizes} renderCard={cardInner} />
+        <CardsGrid key={knownCards.join("|")} ids={knownCards} defs={defs} sizes={sizes} cols={GRID_COLS} mobile={false} renderCard={cardInner} />
       </div>
     </>
   );
@@ -650,24 +645,40 @@ const DRAG_HANDLE = (
   </span>
 );
 
-/** El grid redimensionable de escritorio: arranca del layout guardado, persiste w/h al soltar el
- * resize y el orden (arrastrando desde el asa) al soltar el drag. */
-function DesktopGrid({ ids, defs, sizes, renderCard }: { ids: string[]; defs: Map<string, CardDef>; sizes: Record<string, CardSize>; renderCard: (id: string, handle?: ReactNode) => ReactNode }) {
-  const [layout, setLayout] = useState<Layout[]>(() => buildLayout(ids, defs, sizes));
+/** El grid redimensionable (web y celular comparten esta misma lógica): arranca del layout
+ * guardado y, al soltar un resize o un drag, guarda de una sola vez el orden y el tamaño de
+ * TODAS las cards con el snapshot completo del layout en ese momento -- así un resize y un
+ * reorden hechos seguidos no se pisan entre sí (cada uno leía-modificaba-escribía por separado
+ * antes). La key con la que se monta este componente (afuera) resetea su estado interno cuando
+ * cambia el orden guardado desde "Personalizar", sin necesitar un efecto.
+ */
+function CardsGrid({
+  ids,
+  defs,
+  sizes,
+  cols,
+  mobile,
+  renderCard,
+}: {
+  ids: string[];
+  defs: Map<string, CardDef>;
+  sizes: Record<string, CardSize>;
+  cols: number;
+  mobile: boolean;
+  renderCard: (id: string, handle?: ReactNode) => ReactNode;
+}) {
+  const [layout, setLayout] = useState<Layout[]>(() => buildLayout(ids, defs, sizes, cols));
   const [, startSave] = useTransition();
-  const persistSizes = (next: Layout[]) => {
+  const persist = (next: Layout[]) => {
+    const order = [...next].sort((a, b) => a.y - b.y || a.x - b.x).map((item) => item.i);
     const map: Record<string, CardSize> = {};
     for (const item of next) map[item.i] = { w: item.w, h: item.h };
-    startSave(() => saveDashboardSizes(map));
-  };
-  const persistOrder = (next: Layout[]) => {
-    const order = [...next].sort((a, b) => a.y - b.y || a.x - b.x).map((item) => item.i);
-    startSave(() => saveDashboardOrder(order));
+    startSave(() => saveDashboardLayout(mobile, order, map));
   };
   return (
     <ResizableGrid
       layout={layout}
-      cols={GRID_COLS}
+      cols={cols}
       rowHeight={ROW_H}
       margin={[16, 16]}
       isDraggable
@@ -675,8 +686,8 @@ function DesktopGrid({ ids, defs, sizes, renderCard }: { ids: string[]; defs: Ma
       isResizable
       resizeHandles={["se"]}
       onLayoutChange={setLayout}
-      onResizeStop={persistSizes}
-      onDragStop={persistOrder}
+      onResizeStop={persist}
+      onDragStop={persist}
     >
       {ids.map((id) => (
         <div key={id} className="card dash-card-scroll overflow-y-auto pb-5">

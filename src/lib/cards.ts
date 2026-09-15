@@ -160,14 +160,16 @@ export const DEFAULT_CARDS = [
 ];
 
 export type CardSize = { w: number; h: number };
-export type DashboardPrefs = { cards: string[]; cardsMobile: string[]; accountIds: number[]; sizes: Record<string, CardSize> };
+export type DashboardPrefs = { cards: string[]; cardsMobile: string[]; accountIds: number[]; sizes: Record<string, CardSize>; sizesMobile: Record<string, CardSize> };
 
+// Un tamaño en 0 (o negativo) dejaría la card invisible para siempre -- se descarta en vez de
+// confiar en él, así una fila vieja/corrupta se autocorrige solita apenas se vuelve a leer.
 function readSizes(v: unknown): Record<string, CardSize> {
   if (!v || typeof v !== "object") return {};
   const out: Record<string, CardSize> = {};
   for (const [id, s] of Object.entries(v as Record<string, unknown>)) {
     const size = s as Partial<CardSize> | undefined;
-    if (size && Number.isFinite(size.w) && Number.isFinite(size.h)) out[id] = { w: Number(size.w), h: Number(size.h) };
+    if (size && Number.isFinite(size.w) && Number.isFinite(size.h) && size.w! >= 1 && size.h! >= 1) out[id] = { w: Number(size.w), h: Number(size.h) };
   }
   return out;
 }
@@ -183,5 +185,6 @@ export function readPrefs(raw: unknown): DashboardPrefs {
     cardsMobile: cardsMobile.length ? cardsMobile : resolvedCards,
     accountIds: Array.isArray(v.accountIds) ? v.accountIds.map(Number) : [],
     sizes: readSizes(v.sizes),
+    sizesMobile: readSizes((v as { sizesMobile?: unknown }).sizesMobile),
   };
 }
