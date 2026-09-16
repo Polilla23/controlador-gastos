@@ -614,19 +614,19 @@ export default function DashboardCards({ data, cards, cardsMobile, sizes, sizesM
     }
   };
 
-  const cardInner = (id: string, handle?: ReactNode) => {
+  // El título (y la pregunta de abajo) nunca tienen que scrollear con el resto -- en vez de un
+  // `position: sticky` (que depende de un contexto de apilamiento predecible, y react-grid-layout
+  // mueve cada card con CSS transform, lo que puede meter sorpresas ahí), directamente separamos
+  // el header del cuerpo: el header queda AFUERA del contenedor que scrollea, así es imposible
+  // que algo se le cuele por encima.
+  const cardInner = (id: string, handle?: ReactNode): { header: ReactNode; body: ReactNode } | null => {
     const def = defs.get(id);
     if (!def) return null;
     const open = explained.has(id);
     const conRango = id === "tendencia-saldo" || id === "tendencia-flujo";
-    return (
-      <>
-        {/* Fijo arriba mientras se scrollea el contenido de la card (ej. "Ver más" en Próximos
-            vencimientos): el fondo sólido tapa lo que pasa por debajo. El z-index alto + el color
-            de fondo puesto también inline (no sólo por clase) son a propósito: dentro de una card
-            movida con CSS transform (react-grid-layout) cualquier duda de stacking hace que un
-            renglón que ya debería estar tapado se cuele por encima del título fijo. */}
-        <div className="sticky top-0 z-30 bg-card pb-1.5" style={{ background: "var(--card)" }}>
+    return {
+      header: (
+        <>
           <h2 className="flex items-center gap-1.5 font-bold">
             {handle}
             {def.title}
@@ -640,11 +640,15 @@ export default function DashboardCards({ data, cards, cardsMobile, sizes, sizesM
             )}
           </h2>
           <p className="text-xs text-muted">{def.question}</p>
-        </div>
-        {open && <p className="mb-2 rounded-lg bg-subtle px-2.5 py-2 text-xs text-muted">{def.explanation}</p>}
-        {body(id)}
-      </>
-    );
+        </>
+      ),
+      body: (
+        <>
+          {open && <p className="mb-2 rounded-lg bg-subtle px-2.5 py-2 text-xs text-muted">{def.explanation}</p>}
+          {body(id)}
+        </>
+      ),
+    };
   };
 
   const knownCards = cards.filter((id) => defs.has(id));
@@ -691,7 +695,7 @@ function CardsGrid({
   sizes: Record<string, CardLayout>;
   cols: number;
   mobile: boolean;
-  renderCard: (id: string, handle?: ReactNode) => ReactNode;
+  renderCard: (id: string, handle?: ReactNode) => { header: ReactNode; body: ReactNode } | null;
 }) {
   const [layout, setLayout] = useState<Layout[]>(() => buildLayout(ids, defs, sizes, cols));
   const [, startSave] = useTransition();
@@ -715,11 +719,19 @@ function CardsGrid({
       onResizeStop={persist}
       onDragStop={persist}
     >
-      {ids.map((id) => (
-        <div key={id} className="card dash-card-scroll isolate overflow-y-auto pb-5">
-          {renderCard(id, DRAG_HANDLE)}
-        </div>
-      ))}
+      {ids.map((id) => {
+        const rendered = renderCard(id, DRAG_HANDLE);
+        return (
+          <div key={id} className="card flex h-full flex-col">
+            {rendered && (
+              <>
+                <div className="shrink-0 pb-1.5">{rendered.header}</div>
+                <div className="dash-card-scroll min-h-0 flex-1 overflow-y-auto pb-1">{rendered.body}</div>
+              </>
+            )}
+          </div>
+        );
+      })}
     </ResizableGrid>
   );
 }

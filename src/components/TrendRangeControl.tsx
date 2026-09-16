@@ -4,7 +4,16 @@ import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { CalendarRange } from "lucide-react";
 
-/** Elegir desde/hasta qué mes se ven "Tendencia del saldo" y "Tendencia de flujo de caja" (comparten el mismo rango). */
+const KEY = "trendRange";
+
+/**
+ * Elegir desde/hasta qué mes se ven "Tendencia del saldo" y "Tendencia de flujo de caja"
+ * (comparten el mismo rango). Una vez aplicado queda guardado (localStorage) independientemente
+ * de lo demás que se filtre en Resumen después: otros controles (ej. el selector de Mes/Semana/
+ * Año) arman su propia URL desde cero y sin querer se llevaban puestos tDesde/tHasta -- este
+ * efecto los vuelve a poner apenas detecta que faltan, salvo que el usuario los haya sacado a
+ * propósito con "Últimos 12 meses" (ahí también se borra lo guardado).
+ */
 export default function TrendRangeControl({ from, to }: { from: string; to: string }) {
   const router = useRouter();
   const path = usePathname();
@@ -24,6 +33,32 @@ export default function TrendRangeControl({ from, to }: { from: string; to: stri
     return () => document.removeEventListener("mousedown", onClick);
   }, [open]);
 
+  useEffect(() => {
+    const tDesde = params.get("tDesde");
+    const tHasta = params.get("tHasta");
+    if (tDesde && tHasta) {
+      try {
+        localStorage.setItem(KEY, JSON.stringify({ tDesde, tHasta }));
+      } catch {
+        // localStorage puede no estar disponible; no es crítico.
+      }
+      return;
+    }
+    try {
+      const saved = localStorage.getItem(KEY);
+      if (!saved) return;
+      const { tDesde: sd, tHasta: sh } = JSON.parse(saved);
+      if (!sd || !sh) return;
+      const next = new URLSearchParams(params.toString());
+      next.set("tDesde", sd);
+      next.set("tHasta", sh);
+      router.replace(`${path}?${next.toString()}`);
+    } catch {
+      // ignorar
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [path, params]);
+
   const ir = (next: URLSearchParams) => {
     router.push(`${path}?${next.toString()}`);
     setOpen(false);
@@ -40,6 +75,11 @@ export default function TrendRangeControl({ from, to }: { from: string; to: stri
     const next = new URLSearchParams(params.toString());
     next.delete("tDesde");
     next.delete("tHasta");
+    try {
+      localStorage.removeItem(KEY);
+    } catch {
+      // ignorar
+    }
     ir(next);
   };
 
