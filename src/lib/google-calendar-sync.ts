@@ -1,6 +1,7 @@
 import { prisma } from "./prisma";
-import { civil as civilOf, fromCivil, isoDay, startOfDay, addDays } from "./tz";
+import { isoDay, startOfDay, addDays } from "./tz";
 import { upsertDueDateEvent, type GoogleUser } from "./google-calendar";
+import { proximosCierres } from "./tarjetas";
 
 const LOOKAHEAD_DIAS = 45;
 
@@ -20,10 +21,11 @@ async function itemsParaCalendario(userId: string, start: Date, end: Date): Prom
   for (const p of items) out.push({ dateKey: isoDay(p.dueDate), nombre: p.description });
 
   for (const card of cards) {
-    const c = civilOf(start);
-    let due = fromCivil(c.y, c.m, card.dueDay!, 12);
-    if (due < start) due = fromCivil(c.y, c.m + 1, card.dueDay!, 12);
-    if (due >= start && due < end) out.push({ dateKey: isoDay(due), nombre: card.name });
+    // Respeta las fechas concretas guardadas en la cuenta (si están cargadas), en vez de asumir
+    // siempre el mismo día del mes -- mismo criterio que ya usa /proximos y /proximomes.
+    const { vencimientoAnterior, vencimientoActual, vencimientoProximo } = proximosCierres(card);
+    const due = [vencimientoAnterior, vencimientoActual, vencimientoProximo].find((d): d is Date => !!d && d >= start && d < end);
+    if (due) out.push({ dateKey: isoDay(due), nombre: card.name });
   }
 
   for (const d of debts) {
@@ -46,7 +48,10 @@ async function syncOneUser(user: GoogleUser): Promise<void> {
     porFecha.get(it.dateKey)!.push(it.nombre);
   }
   for (const [dateKey, nombres] of porFecha) {
-    await upsertDueDateEvent(user, dateKey, `Pagar ${listar(nombres)}`);
+    // Una tarjeta en dos monedas (ej. "Tarjeta VISA" en ARS y en USD) son dos cuentas separadas
+    // pero la misma tarjeta física -- sin este dedupe el título quedaba "Pagar Tarjeta VISA y
+    // Tarjeta VISA".
+    await upsertDueDateEvent(user, dateKey, `Pagar ${listar([...new Set(nombres)])}`);
   }
 }
 

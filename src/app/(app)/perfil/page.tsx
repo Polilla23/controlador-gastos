@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Bell, CalendarDays, KeyRound, MessageCircle, RefreshCw, Send, Smartphone, Trash2, Unlink, Upload, UserRound } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
-import { disconnectGoogleCalendar, regenerateTelegramCode, saveNotificationPrefs, sincronizarGoogleCalendarAhora, unlinkTelegram } from "@/lib/actions";
+import { disconnectGoogleCalendar, regenerateTelegramCode, saveNotificationPrefs, unlinkTelegram } from "@/lib/actions";
 import { changePassword, removeAvatar, updateProfile } from "@/lib/actions-perfil";
 import { fmtDate } from "@/lib/format";
 import { googleConfigured } from "@/lib/google-calendar";
@@ -12,6 +12,7 @@ import ConfirmButton from "@/components/ConfirmButton";
 import ActionForm from "@/components/ActionForm";
 import InstallApp from "@/components/InstallApp";
 import DangerZone from "@/components/DangerZone";
+import SyncCalendarButton from "@/components/SyncCalendarButton";
 
 export default async function PerfilPage() {
   // requireUser() puede redirigir a /login (tira una excepción especial de Next para eso): tiene
@@ -203,16 +204,7 @@ async function renderPerfil(user: Awaited<ReturnType<typeof requireUser>>) {
                 17:00 del día anterior.
               </p>
               <div className="mt-4 flex flex-wrap items-center gap-2">
-                <form
-                  action={async () => {
-                    "use server";
-                    await sincronizarGoogleCalendarAhora();
-                  }}
-                >
-                  <button type="submit" className="btn-ghost">
-                    <RefreshCw size={14} /> Sincronizar ahora
-                  </button>
-                </form>
+                <SyncCalendarButton />
                 <ConfirmButton
                   action={async () => {
                     "use server";

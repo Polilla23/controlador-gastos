@@ -621,19 +621,23 @@ export default function DashboardCards({ data, cards, cardsMobile, sizes, sizesM
     const conRango = id === "tendencia-saldo" || id === "tendencia-flujo";
     return (
       <>
-        <h2 className="flex items-center gap-1.5 font-bold">
-          {handle}
-          {def.title}
-          <button type="button" onClick={() => toggleExplain(id)} className="text-muted" aria-label="Cómo se calcula">
-            <HelpCircle size={13} className="shrink-0 cursor-pointer" />
-          </button>
-          {conRango && (
-            <span className="ml-auto">
-              <TrendRangeControl from={data.trendFrom} to={data.trendTo} />
-            </span>
-          )}
-        </h2>
-        <p className="mb-1 text-xs text-muted">{def.question}</p>
+        {/* Fijo arriba mientras se scrollea el contenido de la card (ej. "Ver más" en Próximos
+            vencimientos): el fondo sólido tapa lo que pasa por debajo. */}
+        <div className="sticky top-0 z-10 bg-card pb-1.5">
+          <h2 className="flex items-center gap-1.5 font-bold">
+            {handle}
+            {def.title}
+            <button type="button" onClick={() => toggleExplain(id)} className="text-muted" aria-label="Cómo se calcula">
+              <HelpCircle size={13} className="shrink-0 cursor-pointer" />
+            </button>
+            {conRango && (
+              <span className="ml-auto">
+                <TrendRangeControl from={data.trendFrom} to={data.trendTo} />
+              </span>
+            )}
+          </h2>
+          <p className="text-xs text-muted">{def.question}</p>
+        </div>
         {open && <p className="mb-2 rounded-lg bg-subtle px-2.5 py-2 text-xs text-muted">{def.explanation}</p>}
         {body(id)}
       </>

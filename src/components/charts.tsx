@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { createPortal } from "react-dom";
 import {
   Area,
   AreaChart,
@@ -141,9 +142,14 @@ export function CategoryDonut({ slices, currency, empty }: { slices: Slice[]; cu
         </ul>
       </div>
 
-      {open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setOpen(null)}>
-          <div className="w-full max-w-md rounded-2xl border border-line bg-card p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+      {open &&
+        // Portal a document.body: si no, un ancestro con CSS transform (como cada card de Resumen,
+        // que react-grid-layout posiciona con transform) crea un nuevo containing block y "fixed"
+        // deja de ser relativo a la ventana -- el overlay queda encerrado dentro de la card en vez
+        // de cubrir toda la pantalla.
+        createPortal(
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setOpen(null)}>
+          <div className="max-h-[85vh] w-full max-w-md overflow-y-auto rounded-2xl border border-line bg-card p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
             <div className="mb-3 flex items-start justify-between">
               <div className="flex items-center gap-2">
                 {open.iconBody && (
@@ -197,8 +203,9 @@ export function CategoryDonut({ slices, currency, empty }: { slices: Slice[]; cu
               <Empty>Esta categoría no tiene subcategorías.</Empty>
             )}
           </div>
-        </div>
-      )}
+          </div>,
+          document.body,
+        )}
     </>
   );
 }

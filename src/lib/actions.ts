@@ -9,7 +9,7 @@ import { requireUserId } from "./auth";
 import { supabaseServer } from "./supabase";
 import { storeAttachment, removeStored } from "./storage";
 import { addDays, addMonths, civil, fromCivil, parseInput, startOfDay } from "./tz";
-import { statementMonthForDate } from "./tarjetas";
+import { statementMonthForDate, type CardDates } from "./tarjetas";
 import { aplicarAlCrear } from "./reglas";
 import { syncGoogleCalendarForUser } from "./google-calendar-sync";
 
@@ -92,16 +92,25 @@ export async function saveAccount(fd: FormData) {
     // Si se corrigió el cierre/vencimiento de una tarjeta, los registros que ya estaban cargados
     // pueden haber quedado en el resumen equivocado: se recalculan todos con las fechas nuevas.
     if (data.type === "CREDIT_CARD" && data.closingDay) {
-      const txs = await prisma.transaction.findMany({ where: { userId, accountId: id }, select: { id: true, date: true } });
-      const porMes = new Map<string, number[]>();
-      for (const t of txs) {
-        const sm = statementMonthForDate(t.date, data);
-        if (!sm) continue;
-        if (!porMes.has(sm)) porMes.set(sm, []);
-        porMes.get(sm)!.push(t.id);
-      }
-      if (porMes.size) {
-        await prisma.$transaction([...porMes].map(([sm, txIds]) => prisma.transaction.updateMany({ where: { id: { in: txIds } }, data: { statementMonth: sm } })));
+      await recomputeStatementMonths(userId, id, data);
+
+      // Misma tarjeta física en otra moneda (ej. "Tarjeta VISA" en ARS y en USD, mismo nombre
+      // exacto): es un solo cierre/vencimiento real, así que se unifica también en la cuenta
+      // hermana en vez de tener que cargarlo dos veces.
+      const hermanas = await prisma.account.findMany({ where: { userId, type: "CREDIT_CARD", name: d.name, id: { not: id } }, select: { id: true } });
+      if (hermanas.length) {
+        const fechas: CardDates = {
+          closingDay: data.closingDay,
+          dueDay: data.dueDay,
+          cierreAnterior: data.cierreAnterior,
+          cierreActual: data.cierreActual,
+          cierreProximo: data.cierreProximo,
+          vencimientoAnterior: data.vencimientoAnterior,
+          vencimientoActual: data.vencimientoActual,
+          vencimientoProximo: data.vencimientoProximo,
+        };
+        await prisma.account.updateMany({ where: { id: { in: hermanas.map((h) => h.id) } }, data: fechas });
+        for (const h of hermanas) await recomputeStatementMonths(userId, h.id, fechas);
       }
     }
   } else {
@@ -231,6 +240,21 @@ const txSchema = z.object({
   warrantyMonths: optInt,
   installments: z.coerce.number().int().min(1).max(120).default(1),
 });
+
+/** Recalcula el statementMonth de todas las transacciones de una tarjeta con las fechas ya guardadas (después de editarlas, propio o de una cuenta hermana). */
+async function recomputeStatementMonths(userId: string, accountId: number, cardDates: CardDates) {
+  const txs = await prisma.transaction.findMany({ where: { userId, accountId }, select: { id: true, date: true } });
+  const porMes = new Map<string, number[]>();
+  for (const t of txs) {
+    const sm = statementMonthForDate(t.date, cardDates);
+    if (!sm) continue;
+    if (!porMes.has(sm)) porMes.set(sm, []);
+    porMes.get(sm)!.push(t.id);
+  }
+  if (porMes.size) {
+    await prisma.$transaction([...porMes].map(([sm, ids]) => prisma.transaction.updateMany({ where: { id: { in: ids } }, data: { statementMonth: sm } })));
+  }
+}
 
 /**
  * A partir del cierre/vencimiento "actual" (los únicos dos campos que el usuario corrige a
