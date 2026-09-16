@@ -5,6 +5,7 @@ import { APP_TZ, addDays, civil as civilOf, fromCivil, monthKey, startOfDay } fr
 import { cargarPresupuestos } from "./presupuestos";
 import { accountBalances } from "./balances";
 import { proximosCierres } from "./tarjetas";
+import { cotizaciones, NOMBRE_MOSTRAR } from "./cotizaciones";
 
 const api = (method: string) => `https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/${method}`;
 
@@ -51,22 +52,33 @@ const extractId = (text: string) => {
 /**
  * Arma el texto de /proximos y /proximomes: separado en dos secciones, Ingresos y Egresos (las
  * tarjetas y deudas que hay que pagar van con los egresos; lo que te devuelven, con los
- * ingresos), ordenado por fecha dentro de cada una, con "PAGADO" al principio de lo que ya está
- * saldado y un total al pie de lo que todavía falta cobrar/pagar.
+ * ingresos), y dentro de cada una subagrupado por categoría (Tarjetas y Deudas primero, después
+ * el resto alfabético), con "PAGADO" en lo que ya está saldado, un total por moneda al pie de
+ * cada sección (convertido también a un solo número en pesos con el dólar MEP) y la diferencia
+ * entre ambas secciones al final.
  */
-async function proximosDelPeriodo(userId: string, start: Date, end: Date): Promise<string> {
-  const [items, cards, debts] = await Promise.all([
+async function proximosDelPeriodo(userId: string, titulo: string, start: Date, end: Date): Promise<string> {
+  const [items, cards, debts, { lista: quotes }] = await Promise.all([
     prisma.planned.findMany({
       where: { userId, includeInTelegram: true, dueDate: { gte: start, lt: end } },
+      include: { category: { include: { parent: true } } },
       orderBy: { dueDate: "asc" },
     }),
     prisma.account.findMany({ where: { userId, type: "CREDIT_CARD", archived: false, dueDay: { not: null } } }),
     prisma.debt.findMany({ where: { userId, dueDate: { gte: start, lt: end } }, include: { payments: true } }),
+    cotizaciones(),
   ]);
+  const mep = quotes.find((q) => q.code === "bolsa")?.sell ?? null;
+  const aPesos = (monto: number, currency: string) => (currency === "ARS" ? monto : mep != null ? monto * mep : null);
 
   type Fila = { fecha: Date; nombre: string; monto: number; currency: string; pagado: boolean };
-  const ingresos: Fila[] = [];
-  const egresos: Fila[] = [];
+  type Grupo = { emoji: string; filas: Fila[] };
+  const ingresos = new Map<string, Grupo>();
+  const egresos = new Map<string, Grupo>();
+  const push = (mapa: Map<string, Grupo>, nombre: string, emoji: string, fila: Fila) => {
+    if (!mapa.has(nombre)) mapa.set(nombre, { emoji, filas: [] });
+    mapa.get(nombre)!.filas.push(fila);
+  };
 
   for (const card of cards) {
     // Vencimiento de esta tarjeta que cae dentro del período (respeta las fechas concretas
@@ -91,45 +103,79 @@ async function proximosDelPeriodo(userId: string, start: Date, end: Date): Promi
       },
       select: { id: true },
     });
-    egresos.push({ fecha: due, nombre: `💳 ${card.name}`, monto: Math.max(0, usado), currency: card.currency, pagado: !!pago });
+    push(egresos, "Tarjetas", "💳", { fecha: due, nombre: card.name, monto: Math.max(0, usado), currency: card.currency, pagado: !!pago });
   }
 
   for (const p of items) {
-    (p.type === "INCOME" ? ingresos : egresos).push({ fecha: p.dueDate, nombre: p.description, monto: p.amount, currency: p.currency, pagado: p.done });
+    const grupo = p.category?.parent?.name ?? p.category?.name ?? "Otros";
+    push(p.type === "INCOME" ? ingresos : egresos, grupo, "📁", { fecha: p.dueDate, nombre: p.description, monto: p.amount, currency: p.currency, pagado: p.done });
   }
 
   for (const d of debts) {
     if (!d.dueDate) continue;
     const falta = d.amount - d.payments.reduce((s, x) => s + x.amount, 0);
     const esIngreso = d.direction === "I_LENT";
-    (esIngreso ? ingresos : egresos).push({
+    push(esIngreso ? ingresos : egresos, "Deudas", "🤝", {
       fecha: d.dueDate,
-      nombre: `🤝 ${esIngreso ? `${d.counterparty} te devuelve` : `Le devolvés a ${d.counterparty}`}`,
+      nombre: esIngreso ? `${d.counterparty} te devuelve` : `Le devolvés a ${d.counterparty}`,
       monto: Math.max(0, falta),
       currency: d.currency,
       pagado: d.status === "CLOSED" || falta <= 0.01,
     });
   }
 
-  if (!ingresos.length && !egresos.length) return "";
+  if (!ingresos.size && !egresos.size) return "";
 
-  const seccion = (titulo: string, emoji: string, filas: Fila[]) => {
-    if (!filas.length) return "";
-    const ordenadas = [...filas].sort((a, b) => a.fecha.getTime() - b.fecha.getTime());
-    const lineas = ordenadas.map((f) =>
-      f.pagado
-        ? ` ✅ PAGADO - ${f.nombre} - Vencimiento ${fmtDayMonth(f.fecha)} = ${money(f.monto, f.currency)}`
-        : `\t- ${f.nombre} - Vencimiento ${fmtDayMonth(f.fecha)} = ${money(f.monto, f.currency)}`,
-    );
-    // Total de lo que todavía falta (lo ya PAGADO no suma: no tendría sentido pedir "cuánto me
-    // falta cobrar/pagar" incluyendo lo que ya se saldó), separado por moneda si hay más de una.
-    const totales = new Map<string, number>();
-    for (const f of ordenadas) if (!f.pagado) totales.set(f.currency, (totales.get(f.currency) ?? 0) + f.monto);
-    const totalTxt = [...totales.entries()].map(([cur, val]) => money(val, cur)).join(" + ");
-    return `<b>${emoji} ${titulo}</b>\n${lineas.join("\n")}${totalTxt ? `\n<b>Total pendiente: ${totalTxt}</b>` : ""}`;
+  const ordenGrupos = (a: string, b: string) => {
+    const prioridad = (n: string) => (n === "Tarjetas" ? 0 : n === "Deudas" ? 1 : 2);
+    return prioridad(a) - prioridad(b) || a.localeCompare(b, "es");
   };
 
-  return [seccion("Ingresos", "🟢", ingresos), seccion("Egresos", "🔴", egresos)].filter(Boolean).join("\n\n");
+  const seccion = (tituloSeccion: string, emoji: string, grupos: Map<string, Grupo>) => {
+    if (!grupos.size) return { texto: "", pesos: 0 };
+    const bloques = [...grupos.keys()].sort(ordenGrupos).map((nombre) => {
+      const g = grupos.get(nombre)!;
+      const filas = [...g.filas].sort((a, b) => a.fecha.getTime() - b.fecha.getTime());
+      const lineas = filas.map((f) =>
+        f.pagado
+          ? ` ✅ PAGADO - ${f.nombre} - Vencimiento ${fmtDayMonth(f.fecha)} = ${money(f.monto, f.currency)}`
+          : `* ${f.nombre} - Vencimiento ${fmtDayMonth(f.fecha)} = ${money(f.monto, f.currency)}`,
+      );
+      return `${g.emoji} ${nombre}\n\n${lineas.join("\n")}`;
+    });
+    // Total de lo que todavía falta (lo ya PAGADO no suma), por moneda y convertido a un único
+    // número en pesos con el dólar MEP para poder comparar/sumar entre secciones.
+    const totales = new Map<string, number>();
+    let pesos = 0;
+    let huboConversion = true;
+    for (const g of grupos.values()) {
+      for (const f of g.filas) {
+        if (f.pagado) continue;
+        totales.set(f.currency, (totales.get(f.currency) ?? 0) + f.monto);
+        const enPesos = aPesos(f.monto, f.currency);
+        if (enPesos == null) huboConversion = false;
+        else pesos += enPesos;
+      }
+    }
+    const totalTxt = [...totales.entries()].map(([cur, val]) => money(val, cur)).join(" + ");
+    const totalBloque = totalTxt ? `💲Total: ${totalTxt}\n💲Total Pesos: ${huboConversion ? money(pesos, "ARS") : "—"}` : "";
+    const todosLosBloques = totalBloque ? [...bloques, totalBloque] : bloques;
+    return { texto: `${emoji} ${tituloSeccion}\n${todosLosBloques.join("\n\n\n")}`, pesos: huboConversion ? pesos : 0 };
+  };
+
+  const ing = seccion("Ingresos", "🟢", ingresos);
+  const egr = seccion("Egresos", "🔴", egresos);
+
+  const hoy = civilOf(new Date());
+  const fechaHoy = `${String(hoy.d).padStart(2, "0")}/${String(hoy.m).padStart(2, "0")}/${hoy.y}`;
+  const cotizacionLinea = mep != null ? `💲Cotización - ${fechaHoy} - Dólar ${NOMBRE_MOSTRAR.bolsa ?? "MEP"}: ${money(mep, "ARS")}` : "";
+  const diferenciaLinea = `💲Diferencia: ${money(ing.pesos - egr.pesos, "ARS")}`;
+
+  // Sin blank line entre el título y la cotización (van pegados); sí una entre el resto de los
+  // bloques (cabecera, secciones, diferencia).
+  const encabezado = cotizacionLinea ? `📅 <b>${titulo}</b>\n${cotizacionLinea}` : `📅 <b>${titulo}</b>`;
+  const cuerpo = [ing.texto, egr.texto].filter(Boolean).join("\n\n");
+  return [encabezado, cuerpo, diferenciaLinea].filter(Boolean).join("\n\n");
 }
 
 export async function handleUpdate(update: TgUpdate) {
@@ -174,8 +220,8 @@ export async function handleUpdate(update: TgUpdate) {
     const hoy = startOfDay();
     const c = civilOf(hoy);
     const finMes = fromCivil(c.y, c.m + 1, 1);
-    const cuerpo = await proximosDelPeriodo(user.id, hoy, finMes);
-    return reply(cuerpo ? `📅 <b>Este mes</b>\n\n${cuerpo}` : "🎉 No tenés nada para registrar este mes.");
+    const cuerpo = await proximosDelPeriodo(user.id, "Este mes", hoy, finMes);
+    return reply(cuerpo || "🎉 No tenés nada para registrar este mes.");
   }
 
   if (/^\/proximomes/i.test(text)) {
@@ -183,8 +229,8 @@ export async function handleUpdate(update: TgUpdate) {
     const c = civilOf(hoy);
     const inicio = fromCivil(c.y, c.m + 1, 1);
     const fin = fromCivil(c.y, c.m + 2, 1);
-    const cuerpo = await proximosDelPeriodo(user.id, inicio, fin);
-    return reply(cuerpo ? `📅 <b>Mes que viene</b>\n\n${cuerpo}` : "🎉 No tenés nada para registrar el mes que viene.");
+    const cuerpo = await proximosDelPeriodo(user.id, "Mes que viene", inicio, fin);
+    return reply(cuerpo || "🎉 No tenés nada para registrar el mes que viene.");
   }
 
   /* ---------- Attachments ---------- */
