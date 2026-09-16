@@ -41,7 +41,11 @@ export async function cargarPresupuestos(userId: string, incluirArchivados = fal
   const hoy = new Date();
   const budgets = await prisma.budget.findMany({
     where: { userId, ...(incluirArchivados ? {} : { archived: false }) },
-    include: { categories: { select: { id: true, name: true } }, accounts: { select: { id: true, name: true } }, tags: { select: { id: true, name: true } } },
+    include: {
+      categories: { select: { id: true, name: true, color: true, icon: true } },
+      accounts: { select: { id: true, name: true } },
+      tags: { select: { id: true, name: true, color: true } },
+    },
     orderBy: [{ archived: "asc" }, { createdAt: "desc" }],
   });
   if (!budgets.length) return [];

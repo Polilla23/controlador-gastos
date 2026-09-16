@@ -28,7 +28,7 @@ import {
 import clsx from "clsx";
 import ThemeToggle from "./ThemeToggle";
 import Modal from "./Modal";
-import TransactionForm, { type AccountOpt, type QuoteOpt, type TagOpt } from "./TransactionForm";
+import TransactionForm, { type AccountOpt, type BudgetOpt, type QuoteOpt, type TagOpt } from "./TransactionForm";
 import type { CategoryOpt } from "./CategorySelect";
 import { signOut } from "@/lib/actions";
 
@@ -63,6 +63,7 @@ export default function Nav({
   categories,
   tags,
   counterparties,
+  budgets,
   quotes,
 }: {
   userLabel: string;
@@ -71,6 +72,7 @@ export default function Nav({
   categories: CategoryOpt[];
   tags: TagOpt[];
   counterparties: string[];
+  budgets: BudgetOpt[];
   quotes: QuoteOpt[];
 }) {
   const path = usePathname();
@@ -172,7 +174,7 @@ export default function Nav({
         triggerClassName="fixed bottom-20 right-4 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-brand-500 text-white shadow-lg transition hover:bg-brand-600 md:hidden"
         trigger={<Plus size={26} />}
       >
-        <TransactionForm accounts={accounts} categories={categories} tags={tags} counterparties={counterparties} quotes={quotes} />
+        <TransactionForm accounts={accounts} categories={categories} tags={tags} counterparties={counterparties} budgets={budgets} quotes={quotes} />
       </Modal>
 
       {/* Mobile bottom bar */}

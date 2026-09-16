@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Filter, Save, Trash2 } from "lucide-react";
 import ActionForm from "./ActionForm";
@@ -19,11 +18,36 @@ export default function SavedFilters({ filtros, scope }: { filtros: FiltroGuarda
   const path = usePathname();
   const params = useSearchParams();
   const actual = params.toString();
-  const [elegido, setElegido] = useState("");
+
+  // Qué filtro está realmente activo ahora mismo, comparando contra la URL -- así el desplegable
+  // no depende de "qué se clickeó" (que se puede desincronizar, ej. si StickyFilters restaura un
+  // filtro solo al volver a entrar a la sección) sino de lo que de verdad está aplicado.
+  const coincide = (f: FiltroGuardado) => {
+    const claves = Object.keys(f.query);
+    if ([...params.keys()].some((k) => !claves.includes(k))) return false;
+    return claves.every((k) => {
+      const esperado = Array.isArray(f.query[k]) ? (f.query[k] as string[]) : [f.query[k] as string];
+      const real = params.getAll(k);
+      return real.length === esperado.length && esperado.every((v) => real.includes(v));
+    });
+  };
+  const elegido = filtros.find(coincide)?.id.toString() ?? "";
 
   const aplicar = (id: string) => {
-    setElegido(id);
-    if (!id) return;
+    if (!id) {
+      // "Mis filtros" (en blanco): volver a la vista sin nada filtrado. No alcanza con limpiar la
+      // URL -- StickyFilters guarda el último filtro aplicado y lo vuelve a poner solo la próxima
+      // vez que se entra a esta sección, así que sin borrar eso también no había forma de "soltar"
+      // un filtro una vez aplicado (quedaba pegado para siempre).
+      try {
+        localStorage.removeItem(`filters:${scope}`);
+      } catch {
+        // ignorar
+      }
+      router.push(path);
+      router.refresh();
+      return;
+    }
     const f = filtros.find((x) => String(x.id) === id);
     if (!f) return;
     const usp = new URLSearchParams();

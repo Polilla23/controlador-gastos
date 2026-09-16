@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { requireUserId } from "@/lib/auth";
 import { cargarMetas, cargarPresupuestos } from "@/lib/presupuestos";
+import { cotizaciones } from "@/lib/cotizaciones";
 import { money } from "@/lib/format";
 import PageHeader from "@/components/PageHeader";
 import Tabs from "@/components/Tabs";
@@ -9,12 +10,15 @@ import GoalsBoard from "@/components/GoalsBoard";
 
 export default async function PresupuestosPage() {
   const userId = await requireUserId();
-  const [budgets, goals, categories, accounts, tags] = await Promise.all([
+  const [budgets, goals, categories, allCategories, accounts, tags, counterparties, { lista: quotes }] = await Promise.all([
     cargarPresupuestos(userId, true),
     cargarMetas(userId),
-    prisma.category.findMany({ where: { userId, kind: "EXPENSE" }, orderBy: { name: "asc" }, select: { id: true, name: true, parentId: true } }),
+    prisma.category.findMany({ where: { userId, kind: "EXPENSE" }, orderBy: { name: "asc" }, select: { id: true, name: true, kind: true, color: true, parentId: true } }),
+    prisma.category.findMany({ where: { userId }, orderBy: { name: "asc" }, select: { id: true, name: true, kind: true, color: true, parentId: true } }),
     prisma.account.findMany({ where: { userId, archived: false }, orderBy: { name: "asc" }, select: { id: true, name: true, currency: true, color: true } }),
-    prisma.tag.findMany({ where: { userId }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
+    prisma.tag.findMany({ where: { userId }, orderBy: { name: "asc" }, select: { id: true, name: true, color: true } }),
+    prisma.transaction.findMany({ where: { userId, counterparty: { not: "" } }, distinct: ["counterparty"], select: { counterparty: true }, orderBy: { counterparty: "asc" }, take: 200 }),
+    cotizaciones(),
   ]);
 
   const activos = budgets.filter((b) => !b.archived);
@@ -49,7 +53,21 @@ export default async function PresupuestosPage() {
 
       <Tabs
         tabs={[
-          { key: "presupuestos", label: `Presupuestos (${activos.length})`, content: <BudgetsBoard budgets={budgets} categories={categories} accounts={accounts} tags={tags} /> },
+          {
+            key: "presupuestos",
+            label: `Presupuestos (${activos.length})`,
+            content: (
+              <BudgetsBoard
+                budgets={budgets}
+                categories={categories}
+                allCategories={allCategories}
+                accounts={accounts}
+                tags={tags}
+                counterparties={counterparties.map((c) => c.counterparty)}
+                quotes={quotes}
+              />
+            ),
+          },
           { key: "metas", label: `Metas (${goals.length})`, content: <GoalsBoard goals={goals} accounts={accounts} /> },
         ]}
       />

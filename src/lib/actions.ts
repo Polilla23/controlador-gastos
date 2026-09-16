@@ -236,6 +236,7 @@ const txSchema = z.object({
   toAmount: optNum,
   fxRate: optNum,
   categoryId: optInt,
+  budgetId: optInt,
   counterparty: z.string().default(""),
   warrantyMonths: optInt,
   installments: z.coerce.number().int().min(1).max(120).default(1),
@@ -305,6 +306,9 @@ export async function saveTransaction(fd: FormData) {
   const date = new Date(d.date);
   if (Number.isNaN(date.getTime())) throw new Error("Fecha inválida");
 
+  const budgetId = d.type === "EXPENSE" ? d.budgetId : null;
+  if (budgetId && !(await prisma.budget.findFirst({ where: { id: budgetId, userId } }))) throw new Error("Ese presupuesto no es tuyo");
+
   const base = {
     userId,
     type: d.type,
@@ -321,6 +325,7 @@ export async function saveTransaction(fd: FormData) {
     toAmount: d.type === "TRANSFER" ? d.toAmount : null,
     fxRate: d.type === "TRANSFER" ? d.fxRate : null,
     categoryId: d.type === "TRANSFER" ? null : d.categoryId,
+    budgetId,
   };
 
   if (d.type === "TRANSFER") {

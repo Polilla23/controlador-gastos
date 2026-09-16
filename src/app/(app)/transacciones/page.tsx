@@ -44,7 +44,7 @@ export default async function TransaccionesPage({ searchParams }: { searchParams
     where.OR = [{ description: { contains: q, mode: "insensitive" } }, { note: { contains: q, mode: "insensitive" } }];
   }
 
-  const [rows, accounts, categories, tags, filtros, previos] = await Promise.all([
+  const [rows, accounts, categories, tags, filtros, previos, budgets] = await Promise.all([
     prisma.transaction.findMany({
       where,
       orderBy: [{ date: "desc" }, { id: "desc" }],
@@ -62,6 +62,7 @@ export default async function TransaccionesPage({ searchParams }: { searchParams
       orderBy: { counterparty: "asc" },
       take: 200,
     }),
+    prisma.budget.findMany({ where: { userId, archived: false }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
   ]);
   const counterparties = previos.map((p) => p.counterparty);
 
@@ -98,7 +99,7 @@ export default async function TransaccionesPage({ searchParams }: { searchParams
         <RangePicker range={range} />
         <SavedFilters filtros={filtros.map((f) => ({ id: f.id, name: f.name, query: f.query as Record<string, string | string[]> }))} scope="TX" />
         <Modal title="Nuevo registro" triggerClassName="btn-primary hidden md:inline-flex" trigger={<><Plus size={16} /> Nuevo registro</>}>
-          <TransactionForm accounts={accounts} categories={categories} tags={tags} counterparties={counterparties} quotes={quotes} />
+          <TransactionForm accounts={accounts} categories={categories} tags={tags} counterparties={counterparties} budgets={budgets} quotes={quotes} />
         </Modal>
       </PageHeader>
 
@@ -186,7 +187,7 @@ export default async function TransaccionesPage({ searchParams }: { searchParams
         </button>
       </form>
 
-      <TransactionsTable rows={rows} accounts={accounts} categories={categories} tags={tags} quotes={quotes} />
+      <TransactionsTable rows={rows} accounts={accounts} categories={categories} tags={tags} budgets={budgets} quotes={quotes} />
       {rows.length === 300 && <p className="mt-3 text-center text-xs text-muted">Se muestran los 300 registros más recientes del período. Acotá el rango para ver el resto.</p>}
     </>
   );

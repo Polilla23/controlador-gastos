@@ -28,8 +28,11 @@ export type TxInitial = {
   toAccountId: number | null;
   toAmount: number | null;
   categoryId: number | null;
+  budgetId?: number | null;
   tags: { id: number }[];
 };
+
+export type BudgetOpt = { id: number; name: string };
 
 const TYPES = [
   { key: "EXPENSE", label: "Egreso", cls: "bg-red-500" },
@@ -73,6 +76,8 @@ export default function TransactionForm({
   onDone,
   counterparties = [],
   quotes = [],
+  budgets = [],
+  lockedBudgetId,
 }: {
   accounts: AccountOpt[];
   categories: CategoryOpt[];
@@ -83,6 +88,10 @@ export default function TransactionForm({
   counterparties?: string[];
   /** Cotizaciones cacheadas (Monedas), para elegir con qué convertir en un cambio de moneda. */
   quotes?: QuoteOpt[];
+  /** Presupuestos activos, para poder asociar este gasto a uno. */
+  budgets?: BudgetOpt[];
+  /** Si se abre desde el detalle de un presupuesto puntual: ya viene fijo a ese, sin selector. */
+  lockedBudgetId?: number;
 }) {
   const [type, setType] = useState(initial?.type ?? "EXPENSE");
   const [accountId, setAccountId] = useState(initial?.accountId ?? accounts[0]?.id ?? 0);
@@ -95,6 +104,7 @@ export default function TransactionForm({
   const [rateSource, setRateSource] = useState("manual");
   const [description, setDescription] = useState(initial?.description ?? "");
   const [note, setNote] = useState(initial?.note ?? "");
+  const [hasBudget, setHasBudget] = useState(!!lockedBudgetId || !!initial?.budgetId);
   // Si ya tenía una nota distinta de la descripción, respetamos esa decisión y no la volvemos a pisar.
   const [noteEdited, setNoteEdited] = useState(!!initial && initial.note !== initial.description);
 
@@ -310,6 +320,32 @@ export default function TransactionForm({
           {installments > 1 && <p className="mt-2 text-xs text-muted">Se crean {installments} registros, uno por mes desde la fecha elegida. Después los podés editar juntos desde Cuotas.</p>}
         </div>
       )}
+
+      {type === "EXPENSE" &&
+        (lockedBudgetId ? (
+          <input type="hidden" name="budgetId" value={lockedBudgetId} />
+        ) : (
+          budgets.length > 0 && (
+            <div className="rounded-xl border border-dashed border-line p-3">
+              <label className="flex cursor-pointer items-center gap-2 text-sm font-medium">
+                <input type="checkbox" checked={hasBudget} onChange={(e) => setHasBudget(e.target.checked)} className="h-4 w-4 accent-[var(--color-brand-500)]" />
+                ¿Pertenece a un presupuesto?
+              </label>
+              {hasBudget && (
+                <div className="mt-2">
+                  <label className="label">Presupuesto</label>
+                  <select name="budgetId" className="input" defaultValue={initial?.budgetId ?? budgets[0]?.id}>
+                    {budgets.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
+          )
+        ))}
 
       {tags.length > 0 && (
         <div>

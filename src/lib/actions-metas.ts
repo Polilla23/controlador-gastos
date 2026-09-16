@@ -59,46 +59,29 @@ export async function saveBudget(fd: FormData) {
     tags: { [op]: tagIds.map((i) => ({ id: i })) },
   });
 
-  if (id) {
-    await prisma.budget.update({ where: { id, userId }, data: { ...data, ...rel("set") } });
-    refresh();
-    return;
-  }
+  if (id) await prisma.budget.update({ where: { id, userId }, data: { ...data, ...rel("set") } });
+  else await prisma.budget.create({ data: { ...data, ...rel("connect"), userId } });
+  refresh();
+}
 
-  const budget = await prisma.budget.create({ data: { ...data, ...rel("connect"), userId } });
+/** Asigna una transacción ya cargada a un presupuesto (desde el detalle → Movimientos → "Asignar uno que ya cargué"). */
+export async function assignExistingToBudget(fd: FormData) {
+  const userId = await requireUserId();
+  const budgetId = Number(fd.get("budgetId"));
+  const budget = await prisma.budget.findFirst({ where: { id: budgetId, userId } });
+  if (!budget) throw new Error("El presupuesto no existe");
+  const existingId = Number(fd.get("existingTransactionId"));
+  if (!existingId) throw new Error("Indicá el número de la transacción");
+  const tx = await assertOwnedTransaction(userId, existingId);
+  if (tx.currency !== budget.currency) throw new Error(`Esa transacción es en ${tx.currency} y el presupuesto en ${budget.currency}: no se puede asignar.`);
+  await prisma.transaction.update({ where: { id: existingId }, data: { budgetId: budget.id } });
+  refresh();
+}
 
-  // Al crear, opcionalmente ya lo arranca con un gasto asignado (nuevo o uno que ya cargaste),
-  // en vez de esperar a que aparezca uno solo por coincidir con las categorías/cuentas elegidas.
-  const { mode, existingId } = readLinkMode(fd);
-  if (mode === "new") {
-    const accountId = Number(fd.get("firstAccountId"));
-    const firstAmount = Number(fd.get("firstAmount"));
-    const firstDate = String(fd.get("firstDate") ?? "");
-    if (accountId && firstAmount > 0 && firstDate) {
-      const account = await prisma.account.findFirst({ where: { id: accountId, userId } });
-      if (account) {
-        await prisma.transaction.create({
-          data: {
-            userId,
-            type: "EXPENSE",
-            amount: firstAmount,
-            currency: budget.currency,
-            date: parseInput(firstDate),
-            description: budget.name,
-            note: `Presupuesto "${budget.name}"`,
-            accountId,
-            categoryId: categoryIds[0] ?? null,
-            budgetId: budget.id,
-          },
-        });
-      }
-    }
-  } else if (mode === "existing" && existingId) {
-    const tx = await assertOwnedTransaction(userId, existingId);
-    if (tx.currency !== budget.currency) throw new Error(`El presupuesto quedó creado, pero esa transacción es en ${tx.currency} y el presupuesto en ${budget.currency}: no se pudo asignar.`);
-    await prisma.transaction.update({ where: { id: existingId }, data: { budgetId: budget.id } });
-  }
-
+/** Saca una transacción de un presupuesto (no la borra, sólo deja de contar para él). */
+export async function unassignFromBudget(transactionId: number) {
+  const userId = await requireUserId();
+  await prisma.transaction.updateMany({ where: { id: transactionId, userId }, data: { budgetId: null } });
   refresh();
 }
 

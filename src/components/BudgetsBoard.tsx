@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Archive, ArchiveRestore, ChartPie, Pencil, Plus, Trash2, TriangleAlert } from "lucide-react";
+import { Archive, ArchiveRestore, ChartPie, Link2, Pencil, Plus, Trash2, TriangleAlert, X } from "lucide-react";
 import ActionForm from "./ActionForm";
 import Modal from "./Modal";
 import ConfirmButton from "./ConfirmButton";
@@ -9,12 +9,15 @@ import MoneyInput from "./MoneyInput";
 import IconPicker from "./IconPicker";
 import Icono from "./Icono";
 import MultiSelectFilter from "./MultiSelectFilter";
+import CategorySelect, { type CategoryOpt } from "./CategorySelect";
+import TransactionForm, { type AccountOpt, type TagOpt, type QuoteOpt } from "./TransactionForm";
 import { ColorPicker } from "./ui";
-import { archiveBudget, deleteBudget, saveBudget } from "@/lib/actions-metas";
+import { archiveBudget, assignExistingToBudget, deleteBudget, saveBudget, unassignFromBudget } from "@/lib/actions-metas";
 import { CURRENCIES, fmtDate, money, toInputDate } from "@/lib/format";
 
 type Opcion = { id: number; name: string; parentId?: number | null };
-type CuentaOpcion = { id: number; name: string; currency: string };
+type ConColor = { id: number; name: string; color: string };
+type CuentaOpcion = { id: number; name: string; currency: string; color: string };
 export type BudgetRow = {
   id: number;
   name: string;
@@ -28,9 +31,9 @@ export type BudgetRow = {
   icon: string | null;
   iconBody: string | null;
   archived: boolean;
-  categories: Opcion[];
+  categories: ConColor[];
   accounts: Opcion[];
-  tags: Opcion[];
+  tags: ConColor[];
   gastado: number;
   restante: number;
   porcentaje: number;
@@ -38,7 +41,7 @@ export type BudgetRow = {
   diasRestantes: number;
   desde: Date;
   hasta: Date;
-  movimientos: { id: number; amount: number; currency: string; date: Date; description: string; category: { name: string; color: string } | null }[];
+  movimientos: { id: number; amount: number; currency: string; date: Date; description: string; budgetId: number | null; category: { name: string; color: string } | null }[];
   porCategoria: { name: string; value: number; color: string; iconBody: string | null }[];
 };
 
@@ -49,51 +52,7 @@ const PERIODOS: [string, string][] = [
   ["YEARLY", "Anual"],
 ];
 
-/** Al crear un presupuesto, dejar arrancarlo ya con un gasto (nuevo o de los que ya cargaste) contando para él, en vez de esperar a que aparezca uno solo. */
-function AsignarMovimiento({ accounts }: { accounts: CuentaOpcion[] }) {
-  const [mode, setMode] = useState<"none" | "new" | "existing">("none");
-  return (
-    <div className="rounded-xl border border-dashed border-line p-3">
-      <label className="label">¿Ya tenés un gasto para este presupuesto? (opcional)</label>
-      <select name="linkMode" className="input" value={mode} onChange={(e) => setMode(e.target.value as typeof mode)}>
-        <option value="none">No, arranca sin nada asignado todavía</option>
-        <option value="new">Cargar un gasto nuevo</option>
-        <option value="existing">Asignar uno que ya cargué</option>
-      </select>
-      {mode === "new" && (
-        <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <div>
-            <label className="label">Monto</label>
-            <MoneyInput name="firstAmount" required />
-          </div>
-          <div>
-            <label className="label">Fecha</label>
-            <input name="firstDate" type="date" required className="input" defaultValue={toInputDate(new Date())} />
-          </div>
-          <div className="sm:col-span-2">
-            <label className="label">Cuenta</label>
-            <select name="firstAccountId" className="input" defaultValue={accounts[0]?.id ?? ""}>
-              {accounts.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.name} ({a.currency})
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-      )}
-      {mode === "existing" && (
-        <div className="mt-2">
-          <label className="label">Nº de transacción</label>
-          <input name="existingTransactionId" type="number" min={1} className="input" placeholder="Ej: 123" />
-          <p className="mt-1 text-xs text-muted">El número aparece como #123 en la lista de Transacciones.</p>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function Campos({ b, categories, accounts, tags }: { b?: BudgetRow; categories: Opcion[]; accounts: CuentaOpcion[]; tags: Opcion[] }) {
+function Campos({ b, categories, accounts, tags }: { b?: BudgetRow; categories: CategoryOpt[]; accounts: CuentaOpcion[]; tags: ConColor[] }) {
   const [period, setPeriod] = useState(b?.period ?? "MONTHLY");
   return (
     <>
@@ -144,13 +103,10 @@ function Campos({ b, categories, accounts, tags }: { b?: BudgetRow; categories: 
         </div>
       </div>
 
-      <MultiSelectFilter
-        name="categoryIds"
-        label="Categorías que cuenta"
-        allLabel="Todas (cuenta todos los gastos)"
-        initial={b?.categories.map((c) => c.id) ?? []}
-        options={categories.map((c) => ({ id: c.id, label: c.name, parentId: c.parentId }))}
-      />
+      <div>
+        <label className="label">Categoría que cuenta</label>
+        <CategorySelect name="categoryIds" categories={categories} defaultValue={b?.categories[0]?.id} noneLabel="Todas (cuenta todos los gastos)" />
+      </div>
       <MultiSelectFilter
         name="accountIds"
         label="Cuentas que cuenta"
@@ -165,8 +121,6 @@ function Campos({ b, categories, accounts, tags }: { b?: BudgetRow; categories: 
         initial={b?.tags.map((t) => t.id) ?? []}
         options={tags.map((t) => ({ id: t.id, label: `#${t.name}` }))}
       />
-
-      {!b && <AsignarMovimiento accounts={accounts} />}
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div>
@@ -187,7 +141,35 @@ function Campos({ b, categories, accounts, tags }: { b?: BudgetRow; categories: 
   );
 }
 
-function Detalle({ b }: { b: BudgetRow }) {
+/** Enganchar un movimiento ya cargado (por número), a mano -- para no depender de que coincida con las categorías/cuentas/etiquetas del presupuesto. */
+function AsignarExistente({ budgetId }: { budgetId: number }) {
+  return (
+    <ActionForm action={assignExistingToBudget} submitLabel="Asignar">
+      <input type="hidden" name="budgetId" value={budgetId} />
+      <div>
+        <label className="label">Nº de transacción</label>
+        <input name="existingTransactionId" type="number" min={1} required className="input" placeholder="Ej: 123" autoFocus />
+        <p className="mt-1 text-xs text-muted">El número aparece como #123 en la lista de Transacciones.</p>
+      </div>
+    </ActionForm>
+  );
+}
+
+function Detalle({
+  b,
+  allCategories,
+  accounts,
+  tags,
+  counterparties,
+  quotes,
+}: {
+  b: BudgetRow;
+  allCategories: CategoryOpt[];
+  accounts: AccountOpt[];
+  tags: TagOpt[];
+  counterparties: string[];
+  quotes: QuoteOpt[];
+}) {
   const total = b.porCategoria.reduce((s, c) => s + c.value, 0) || 1;
   return (
     <div className="space-y-4">
@@ -234,7 +216,17 @@ function Detalle({ b }: { b: BudgetRow }) {
       </div>
 
       <div>
-        <h3 className="label">Movimientos ({b.movimientos.length})</h3>
+        <div className="mb-1.5 flex items-center justify-between gap-2">
+          <h3 className="label mb-0">Movimientos ({b.movimientos.length})</h3>
+          <div className="flex gap-1">
+            <Modal title="Asignar un movimiento existente" triggerClassName="btn-ghost px-2 py-1 text-xs" trigger={<><Link2 size={12} /> Asignar existente</>}>
+              <AsignarExistente budgetId={b.id} />
+            </Modal>
+            <Modal title={`Nuevo gasto para "${b.name}"`} wide triggerClassName="btn-ghost px-2 py-1 text-xs" trigger={<><Plus size={12} /> Nuevo gasto</>}>
+              <TransactionForm accounts={accounts} categories={allCategories} tags={tags} counterparties={counterparties} quotes={quotes} lockedBudgetId={b.id} />
+            </Modal>
+          </div>
+        </div>
         <ul className="max-h-64 divide-y divide-line overflow-y-auto text-sm">
           {b.movimientos.map((m) => (
             <li key={m.id} className="flex items-center justify-between gap-2 py-2">
@@ -242,7 +234,14 @@ function Detalle({ b }: { b: BudgetRow }) {
                 <span className="block truncate">{m.description || m.category?.name || "Sin descripción"}</span>
                 <span className="block text-xs text-muted">{fmtDate(m.date)}</span>
               </span>
-              <b className="shrink-0 text-red-500">-{money(m.amount, m.currency)}</b>
+              <span className="flex shrink-0 items-center gap-1">
+                <b className="text-red-500">-{money(m.amount, m.currency)}</b>
+                {m.budgetId === b.id && (
+                  <ConfirmButton action={async () => unassignFromBudget(m.id)} className="btn-icon" message="¿Sacar este movimiento del presupuesto? (no se borra la transacción)">
+                    <X size={13} />
+                  </ConfirmButton>
+                )}
+              </span>
             </li>
           ))}
           {b.movimientos.length === 0 && <li className="py-4 text-center text-muted">Nada todavía.</li>}
@@ -252,7 +251,23 @@ function Detalle({ b }: { b: BudgetRow }) {
   );
 }
 
-export default function BudgetsBoard({ budgets, categories, accounts, tags }: { budgets: BudgetRow[]; categories: Opcion[]; accounts: CuentaOpcion[]; tags: Opcion[] }) {
+export default function BudgetsBoard({
+  budgets,
+  categories,
+  allCategories,
+  accounts,
+  tags,
+  counterparties,
+  quotes,
+}: {
+  budgets: BudgetRow[];
+  categories: CategoryOpt[];
+  allCategories: CategoryOpt[];
+  accounts: CuentaOpcion[];
+  tags: ConColor[];
+  counterparties: string[];
+  quotes: QuoteOpt[];
+}) {
   const activos = budgets.filter((b) => !b.archived);
   const archivados = budgets.filter((b) => b.archived);
 
@@ -276,7 +291,7 @@ export default function BudgetsBoard({ budgets, categories, accounts, tags }: { 
           </div>
           <div className="flex shrink-0 items-center gap-0.5">
             <Modal title={b.name} wide triggerClassName="btn-icon" trigger={<ChartPie size={15} />}>
-              <Detalle b={b} />
+              <Detalle b={b} allCategories={allCategories} accounts={accounts} tags={tags} counterparties={counterparties} quotes={quotes} />
             </Modal>
             <Modal title={`Editar ${b.name}`} triggerClassName="btn-icon" trigger={<Pencil size={15} />}>
               <ActionForm action={saveBudget}>
@@ -321,12 +336,12 @@ export default function BudgetsBoard({ budgets, categories, accounts, tags }: { 
         {(b.categories.length > 0 || b.tags.length > 0) && (
           <div className="mt-3 flex flex-wrap gap-1">
             {b.categories.map((c) => (
-              <span key={c.id} className="chip bg-subtle text-muted">
+              <span key={c.id} className="chip text-white" style={{ background: c.color }}>
                 {c.name}
               </span>
             ))}
             {b.tags.map((t) => (
-              <span key={t.id} className="chip bg-subtle text-muted">
+              <span key={t.id} className="chip text-white" style={{ background: t.color }}>
                 #{t.name}
               </span>
             ))}

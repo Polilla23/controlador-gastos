@@ -7,7 +7,7 @@ import ActionForm from "./ActionForm";
 import Modal from "./Modal";
 import ConfirmButton from "./ConfirmButton";
 import CategorySelect, { type CategoryOpt } from "./CategorySelect";
-import TransactionForm, { type AccountOpt, type TagOpt, type QuoteOpt } from "./TransactionForm";
+import TransactionForm, { type AccountOpt, type TagOpt, type QuoteOpt, type BudgetOpt } from "./TransactionForm";
 import MoneyInput from "./MoneyInput";
 import {
   bulkDeleteTransactions,
@@ -38,6 +38,7 @@ export type TxRow = {
   toAccountId: number | null;
   toAmount: number | null;
   categoryId: number | null;
+  budgetId: number | null;
   planId: number | null;
   account: { name: string; color: string };
   toAccount: { name: string } | null;
@@ -188,12 +189,14 @@ export default function TransactionsTable({
   accounts,
   categories,
   tags,
+  budgets = [],
   quotes = [],
 }: {
   rows: TxRow[];
   accounts: AccountOpt[];
   categories: CategoryOpt[];
   tags: TagOpt[];
+  budgets?: BudgetOpt[];
   quotes?: QuoteOpt[];
 }) {
   const [sel, setSel] = useState<number[]>([]);
@@ -283,7 +286,7 @@ export default function TransactionsTable({
         <Attachments tx={t} />
       </Modal>
       <Modal title={`Editar #${t.id}`} triggerClassName="btn-icon" trigger={<Pencil size={15} />}>
-        <TransactionForm accounts={accounts} categories={categories} tags={tags} quotes={quotes} initial={{ ...t, tags: t.tags }} />
+        <TransactionForm accounts={accounts} categories={categories} tags={tags} budgets={budgets} quotes={quotes} initial={{ ...t, tags: t.tags }} />
       </Modal>
       {t.type !== "TRANSFER" && !t.planId && (
         <Modal title={`Dividir #${t.id}`} triggerClassName="btn-icon" trigger={<Split size={15} />}>
@@ -295,6 +298,7 @@ export default function TransactionsTable({
           accounts={accounts}
           categories={categories}
           tags={tags}
+          budgets={budgets}
           quotes={quotes}
           initial={{ ...t, id: undefined, date: new Date(), tags: t.tags }}
         />
