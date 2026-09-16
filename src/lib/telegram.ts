@@ -49,28 +49,24 @@ const extractId = (text: string) => {
 };
 
 /**
- * Arma el texto de /proximos y /proximomes: agrupado por categoría general
- * (las tarjetas van en su propio grupo "Tarjetas"), ordenado por fecha dentro
- * de cada grupo, con "PAGADO" al principio de lo que ya está saldado y una
- * tabulación para lo que todavía no.
+ * Arma el texto de /proximos y /proximomes: separado en dos secciones, Ingresos y Egresos (las
+ * tarjetas y deudas que hay que pagar van con los egresos; lo que te devuelven, con los
+ * ingresos), ordenado por fecha dentro de cada una, con "PAGADO" al principio de lo que ya está
+ * saldado y un total al pie de lo que todavía falta cobrar/pagar.
  */
 async function proximosDelPeriodo(userId: string, start: Date, end: Date): Promise<string> {
   const [items, cards, debts] = await Promise.all([
     prisma.planned.findMany({
       where: { userId, includeInTelegram: true, dueDate: { gte: start, lt: end } },
-      include: { category: { include: { parent: true } } },
       orderBy: { dueDate: "asc" },
     }),
     prisma.account.findMany({ where: { userId, type: "CREDIT_CARD", archived: false, dueDay: { not: null } } }),
     prisma.debt.findMany({ where: { userId, dueDate: { gte: start, lt: end } }, include: { payments: true } }),
   ]);
 
-  type Fila = { fecha: Date; nombre: string; monto: string; pagado: boolean };
-  const grupos = new Map<string, Fila[]>();
-  const push = (grupo: string, fila: Fila) => {
-    if (!grupos.has(grupo)) grupos.set(grupo, []);
-    grupos.get(grupo)!.push(fila);
-  };
+  type Fila = { fecha: Date; nombre: string; monto: number; currency: string; pagado: boolean };
+  const ingresos: Fila[] = [];
+  const egresos: Fila[] = [];
 
   for (const card of cards) {
     // Vencimiento de esta tarjeta que cae dentro del período (respeta las fechas concretas
@@ -95,40 +91,45 @@ async function proximosDelPeriodo(userId: string, start: Date, end: Date): Promi
       },
       select: { id: true },
     });
-    push("Tarjetas", { fecha: due, nombre: card.name, monto: money(Math.max(0, usado), card.currency), pagado: !!pago });
+    egresos.push({ fecha: due, nombre: `💳 ${card.name}`, monto: Math.max(0, usado), currency: card.currency, pagado: !!pago });
   }
 
   for (const p of items) {
-    const grupo = p.category?.parent?.name ?? p.category?.name ?? "Otros";
-    push(grupo, { fecha: p.dueDate, nombre: p.description, monto: money(p.amount, p.currency), pagado: p.done });
+    (p.type === "INCOME" ? ingresos : egresos).push({ fecha: p.dueDate, nombre: p.description, monto: p.amount, currency: p.currency, pagado: p.done });
   }
 
   for (const d of debts) {
     if (!d.dueDate) continue;
     const falta = d.amount - d.payments.reduce((s, x) => s + x.amount, 0);
-    push("Deudas", {
+    const esIngreso = d.direction === "I_LENT";
+    (esIngreso ? ingresos : egresos).push({
       fecha: d.dueDate,
-      nombre: d.direction === "I_LENT" ? `${d.counterparty} te devuelve` : `Le devolvés a ${d.counterparty}`,
-      monto: money(Math.max(0, falta), d.currency),
+      nombre: `🤝 ${esIngreso ? `${d.counterparty} te devuelve` : `Le devolvés a ${d.counterparty}`}`,
+      monto: Math.max(0, falta),
+      currency: d.currency,
       pagado: d.status === "CLOSED" || falta <= 0.01,
     });
   }
 
-  if (!grupos.size) return "";
+  if (!ingresos.length && !egresos.length) return "";
 
-  const emojiGrupo: Record<string, string> = { Tarjetas: "💳", Deudas: "🤝", Otros: "🗂️" };
-  const orden = [...grupos.keys()].sort((a, b) => (a === "Tarjetas" ? -1 : b === "Tarjetas" ? 1 : a.localeCompare(b, "es")));
-  return orden
-    .map((grupo) => {
-      const filas = grupos.get(grupo)!.sort((a, b) => a.fecha.getTime() - b.fecha.getTime());
-      const lineas = filas.map((f) =>
-        f.pagado
-          ? ` ✅ PAGADO - ${f.nombre} - Vencimiento ${fmtDayMonth(f.fecha)} = ${f.monto}`
-          : `\t- ${f.nombre} - Vencimiento ${fmtDayMonth(f.fecha)} = ${f.monto}`,
-      );
-      return `<b>${emojiGrupo[grupo] ?? "📁"} ${grupo}</b>\n${lineas.join("\n")}`;
-    })
-    .join("\n\n");
+  const seccion = (titulo: string, emoji: string, filas: Fila[]) => {
+    if (!filas.length) return "";
+    const ordenadas = [...filas].sort((a, b) => a.fecha.getTime() - b.fecha.getTime());
+    const lineas = ordenadas.map((f) =>
+      f.pagado
+        ? ` ✅ PAGADO - ${f.nombre} - Vencimiento ${fmtDayMonth(f.fecha)} = ${money(f.monto, f.currency)}`
+        : `\t- ${f.nombre} - Vencimiento ${fmtDayMonth(f.fecha)} = ${money(f.monto, f.currency)}`,
+    );
+    // Total de lo que todavía falta (lo ya PAGADO no suma: no tendría sentido pedir "cuánto me
+    // falta cobrar/pagar" incluyendo lo que ya se saldó), separado por moneda si hay más de una.
+    const totales = new Map<string, number>();
+    for (const f of ordenadas) if (!f.pagado) totales.set(f.currency, (totales.get(f.currency) ?? 0) + f.monto);
+    const totalTxt = [...totales.entries()].map(([cur, val]) => money(val, cur)).join(" + ");
+    return `<b>${emoji} ${titulo}</b>\n${lineas.join("\n")}${totalTxt ? `\n<b>Total pendiente: ${totalTxt}</b>` : ""}`;
+  };
+
+  return [seccion("Ingresos", "🟢", ingresos), seccion("Egresos", "🔴", egresos)].filter(Boolean).join("\n\n");
 }
 
 export async function handleUpdate(update: TgUpdate) {

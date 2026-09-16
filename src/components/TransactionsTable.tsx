@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { Paperclip, Pencil, Trash2, Layers, AlarmClock, ExternalLink, FileText, Copy, Split, ShieldCheck } from "lucide-react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { Paperclip, Pencil, Trash2, Layers, AlarmClock, ExternalLink, FileText, Copy, Split, ShieldCheck, ChevronUp, ChevronDown } from "lucide-react";
 import ActionForm from "./ActionForm";
 import Modal from "./Modal";
 import ConfirmButton from "./ConfirmButton";
@@ -206,13 +207,55 @@ export default function TransactionsTable({
     return full ? accountLabel(full) : t.account.name;
   };
 
-  /* Agrupa por día y calcula el neto del día y el acumulado del período.
-     Las filas llegan de la más nueva a la más vieja, así que el acumulado se
-     suma desde la más vieja y después se muestra en orden descendente. */
+  /* Ordenar por columna (clickeando el título): "fecha desc" es el orden en que ya vienen las
+     filas del servidor y mantiene el agrupado por día con el acumulado; cualquier otro orden
+     rompe esa agrupación (no tendría sentido mezclarla con, por ejemplo, ordenar por categoría)
+     y se muestra como una sola lista plana. */
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const orden = searchParams.get("orden") ?? "fecha";
+  const dir = searchParams.get("dir") === "asc" ? "asc" : "desc";
+  const flatMode = !(orden === "fecha" && dir === "desc");
+  const collator = (a: string, b: string) => a.localeCompare(b, "es");
+  const cmp = (a: TxRow, b: TxRow) => {
+    const c =
+      orden === "descripcion"
+        ? collator(a.description, b.description)
+        : orden === "categoria"
+          ? collator(a.category?.name ?? "", b.category?.name ?? "")
+          : orden === "cuenta"
+            ? collator(accName(a), accName(b))
+            : orden === "monto"
+              ? a.amount - b.amount
+              : a.date.getTime() - b.date.getTime();
+    return dir === "asc" ? c : -c;
+  };
+  const sortedRows = flatMode ? [...rows].sort(cmp) : rows;
+  const sortLink = (key: string, label: string, right = false) => {
+    const active = orden === key;
+    const go = () => {
+      const next = new URLSearchParams(searchParams.toString());
+      next.set("orden", key);
+      next.set("dir", active && dir === "asc" ? "desc" : "asc");
+      router.push(`${pathname}?${next.toString()}`);
+    };
+    return (
+      <button type="button" onClick={go} className={`flex items-center gap-1 hover:text-fg ${right ? "ml-auto" : ""} ${active ? "text-fg" : ""}`}>
+        {label}
+        {active && (dir === "asc" ? <ChevronUp size={12} /> : <ChevronDown size={12} />)}
+      </button>
+    );
+  };
+
+  /* Agrupa por día y calcula el neto del día y el acumulado del período (sólo tiene sentido en
+     el orden por defecto -- en modo plano todo cae en un único grupo sin encabezado). Las filas
+     llegan de la más nueva a la más vieja, así que el acumulado se suma desde la más vieja y
+     después se muestra en orden descendente. */
   const currency = rows[0]?.currency ?? "ARS";
   const byDay = new Map<string, TxRow[]>();
-  for (const t of rows) {
-    const key = fmtDate(t.date);
+  for (const t of sortedRows) {
+    const key = flatMode ? "__todos__" : fmtDate(t.date);
     (byDay.get(key) ?? byDay.set(key, []).get(key)!).push(t);
   }
   const days = [...byDay.entries()];
@@ -368,27 +411,29 @@ export default function TransactionsTable({
                   />
                 </th>
                 <th className="px-2 py-3">#</th>
-                <th className="px-2 py-3">Fecha</th>
-                <th className="px-2 py-3">Descripción</th>
-                <th className="px-2 py-3">Categoría</th>
-                <th className="px-2 py-3">Cuenta</th>
-                <th className="px-2 py-3 text-right">Monto</th>
+                <th className="px-2 py-3">{sortLink("fecha", "Fecha")}</th>
+                <th className="px-2 py-3">{sortLink("descripcion", "Descripción")}</th>
+                <th className="px-2 py-3">{sortLink("categoria", "Categoría")}</th>
+                <th className="px-2 py-3">{sortLink("cuenta", "Cuenta")}</th>
+                <th className="px-2 py-3 text-right">{sortLink("monto", "Monto", true)}</th>
                 <th className="px-2 py-3" />
               </tr>
             </thead>
             {days.map(([day, list]) => (
               <tbody key={day} className="divide-y divide-line">
-                <tr className="bg-subtle/40">
-                  <td colSpan={6} className="px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-muted">
-                    {day}
-                  </td>
-                  <td className="px-2 py-1.5 text-right text-xs">
-                    <span className={netOf(list) < 0 ? "text-red-500" : "text-brand-500"}>Σ {money(netOf(list), currency)}</span>
-                  </td>
-                  <td className="px-2 py-1.5 text-right text-xs text-muted" title="Acumulado del período hasta este día">
-                    {money(running.get(day) ?? 0, currency)}
-                  </td>
-                </tr>
+                {!flatMode && (
+                  <tr className="bg-subtle/40">
+                    <td colSpan={6} className="px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-muted">
+                      {day}
+                    </td>
+                    <td className="px-2 py-1.5 text-right text-xs">
+                      <span className={netOf(list) < 0 ? "text-red-500" : "text-brand-500"}>Σ {money(netOf(list), currency)}</span>
+                    </td>
+                    <td className="px-2 py-1.5 text-right text-xs text-muted" title="Acumulado del período hasta este día">
+                      {money(running.get(day) ?? 0, currency)}
+                    </td>
+                  </tr>
+                )}
                 {list.map((t) => (
                   <tr key={t.id} className={sel.includes(t.id) ? "bg-brand-500/5" : "hover:bg-subtle/60"}>
                     <td className="px-3 py-2.5">
@@ -428,13 +473,15 @@ export default function TransactionsTable({
         <div className="md:hidden">
           {days.map(([day, list]) => (
             <div key={day}>
-              <div className="flex items-center justify-between gap-2 border-y border-line bg-subtle/40 px-3 py-1.5 text-xs">
-                <span className="font-semibold uppercase tracking-wide text-muted">{day}</span>
-                <span className="flex items-center gap-2">
-                  <span className={netOf(list) < 0 ? "text-red-500" : "text-brand-500"}>Σ {money(netOf(list), currency)}</span>
-                  <span className="text-muted">{money(running.get(day) ?? 0, currency)}</span>
-                </span>
-              </div>
+              {!flatMode && (
+                <div className="flex items-center justify-between gap-2 border-y border-line bg-subtle/40 px-3 py-1.5 text-xs">
+                  <span className="font-semibold uppercase tracking-wide text-muted">{day}</span>
+                  <span className="flex items-center gap-2">
+                    <span className={netOf(list) < 0 ? "text-red-500" : "text-brand-500"}>Σ {money(netOf(list), currency)}</span>
+                    <span className="text-muted">{money(running.get(day) ?? 0, currency)}</span>
+                  </span>
+                </div>
+              )}
               <ul className="divide-y divide-line">
                 {list.map((t) => (
                   <li key={t.id} className={`flex items-start gap-2 p-3 ${sel.includes(t.id) ? "bg-brand-500/5" : ""}`}>

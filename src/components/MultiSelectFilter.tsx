@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Check, ChevronDown } from "lucide-react";
 
-export type MultiOpt = { id: number | string; label: string };
+export type MultiOpt = { id: number | string; label: string; parentId?: number | string | null };
 
 /**
  * Selector múltiple compacto (una sola línea de alto) para barras de filtro con <form> nativo (GET).
@@ -38,6 +38,28 @@ export default function MultiSelectFilter({
   const toggle = (id: string) => setSel((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
   const text = sel.length === 0 ? allLabel : sel.length === 1 ? (options.find((o) => String(o.id) === sel[0])?.label ?? "1 elegida") : `${sel.length} elegidas`;
 
+  // Si alguna opción trae parentId, se agrupan visualmente (nombre de la categoría padre arriba,
+  // las hijas indentadas debajo), igual que el selector simple de categoría -- en vez de "Vivienda
+  // › Alquiler" como una sola línea plana.
+  const grouped = options.some((o) => o.parentId != null);
+  const row = (o: MultiOpt, style: "flat" | "parent" | "child" = "flat") => {
+    const id = String(o.id);
+    const on = sel.includes(id);
+    return (
+      <button
+        key={id}
+        type="button"
+        onClick={() => toggle(id)}
+        className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm hover:bg-subtle ${style === "child" ? "pl-6" : ""} ${style === "parent" ? "font-semibold" : ""}`}
+      >
+        <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${on ? "border-brand-500 bg-brand-500 text-white" : "border-line"}`}>
+          {on && <Check size={11} />}
+        </span>
+        <span className="truncate">{o.label}</span>
+      </button>
+    );
+  };
+
   return (
     <div ref={ref} className="relative">
       <label className="label">{label}</label>
@@ -56,18 +78,16 @@ export default function MultiSelectFilter({
             </span>
             {allLabel}
           </button>
-          {options.map((o) => {
-            const id = String(o.id);
-            const on = sel.includes(id);
-            return (
-              <button key={id} type="button" onClick={() => toggle(id)} className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm hover:bg-subtle">
-                <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${on ? "border-brand-500 bg-brand-500 text-white" : "border-line"}`}>
-                  {on && <Check size={11} />}
-                </span>
-                <span className="truncate">{o.label}</span>
-              </button>
-            );
-          })}
+          {grouped
+            ? options
+                .filter((o) => o.parentId == null)
+                .map((p) => (
+                  <div key={p.id}>
+                    {row(p, "parent")}
+                    {options.filter((o) => String(o.parentId) === String(p.id)).map((c) => row(c, "child"))}
+                  </div>
+                ))
+            : options.map((o) => row(o))}
         </div>
       )}
     </div>

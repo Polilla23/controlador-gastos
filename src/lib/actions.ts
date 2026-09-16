@@ -751,6 +751,13 @@ export async function saveDashboard(cards: string[], accountIds: number[], cards
  * Se acota w/h a un mínimo sensato: un valor en 0 (o negativo, por algún evento de resize a
  * medias) dejaría esa card invisible para siempre, porque `?? valorPorDefecto` no reemplaza un
  * 0 -- sólo `null`/`undefined`.
+ *
+ * A propósito NO llama a `refresh()`: revalidar la página al instante hacía que se volviera a
+ * montar el grid con el layout recalculado desde cero (una aproximación, no pixel-a-pixel igual
+ * a como había quedado la mano del usuario), y eso se sentía como que "la card volvía sola a
+ * donde estaba" apenas se soltaba el mouse. La cuenta se guarda igual; la próxima vez que se
+ * entre de nuevo a Resumen (otra navegación real, con datos frescos) ya viene con el layout
+ * guardado.
  */
 export async function saveDashboardLayout(mobile: boolean, cards: string[], sizes: Record<string, { w: number; h: number }>) {
   const userId = await requireUserId();
@@ -759,7 +766,6 @@ export async function saveDashboardLayout(mobile: boolean, cards: string[], size
   const clean = Object.fromEntries(Object.entries(sizes).map(([id, s]) => [id, { w: Math.max(1, Math.round(s.w)), h: Math.max(5, Math.round(s.h)) }]));
   const patch = mobile ? { cardsMobile: cards, sizesMobile: clean } : { cards, sizes: clean };
   await prisma.user.update({ where: { id: userId }, data: { dashboard: { ...current, ...patch } } });
-  refresh();
 }
 
 

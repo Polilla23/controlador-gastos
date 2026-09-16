@@ -165,7 +165,7 @@ export default async function TransaccionesPage({ searchParams }: { searchParams
           options={categories
             .slice()
             .sort((a, b) => a.name.localeCompare(b.name, "es"))
-            .map((c) => ({ id: c.id, label: c.parentId ? `${categories.find((p) => p.id === c.parentId)?.name ?? ""} › ${c.name}` : c.name }))}
+            .map((c) => ({ id: c.id, label: c.name, parentId: c.parentId }))}
         />
         <MultiSelectFilter name="etiqueta" label="Etiqueta" initial={etiquetaIds} options={tags.map((t) => ({ id: t.id, label: `#${t.name}` }))} />
         {statementMonths.length > 0 && (
