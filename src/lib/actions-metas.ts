@@ -59,8 +59,46 @@ export async function saveBudget(fd: FormData) {
     tags: { [op]: tagIds.map((i) => ({ id: i })) },
   });
 
-  if (id) await prisma.budget.update({ where: { id, userId }, data: { ...data, ...rel("set") } });
-  else await prisma.budget.create({ data: { ...data, ...rel("connect"), userId } });
+  if (id) {
+    await prisma.budget.update({ where: { id, userId }, data: { ...data, ...rel("set") } });
+    refresh();
+    return;
+  }
+
+  const budget = await prisma.budget.create({ data: { ...data, ...rel("connect"), userId } });
+
+  // Al crear, opcionalmente ya lo arranca con un gasto asignado (nuevo o uno que ya cargaste),
+  // en vez de esperar a que aparezca uno solo por coincidir con las categorías/cuentas elegidas.
+  const { mode, existingId } = readLinkMode(fd);
+  if (mode === "new") {
+    const accountId = Number(fd.get("firstAccountId"));
+    const firstAmount = Number(fd.get("firstAmount"));
+    const firstDate = String(fd.get("firstDate") ?? "");
+    if (accountId && firstAmount > 0 && firstDate) {
+      const account = await prisma.account.findFirst({ where: { id: accountId, userId } });
+      if (account) {
+        await prisma.transaction.create({
+          data: {
+            userId,
+            type: "EXPENSE",
+            amount: firstAmount,
+            currency: budget.currency,
+            date: parseInput(firstDate),
+            description: budget.name,
+            note: `Presupuesto "${budget.name}"`,
+            accountId,
+            categoryId: categoryIds[0] ?? null,
+            budgetId: budget.id,
+          },
+        });
+      }
+    }
+  } else if (mode === "existing" && existingId) {
+    const tx = await assertOwnedTransaction(userId, existingId);
+    if (tx.currency !== budget.currency) throw new Error(`El presupuesto quedó creado, pero esa transacción es en ${tx.currency} y el presupuesto en ${budget.currency}: no se pudo asignar.`);
+    await prisma.transaction.update({ where: { id: existingId }, data: { budgetId: budget.id } });
+  }
+
   refresh();
 }
 

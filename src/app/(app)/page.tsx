@@ -15,18 +15,23 @@ import StickyFilters from "@/components/StickyFilters";
 import Modal from "@/components/Modal";
 import TransactionForm from "@/components/TransactionForm";
 
-export default async function Dashboard({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
+export default async function Dashboard({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const user = await requireUser();
-  const range = resolveRange(await searchParams);
+  const range = resolveRange(await searchParams as Record<string, string | undefined>);
   const prefs = readPrefs(user.dashboard);
 
   const sp = await searchParams;
+  const asList = (v: string | string[] | undefined) => (v == null ? [] : Array.isArray(v) ? v : [v]);
   const tagId = sp.etiqueta ? Number(sp.etiqueta) : undefined;
-  const trendRange = sp.tDesde && sp.tHasta ? { from: sp.tDesde, to: sp.tHasta } : undefined;
+  const trendRange = sp.tDesde && sp.tHasta ? { from: String(sp.tDesde), to: String(sp.tHasta) } : undefined;
   const compareMonths = sp.cmp ? Number(sp.cmp) : undefined;
+  // Un filtro guardado puede traer "cuenta" (ej. "Sin tarjetas"): cuando está presente en la URL
+  // manda por sobre las cuentas que suman elegidas en "Personalizar", igual que en Transacciones.
+  const cuentaIds = asList(sp.cuenta).map(Number).filter((n) => !Number.isNaN(n));
+  const accountIds = cuentaIds.length ? cuentaIds : prefs.accountIds;
 
   const [data, categories, tags, filtros, { lista: quotes }] = await Promise.all([
-    loadDashboard(user.id, range, prefs.accountIds, tagId, trendRange, compareMonths),
+    loadDashboard(user.id, range, accountIds, tagId, trendRange, compareMonths),
     prisma.category.findMany({ where: { userId: user.id }, orderBy: { name: "asc" } }),
     prisma.tag.findMany({ where: { userId: user.id }, orderBy: { name: "asc" } }),
     prisma.savedFilter.findMany({ where: { userId: user.id, scope: "DASHBOARD" }, orderBy: { name: "asc" } }),

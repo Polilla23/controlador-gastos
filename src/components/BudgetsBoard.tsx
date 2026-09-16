@@ -14,6 +14,7 @@ import { archiveBudget, deleteBudget, saveBudget } from "@/lib/actions-metas";
 import { CURRENCIES, fmtDate, money, toInputDate } from "@/lib/format";
 
 type Opcion = { id: number; name: string; parentId?: number | null };
+type CuentaOpcion = { id: number; name: string; currency: string };
 export type BudgetRow = {
   id: number;
   name: string;
@@ -48,7 +49,51 @@ const PERIODOS: [string, string][] = [
   ["YEARLY", "Anual"],
 ];
 
-function Campos({ b, categories, accounts, tags }: { b?: BudgetRow; categories: Opcion[]; accounts: Opcion[]; tags: Opcion[] }) {
+/** Al crear un presupuesto, dejar arrancarlo ya con un gasto (nuevo o de los que ya cargaste) contando para él, en vez de esperar a que aparezca uno solo. */
+function AsignarMovimiento({ accounts }: { accounts: CuentaOpcion[] }) {
+  const [mode, setMode] = useState<"none" | "new" | "existing">("none");
+  return (
+    <div className="rounded-xl border border-dashed border-line p-3">
+      <label className="label">¿Ya tenés un gasto para este presupuesto? (opcional)</label>
+      <select name="linkMode" className="input" value={mode} onChange={(e) => setMode(e.target.value as typeof mode)}>
+        <option value="none">No, arranca sin nada asignado todavía</option>
+        <option value="new">Cargar un gasto nuevo</option>
+        <option value="existing">Asignar uno que ya cargué</option>
+      </select>
+      {mode === "new" && (
+        <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div>
+            <label className="label">Monto</label>
+            <MoneyInput name="firstAmount" required />
+          </div>
+          <div>
+            <label className="label">Fecha</label>
+            <input name="firstDate" type="date" required className="input" defaultValue={toInputDate(new Date())} />
+          </div>
+          <div className="sm:col-span-2">
+            <label className="label">Cuenta</label>
+            <select name="firstAccountId" className="input" defaultValue={accounts[0]?.id ?? ""}>
+              {accounts.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name} ({a.currency})
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      )}
+      {mode === "existing" && (
+        <div className="mt-2">
+          <label className="label">Nº de transacción</label>
+          <input name="existingTransactionId" type="number" min={1} className="input" placeholder="Ej: 123" />
+          <p className="mt-1 text-xs text-muted">El número aparece como #123 en la lista de Transacciones.</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Campos({ b, categories, accounts, tags }: { b?: BudgetRow; categories: Opcion[]; accounts: CuentaOpcion[]; tags: Opcion[] }) {
   const [period, setPeriod] = useState(b?.period ?? "MONTHLY");
   return (
     <>
@@ -111,7 +156,7 @@ function Campos({ b, categories, accounts, tags }: { b?: BudgetRow; categories: 
         label="Cuentas que cuenta"
         allLabel="Todas las cuentas"
         initial={b?.accounts.map((a) => a.id) ?? []}
-        options={accounts.map((a) => ({ id: a.id, label: a.name }))}
+        options={accounts.map((a) => ({ id: a.id, label: `${a.name} (${a.currency})` }))}
       />
       <MultiSelectFilter
         name="tagIds"
@@ -120,6 +165,8 @@ function Campos({ b, categories, accounts, tags }: { b?: BudgetRow; categories: 
         initial={b?.tags.map((t) => t.id) ?? []}
         options={tags.map((t) => ({ id: t.id, label: `#${t.name}` }))}
       />
+
+      {!b && <AsignarMovimiento accounts={accounts} />}
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div>
@@ -205,7 +252,7 @@ function Detalle({ b }: { b: BudgetRow }) {
   );
 }
 
-export default function BudgetsBoard({ budgets, categories, accounts, tags }: { budgets: BudgetRow[]; categories: Opcion[]; accounts: Opcion[]; tags: Opcion[] }) {
+export default function BudgetsBoard({ budgets, categories, accounts, tags }: { budgets: BudgetRow[]; categories: Opcion[]; accounts: CuentaOpcion[]; tags: Opcion[] }) {
   const activos = budgets.filter((b) => !b.archived);
   const archivados = budgets.filter((b) => b.archived);
 

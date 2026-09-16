@@ -58,6 +58,7 @@ export async function cargarPresupuestos(userId: string, incluirArchivados = fal
       description: true,
       accountId: true,
       categoryId: true,
+      budgetId: true,
       category: { select: { id: true, name: true, color: true, icon: true, parentId: true } },
       tags: { select: { id: true } },
     },
@@ -78,14 +79,17 @@ export async function cargarPresupuestos(userId: string, incluirArchivados = fal
     const cuentas = b.accounts.length ? new Set(b.accounts.map((a) => a.id)) : null;
     const etiquetas = b.tags.length ? new Set(b.tags.map((t) => t.id)) : null;
 
+    // Un gasto asignado a mano a este presupuesto cuenta siempre (aunque no coincida con la
+    // categoría/cuenta/etiqueta elegidas), mientras esté en la misma moneda.
     const incluidos = gastos.filter(
       (g) =>
         g.currency === b.currency &&
-        g.date >= desde &&
-        g.date < hasta &&
-        (!cats || (g.categoryId != null && cats.has(g.categoryId))) &&
-        (!cuentas || cuentas.has(g.accountId)) &&
-        (!etiquetas || g.tags.some((t) => etiquetas.has(t.id))),
+        (g.budgetId === b.id ||
+          (g.date >= desde &&
+            g.date < hasta &&
+            (!cats || (g.categoryId != null && cats.has(g.categoryId))) &&
+            (!cuentas || cuentas.has(g.accountId)) &&
+            (!etiquetas || g.tags.some((t) => etiquetas.has(t.id))))),
     );
 
     const gastado = incluidos.reduce((s, g) => s + g.amount, 0);

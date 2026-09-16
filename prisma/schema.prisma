@@ -153,6 +153,10 @@ model Transaction {
   planId         Int?
   plan           InstallmentPlan? @relation(fields: [planId], references: [id], onDelete: Cascade)
   installmentNo  Int?
+  /// Presupuesto al que se asignó a mano este movimiento (opcional, además de los que ya cuentan
+  /// solos por coincidir con las categorías/cuentas/etiquetas del presupuesto).
+  budgetId       Int?
+  budget         Budget?          @relation(fields: [budgetId], references: [id], onDelete: SetNull)
   attachments    Attachment[]
   createdAt      DateTime         @default(now())
 
@@ -234,25 +238,28 @@ model SavedFilter {
 
 /// Cuánto pienso gastar en un período, y en qué.
 model Budget {
-  id         Int        @id @default(autoincrement())
-  userId     String
-  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
-  name       String
-  period     String     @default("MONTHLY") // ONCE | WEEKLY | MONTHLY | YEARLY
-  amount     Float
-  currency   String     @default("ARS")
-  startDate  DateTime
-  endDate    DateTime? // sólo para los de una vez
-  note       String     @default("")
-  color      String     @default("#1A9D76")
-  icon       String?
-  archived   Boolean    @default(false)
+  id           Int           @id @default(autoincrement())
+  userId       String
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name         String
+  period       String        @default("MONTHLY") // ONCE | WEEKLY | MONTHLY | YEARLY
+  amount       Float
+  currency     String        @default("ARS")
+  startDate    DateTime
+  endDate      DateTime? // sólo para los de una vez
+  note         String        @default("")
+  color        String        @default("#1A9D76")
+  icon         String?
+  archived     Boolean       @default(false)
   /// Último período en el que ya avisamos que se pasó ("YYYY-MM-DD" del inicio).
-  warnedFor  String?
-  categories Category[]
-  accounts   Account[]
-  tags       Tag[]
-  createdAt  DateTime   @default(now())
+  warnedFor    String?
+  categories   Category[]
+  accounts     Account[]
+  tags         Tag[]
+  /// Movimientos asignados a mano a este presupuesto (además de los que ya cuentan por
+  /// coincidir con categorías/cuentas/etiquetas elegidas arriba).
+  transactions Transaction[]
+  createdAt    DateTime      @default(now())
 
   @@index([userId, archived])
 }
