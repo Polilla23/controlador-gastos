@@ -9,7 +9,7 @@ import GridLayout, { WidthProvider, type Layout } from "react-grid-layout";
 import "react-grid-layout/css/styles.css";
 import "react-resizable/css/styles.css";
 import type { Dashboard } from "@/lib/stats";
-import { CARDS, type CardDef, type CardSize } from "@/lib/cards";
+import { CARDS, type CardDef, type CardLayout } from "@/lib/cards";
 import { saveDashboardLayout } from "@/lib/actions";
 import { money, fmtDate, fmtDayMonth, pct, NATURES, NATURE_COLORS, ACCOUNT_TYPES, accountLabel } from "@/lib/format";
 import { Delta, Empty } from "./ui";
@@ -21,18 +21,37 @@ const ResizableGrid = WidthProvider(GridLayout);
 const GRID_COLS = 3;
 const ROW_H = 28;
 
-/** Layout inicial: respeta el orden elegido en "Personalizar" y el span de catálogo como ancho
- * por defecto, salvo que el usuario ya haya estirado esa card a mano (en `sizes`). */
-function buildLayout(ids: string[], defs: Map<string, CardDef>, sizes: Record<string, CardSize>, cols: number): Layout[] {
-  let x = 0;
-  let y = 0;
-  let rowH = 0;
+/**
+ * Layout inicial: las cards que ya tienen una posición guardada (x, y, w, h exactos, de la
+ * última vez que se arrastraron/estiraron a mano) se ponen tal cual quedaron -- nada de volver a
+ * calcularlas, así no hay forma de que "se desacomoden" al recargar. Las que todavía no tienen
+ * nada guardado (recién agregadas desde "Personalizar", o la primera vez que se usa esto) se
+ * acomodan solas en fila, debajo de todo lo que ya está posicionado, usando el span del catálogo
+ * como ancho por defecto.
+ */
+function buildLayout(ids: string[], defs: Map<string, CardDef>, saved: Record<string, CardLayout>, cols: number): Layout[] {
   const out: Layout[] = [];
+  const sinGuardar: string[] = [];
+  let maxY = 0;
   for (const id of ids) {
-    const def = defs.get(id);
-    if (!def) continue;
-    const w = Math.min(sizes[id]?.w ?? def.span, cols);
-    const h = sizes[id]?.h ?? 11;
+    if (!defs.has(id)) continue;
+    const s = saved[id];
+    if (!s) {
+      sinGuardar.push(id);
+      continue;
+    }
+    const w = Math.min(s.w, cols);
+    const x = Math.min(s.x, Math.max(0, cols - w));
+    out.push({ i: id, x, y: s.y, w, h: s.h, minW: 1, minH: 5 });
+    maxY = Math.max(maxY, s.y + s.h);
+  }
+  let x = 0;
+  let y = maxY;
+  let rowH = 0;
+  for (const id of sinGuardar) {
+    const def = defs.get(id)!;
+    const w = Math.min(def.span, cols);
+    const h = 11;
     if (x + w > cols) {
       x = 0;
       y += rowH;
@@ -59,7 +78,7 @@ const InvestmentMixDonut = dynamic(() => import("./charts").then((m) => m.Invest
 const ForecastBars = dynamic(() => import("./charts").then((m) => m.ForecastBars), { ssr: false, loading: box("mt-3 h-48") });
 const RatioDonut = dynamic(() => import("./charts").then((m) => m.RatioDonut), { ssr: false, loading: box("h-32 w-32 shrink-0 rounded-full") });
 
-type Props = { data: Dashboard; cards: string[]; cardsMobile: string[]; sizes: Record<string, CardSize>; sizesMobile: Record<string, CardSize> };
+type Props = { data: Dashboard; cards: string[]; cardsMobile: string[]; sizes: Record<string, CardLayout>; sizesMobile: Record<string, CardLayout> };
 
 /* ---------- Individual cards ---------- */
 
@@ -662,7 +681,7 @@ function CardsGrid({
 }: {
   ids: string[];
   defs: Map<string, CardDef>;
-  sizes: Record<string, CardSize>;
+  sizes: Record<string, CardLayout>;
   cols: number;
   mobile: boolean;
   renderCard: (id: string, handle?: ReactNode) => ReactNode;
@@ -671,8 +690,8 @@ function CardsGrid({
   const [, startSave] = useTransition();
   const persist = (next: Layout[]) => {
     const order = [...next].sort((a, b) => a.y - b.y || a.x - b.x).map((item) => item.i);
-    const map: Record<string, CardSize> = {};
-    for (const item of next) map[item.i] = { w: item.w, h: item.h };
+    const map: Record<string, CardLayout> = {};
+    for (const item of next) map[item.i] = { x: item.x, y: item.y, w: item.w, h: item.h };
     startSave(() => saveDashboardLayout(mobile, order, map));
   };
   return (

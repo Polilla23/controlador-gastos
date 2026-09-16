@@ -743,27 +743,31 @@ export async function saveDashboard(cards: string[], accountIds: number[], cards
 }
 
 /**
- * Guarda de una sola vez el orden y el tamaño de las cards cuando se ajustan directamente en
- * Resumen (arrastrando el asa o la esquina), sin pasar por "Personalizar" -- separado para web
- * (`mobile: false`, ancho y alto libres) y celular (`mobile: true`, siempre una columna, sólo
- * cambia el alto). Se guardan juntas en una sola escritura para no pisarse entre un resize y un
- * reorden hechos justo seguidos (cada uno leía-modificaba-escribía el mismo JSON por separado).
- * Se acota w/h a un mínimo sensato: un valor en 0 (o negativo, por algún evento de resize a
- * medias) dejaría esa card invisible para siempre, porque `?? valorPorDefecto` no reemplaza un
- * 0 -- sólo `null`/`undefined`.
+ * Guarda de una sola vez el orden y la posición/tamaño EXACTOS (x, y, w, h) de las cards cuando
+ * se ajustan directamente en Resumen (arrastrando el asa o la esquina), sin pasar por
+ * "Personalizar" -- separado para web (`mobile: false`) y celular (`mobile: true`, siempre una
+ * columna). Guardar x/y además de w/h (no sólo el orden y el tamaño) es a propósito: reconstruir
+ * la posición desde cero con un empaquetado propio en el próximo render nunca es pixel-a-pixel
+ * igual a como había quedado la mano del usuario -- con x/y guardados, la próxima carga
+ * simplemente reproduce el layout tal cual, sin tener que adivinarlo de nuevo.
+ * Se guardan juntas en una sola escritura para no pisarse entre un resize y un reorden hechos
+ * justo seguidos (cada uno leía-modificaba-escribía el mismo JSON por separado). Se acota todo a
+ * valores sensatos: un w/h en 0 (o negativo, por algún evento de resize a medias) dejaría esa
+ * card invisible para siempre, porque `?? valorPorDefecto` no reemplaza un 0 -- sólo
+ * `null`/`undefined`.
  *
  * A propósito NO llama a `refresh()`: revalidar la página al instante hacía que se volviera a
- * montar el grid con el layout recalculado desde cero (una aproximación, no pixel-a-pixel igual
- * a como había quedado la mano del usuario), y eso se sentía como que "la card volvía sola a
- * donde estaba" apenas se soltaba el mouse. La cuenta se guarda igual; la próxima vez que se
- * entre de nuevo a Resumen (otra navegación real, con datos frescos) ya viene con el layout
- * guardado.
+ * montar el grid enseguida, y eso se sentía como que "la card volvía sola a donde estaba" apenas
+ * se soltaba el mouse. La cuenta se guarda igual; la próxima vez que se entre de nuevo a Resumen
+ * (otra navegación real, con datos frescos) ya viene con el layout guardado.
  */
-export async function saveDashboardLayout(mobile: boolean, cards: string[], sizes: Record<string, { w: number; h: number }>) {
+export async function saveDashboardLayout(mobile: boolean, cards: string[], layout: Record<string, { x: number; y: number; w: number; h: number }>) {
   const userId = await requireUserId();
   const user = await prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { dashboard: true } });
   const current = (user.dashboard as Record<string, unknown> | null) ?? {};
-  const clean = Object.fromEntries(Object.entries(sizes).map(([id, s]) => [id, { w: Math.max(1, Math.round(s.w)), h: Math.max(5, Math.round(s.h)) }]));
+  const clean = Object.fromEntries(
+    Object.entries(layout).map(([id, l]) => [id, { x: Math.max(0, Math.round(l.x)), y: Math.max(0, Math.round(l.y)), w: Math.max(1, Math.round(l.w)), h: Math.max(5, Math.round(l.h)) }]),
+  );
   const patch = mobile ? { cardsMobile: cards, sizesMobile: clean } : { cards, sizes: clean };
   await prisma.user.update({ where: { id: userId }, data: { dashboard: { ...current, ...patch } } });
 }

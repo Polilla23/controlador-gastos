@@ -159,17 +159,21 @@ export const DEFAULT_CARDS = [
   "movimientos",
 ];
 
-export type CardSize = { w: number; h: number };
-export type DashboardPrefs = { cards: string[]; cardsMobile: string[]; accountIds: number[]; sizes: Record<string, CardSize>; sizesMobile: Record<string, CardSize> };
+/** Posición y tamaño exactos de una card en la grilla (los 4 campos que ya usa react-grid-layout), para poder reproducir el layout guardado tal cual quedó, sin tener que volver a calcularlo. */
+export type CardLayout = { x: number; y: number; w: number; h: number };
+export type DashboardPrefs = { cards: string[]; cardsMobile: string[]; accountIds: number[]; sizes: Record<string, CardLayout>; sizesMobile: Record<string, CardLayout> };
 
-// Un tamaño en 0 (o negativo) dejaría la card invisible para siempre -- se descarta en vez de
-// confiar en él, así una fila vieja/corrupta se autocorrige solita apenas se vuelve a leer.
-function readSizes(v: unknown): Record<string, CardSize> {
+// x/y/w/h inválidos (negativos, o un tamaño en 0 que dejaría la card invisible para siempre
+// porque `?? default` no reemplaza un 0) se descartan en vez de confiar en ellos, así una fila
+// vieja o corrupta se autocorrige sola apenas se vuelve a leer.
+function readSizes(v: unknown): Record<string, CardLayout> {
   if (!v || typeof v !== "object") return {};
-  const out: Record<string, CardSize> = {};
+  const out: Record<string, CardLayout> = {};
   for (const [id, s] of Object.entries(v as Record<string, unknown>)) {
-    const size = s as Partial<CardSize> | undefined;
-    if (size && Number.isFinite(size.w) && Number.isFinite(size.h) && size.w! >= 1 && size.h! >= 1) out[id] = { w: Number(size.w), h: Number(size.h) };
+    const l = s as Partial<CardLayout> | undefined;
+    if (l && [l.x, l.y, l.w, l.h].every((n) => Number.isFinite(n)) && l.w! >= 1 && l.h! >= 1 && l.x! >= 0 && l.y! >= 0) {
+      out[id] = { x: Number(l.x), y: Number(l.y), w: Number(l.w), h: Number(l.h) };
+    }
   }
   return out;
 }

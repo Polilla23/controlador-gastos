@@ -118,3 +118,10 @@ body {
 .dark .react-resizable-handle {
   opacity: 0.6;
 }
+
+/* El placeholder de react-grid-layout (dónde va a caer la card mientras se arrastra/estira) es
+   rojo sólido por defecto -- se ve como un cartel de alarma en vez de una previsualización. */
+.react-grid-item.react-grid-placeholder {
+  background: var(--color-brand-500);
+  opacity: 0.15;
+}
