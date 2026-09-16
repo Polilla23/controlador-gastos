@@ -77,6 +77,15 @@ async function clientForUser(user: GoogleUser) {
  * que no hay forma de buscar un calendario huérfano de una conexión anterior. Nos
  * apoyamos únicamente en `googleCalendarId` guardado en la base como fuente de verdad:
  * si no está, se crea uno nuevo directamente.
+ *
+ * OJO: esta función se llama una vez por cada evento a sincronizar (`upsertDueDateEvent`
+ * corre en un loop, uno por fecha con vencimientos), siempre con el MISMO objeto `user`
+ * en memoria. Si sólo se guardara el id nuevo en la base y no también en `user` (mutándolo
+ * acá), la primera llamada del loop crea el calendario bien, pero la segunda todavía ve
+ * `user.googleCalendarId` en null (el objeto en memoria no se refrescó solo) y crea OTRO
+ * calendario -- y así una vez por cada evento de esa sincronización. Eso fue justamente lo
+ * que pasó: "Reiniciar calendario" terminó creando uno por cada vencimiento próximo, no uno
+ * solo.
  */
 async function ensureCalendar(user: GoogleUser): Promise<string | null> {
   if (user.googleCalendarId) return user.googleCalendarId;
@@ -88,6 +97,7 @@ async function ensureCalendar(user: GoogleUser): Promise<string | null> {
   const id = created.data.id;
   if (!id) return null;
   await prisma.user.update({ where: { id: user.id }, data: { googleCalendarId: id } });
+  user.googleCalendarId = id; // así las próximas llamadas del mismo loop lo reusan, no crean otro
   return id;
 }
 
