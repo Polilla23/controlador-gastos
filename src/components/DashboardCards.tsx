@@ -622,8 +622,11 @@ export default function DashboardCards({ data, cards, cardsMobile, sizes, sizesM
     return (
       <>
         {/* Fijo arriba mientras se scrollea el contenido de la card (ej. "Ver más" en Próximos
-            vencimientos): el fondo sólido tapa lo que pasa por debajo. */}
-        <div className="sticky top-0 z-10 bg-card pb-1.5">
+            vencimientos): el fondo sólido tapa lo que pasa por debajo. El z-index alto + el color
+            de fondo puesto también inline (no sólo por clase) son a propósito: dentro de una card
+            movida con CSS transform (react-grid-layout) cualquier duda de stacking hace que un
+            renglón que ya debería estar tapado se cuele por encima del título fijo. */}
+        <div className="sticky top-0 z-30 bg-card pb-1.5" style={{ background: "var(--card)" }}>
           <h2 className="flex items-center gap-1.5 font-bold">
             {handle}
             {def.title}
@@ -713,7 +716,7 @@ function CardsGrid({
       onDragStop={persist}
     >
       {ids.map((id) => (
-        <div key={id} className="card dash-card-scroll overflow-y-auto pb-5">
+        <div key={id} className="card dash-card-scroll isolate overflow-y-auto pb-5">
           {renderCard(id, DRAG_HANDLE)}
         </div>
       ))}

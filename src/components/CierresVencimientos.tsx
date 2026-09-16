@@ -27,7 +27,7 @@ export default function CierresVencimientos({ cards }: { cards: CardAccount[] })
       {unicas.map((c) => {
         const r = proximosCierres(c);
         return (
-          <details key={c.name} className="rounded-xl border border-line px-3 py-2.5" open={unicas.length === 1}>
+          <details key={c.name} className="rounded-xl border border-line px-3 py-2.5" open>
             <summary className="flex cursor-pointer list-none items-center justify-between text-sm font-semibold">
               {c.name}
               <ChevronDown size={15} className="text-muted" />

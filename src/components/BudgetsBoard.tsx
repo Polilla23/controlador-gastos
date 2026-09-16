@@ -8,11 +8,12 @@ import ConfirmButton from "./ConfirmButton";
 import MoneyInput from "./MoneyInput";
 import IconPicker from "./IconPicker";
 import Icono from "./Icono";
+import MultiSelectFilter from "./MultiSelectFilter";
 import { ColorPicker } from "./ui";
 import { archiveBudget, deleteBudget, saveBudget } from "@/lib/actions-metas";
 import { CURRENCIES, fmtDate, money, toInputDate } from "@/lib/format";
 
-type Opcion = { id: number; name: string };
+type Opcion = { id: number; name: string; parentId?: number | null };
 export type BudgetRow = {
   id: number;
   name: string;
@@ -46,35 +47,6 @@ const PERIODOS: [string, string][] = [
   ["MONTHLY", "Mensual"],
   ["YEARLY", "Anual"],
 ];
-
-/** Chips que se prenden y apagan; mandan un input oculto por cada elegido. */
-function Multi({ name, options, initial, vacio }: { name: string; options: Opcion[]; initial: number[]; vacio: string }) {
-  const [sel, setSel] = useState<number[]>(initial);
-  if (!options.length) return <p className="text-xs text-muted">No hay opciones cargadas.</p>;
-  return (
-    <>
-      {sel.map((id) => (
-        <input key={id} type="hidden" name={name} value={id} />
-      ))}
-      <div className="flex flex-wrap gap-1.5">
-        {options.map((o) => {
-          const on = sel.includes(o.id);
-          return (
-            <button
-              key={o.id}
-              type="button"
-              onClick={() => setSel((s) => (on ? s.filter((x) => x !== o.id) : [...s, o.id]))}
-              className={`chip border px-2.5 py-1 transition ${on ? "border-transparent bg-brand-500 text-white" : "border-line text-muted"}`}
-            >
-              {o.name}
-            </button>
-          );
-        })}
-      </div>
-      {sel.length === 0 && <p className="mt-1 text-xs text-muted">{vacio}</p>}
-    </>
-  );
-}
 
 function Campos({ b, categories, accounts, tags }: { b?: BudgetRow; categories: Opcion[]; accounts: Opcion[]; tags: Opcion[] }) {
   const [period, setPeriod] = useState(b?.period ?? "MONTHLY");
@@ -127,18 +99,27 @@ function Campos({ b, categories, accounts, tags }: { b?: BudgetRow; categories: 
         </div>
       </div>
 
-      <div>
-        <label className="label">Categorías que cuenta</label>
-        <Multi name="categoryIds" options={categories} initial={b?.categories.map((c) => c.id) ?? []} vacio="Sin elegir ninguna, cuenta todos los gastos." />
-      </div>
-      <div>
-        <label className="label">Cuentas que cuenta</label>
-        <Multi name="accountIds" options={accounts} initial={b?.accounts.map((a) => a.id) ?? []} vacio="Sin elegir ninguna, cuenta todas las cuentas." />
-      </div>
-      <div>
-        <label className="label">Etiquetas que cuenta</label>
-        <Multi name="tagIds" options={tags} initial={b?.tags.map((t) => t.id) ?? []} vacio="Sin elegir ninguna, no filtra por etiqueta." />
-      </div>
+      <MultiSelectFilter
+        name="categoryIds"
+        label="Categorías que cuenta"
+        allLabel="Todas (cuenta todos los gastos)"
+        initial={b?.categories.map((c) => c.id) ?? []}
+        options={categories.map((c) => ({ id: c.id, label: c.name, parentId: c.parentId }))}
+      />
+      <MultiSelectFilter
+        name="accountIds"
+        label="Cuentas que cuenta"
+        allLabel="Todas las cuentas"
+        initial={b?.accounts.map((a) => a.id) ?? []}
+        options={accounts.map((a) => ({ id: a.id, label: a.name }))}
+      />
+      <MultiSelectFilter
+        name="tagIds"
+        label="Etiquetas que cuenta"
+        allLabel="Sin filtrar por etiqueta"
+        initial={b?.tags.map((t) => t.id) ?? []}
+        options={tags.map((t) => ({ id: t.id, label: `#${t.name}` }))}
+      />
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div>

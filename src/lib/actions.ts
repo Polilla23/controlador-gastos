@@ -758,6 +758,24 @@ export async function sincronizarGoogleCalendarAhora() {
   return result;
 }
 
+/**
+ * "Reiniciar calendario": olvida el id del calendario "Mis Finanzas" guardado y crea uno nuevo de
+ * cero, después sincroniza ahí mismo. Existe por una limitación real: el scope de permisos de
+ * Google que usa la app (a propósito, sólo puede tocar lo que ella misma crea, no el resto del
+ * calendario del usuario) no permite LISTAR los calendarios existentes -- así que no hay forma de
+ * que la app misma encuentre y borre los "Mis Finanzas" duplicados que hayan quedado sueltos de
+ * alguna reconexión anterior. Esos duplicados hay que borrarlos a mano desde Google Calendar
+ * (Configuración → cada calendario duplicado → Eliminar); esta acción sólo asegura que de acá en
+ * adelante la app vuelva a apuntar a uno solo, nuevo.
+ */
+export async function reiniciarCalendarioGoogle() {
+  const userId = await requireUserId();
+  await prisma.user.update({ where: { id: userId }, data: { googleCalendarId: null } });
+  const result = await syncGoogleCalendarForUser(userId);
+  revalidatePath("/perfil");
+  return result;
+}
+
 export async function saveDashboard(cards: string[], accountIds: number[], cardsMobile?: string[]) {
   const userId = await requireUserId();
   const user = await prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { dashboard: true } });

@@ -8,7 +8,7 @@ import ConfirmButton from "./ConfirmButton";
 import CategorySelect, { type CategoryOpt } from "./CategorySelect";
 import MoneyInput from "./MoneyInput";
 import { confirmPlannedWithEdits, deletePlanned, savePlanned } from "@/lib/actions";
-import { CURRENCIES, RECURRENCES, fmtDate, money, toInputDate } from "@/lib/format";
+import { CURRENCIES, RECURRENCES, fmtDate, money, toInputDate, toInputDateTime } from "@/lib/format";
 import type { AccountOpt, TagOpt } from "./TransactionForm";
 import Icono from "./Icono";
 
@@ -265,8 +265,8 @@ function ConfirmarForm({ item, accounts, categories, groups }: { item: PlannedRo
       )}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div>
-          <label className="label">Fecha</label>
-          <input name="date" type="date" required className="input" defaultValue={toInputDate(new Date())} />
+          <label className="label">Fecha y hora</label>
+          <input name="date" type="datetime-local" required className="input" defaultValue={toInputDateTime(new Date())} />
         </div>
         <div>
           <label className="label">Monto{conParte != null ? " (tu parte)" : ""}</label>

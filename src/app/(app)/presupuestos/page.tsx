@@ -12,7 +12,7 @@ export default async function PresupuestosPage() {
   const [budgets, goals, categories, accounts, tags] = await Promise.all([
     cargarPresupuestos(userId, true),
     cargarMetas(userId),
-    prisma.category.findMany({ where: { userId, kind: "EXPENSE" }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
+    prisma.category.findMany({ where: { userId, kind: "EXPENSE" }, orderBy: { name: "asc" }, select: { id: true, name: true, parentId: true } }),
     prisma.account.findMany({ where: { userId, archived: false }, orderBy: { name: "asc" }, select: { id: true, name: true, currency: true, color: true } }),
     prisma.tag.findMany({ where: { userId }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
   ]);

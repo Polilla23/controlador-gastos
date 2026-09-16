@@ -32,6 +32,10 @@ export default function SavedFilters({ filtros, scope }: { filtros: FiltroGuarda
       else usp.append(k, v);
     }
     router.push(`${path}?${usp.toString()}`);
+    // Fuerza a traer los datos de nuevo del servidor: si ya se había visitado antes esta misma
+    // combinación de filtros, el router podía estar sirviendo una versión en caché sin volver a
+    // pedirle nada al servidor, y el filtro "no hacía nada" aunque la URL sí había cambiado.
+    router.refresh();
   };
 
   return (
