@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import Link from "next/link";
-import { ArrowLeft, HandCoins, Pencil, Plus, Trash2, UserPlus, Users } from "lucide-react";
+import { ArrowLeft, Check, Copy, HandCoins, Link2, LogOut, Mail, Pencil, Plus, Trash2, UserPlus, Users, X } from "lucide-react";
 import ActionForm from "./ActionForm";
 import Modal from "./Modal";
 import ConfirmButton from "./ConfirmButton";
@@ -10,11 +10,33 @@ import MoneyInput from "./MoneyInput";
 import CategorySelect, { type CategoryOpt } from "./CategorySelect";
 import Tabs from "./Tabs";
 import LinkTransaction from "./LinkTransaction";
-import { addMember, deleteGroup, deleteGroupExpense, deleteMember, saldarEntre, saveGroup, saveGroupExpense, setMemberPercent } from "@/lib/actions-compartidos";
+import {
+  addMember,
+  deleteGroup,
+  deleteGroupExpense,
+  deleteMember,
+  inviteMemberToLink,
+  leaveGroup,
+  revokeInvite,
+  saldarEntre,
+  saveGroup,
+  saveGroupExpense,
+  setMemberPercent,
+  unlinkCollaborator,
+} from "@/lib/actions-compartidos";
 import { CURRENCIES, fmtDate, money, toInputDateTime } from "@/lib/format";
 import type { AccountOpt, TagOpt } from "./TransactionForm";
 
-type Miembro = { id: number; name: string; email: string; isMe: boolean; defaultPercent: number | null };
+type Miembro = {
+  id: number;
+  name: string;
+  email: string;
+  isMe: boolean;
+  defaultPercent: number | null;
+  linkedEmail: string | null;
+  collaboratorId: number | null;
+  pendingInvite: { id: number; email: string } | null;
+};
 type Gasto = {
   id: number;
   description: string;
@@ -44,11 +66,13 @@ export type GrupoDetalle = {
   total: number;
   porCategoria: { name: string; value: number; color: string }[];
   miSaldo: number;
+  isOwner: boolean;
+  myMemberId: number | null;
 };
 
 /** Formulario de gasto con los tres modos de reparto. */
 function GastoForm({ g, categories, accounts, tags, gasto }: { g: GrupoDetalle; categories: CategoryOpt[]; accounts: AccountOpt[]; tags: TagOpt[]; gasto?: Gasto }) {
-  const meId = g.members.find((m) => m.isMe)?.id;
+  const meId = g.myMemberId ?? undefined;
   // Si todos los integrantes tienen un % preseteado (que suma ~100), un gasto nuevo arranca ya
   // dividido así en vez de en partes iguales -- es justamente lo que "preseteado" quiere decir.
   const sumaPercDefault = g.members.reduce((s, m) => s + (m.defaultPercent ?? 0), 0);
@@ -100,7 +124,7 @@ function GastoForm({ g, categories, accounts, tags, gasto }: { g: GrupoDetalle; 
             {g.members.map((m) => (
               <option key={m.id} value={m.id}>
                 {m.name}
-                {m.isMe ? " (vos)" : ""}
+                {m.id === meId ? " (vos)" : ""}
               </option>
             ))}
           </select>
@@ -158,7 +182,7 @@ function GastoForm({ g, categories, accounts, tags, gasto }: { g: GrupoDetalle; 
                   {on && <input type="hidden" name="participante" value={m.id} />}
                   <span className={on ? "" : "text-muted line-through"}>
                     {m.name}
-                    {m.isMe ? " (vos)" : ""}
+                    {m.id === meId ? " (vos)" : ""}
                   </span>
                 </label>
 
@@ -225,7 +249,7 @@ function GastoForm({ g, categories, accounts, tags, gasto }: { g: GrupoDetalle; 
 
 /** Formulario para registrar que alguien saldó su parte; si soy yo el que paga o cobra, ofrece engancharlo a Transacciones. */
 function SaldarForm({ g, accounts, p }: { g: GrupoDetalle; accounts: AccountOpt[]; p: Pago }) {
-  const meId = g.members.find((m) => m.isMe)?.id;
+  const meId = g.myMemberId ?? undefined;
   const deIsMe = p.deId === meId;
   const aIsMe = p.aId === meId;
   return (
@@ -288,8 +312,8 @@ function GroupForm({ g }: { g: GrupoDetalle }) {
   );
 }
 
-/** Input chiquito de "% por defecto" de un integrante: guarda solo al perder el foco, sin formulario aparte. */
-function PercentInput({ memberId, initial }: { memberId: number; initial: number | null }) {
+/** Input chiquito de "% por defecto" de un integrante: guarda solo al perder el foco, sin formulario aparte. Administrativo: sólo el dueño del grupo lo puede tocar. */
+function PercentInput({ memberId, initial, disabled }: { memberId: number; initial: number | null; disabled?: boolean }) {
   const [value, setValue] = useState(initial != null ? String(initial) : "");
   return (
     <span className="flex items-center gap-1">
@@ -300,12 +324,74 @@ function PercentInput({ memberId, initial }: { memberId: number; initial: number
         step="0.1"
         placeholder="—"
         value={value}
+        disabled={disabled}
         onChange={(e) => setValue(e.target.value)}
         onBlur={() => setMemberPercent(memberId, value === "" ? null : Number(value))}
-        className="input w-16 py-1 text-right"
+        className="input w-16 py-1 text-right disabled:opacity-50"
       />
       <span className="text-xs text-muted">%</span>
     </span>
+  );
+}
+
+/** Genera (o renueva) un link de invitación para que `member` vincule su propia cuenta a este integrante del grupo. */
+function VincularForm({ member }: { member: Miembro }) {
+  const [email, setEmail] = useState(member.pendingInvite?.email ?? member.email ?? "");
+  const [link, setLink] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [pending, start] = useTransition();
+
+  const generar = () => {
+    setError(null);
+    start(async () => {
+      try {
+        const { token } = await inviteMemberToLink(member.id, email);
+        setLink(`${window.location.origin}/compartidos/invitaciones/${token}`);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "No se pudo generar la invitación");
+      }
+    });
+  };
+
+  const copiar = async () => {
+    if (!link) return;
+    try {
+      await navigator.clipboard.writeText(link);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // el navegador puede no dar permiso de portapapeles; el link ya queda visible para copiar a mano.
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-muted">
+        Generá un link para que <b>{member.name}</b> vincule su propia cuenta de Mis Finanzas a este integrante. Va a poder cargar y editar los gastos y planificados de este grupo como si
+        fueras vos, pero sólo va a poder aceptar la invitación si se loguea con el mismo email que pongas acá.
+      </p>
+      <div>
+        <label className="label">Email de {member.name}</label>
+        <input type="email" required className="input" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="nombre@ejemplo.com" />
+      </div>
+      {error && <p className="text-sm text-red-500">{error}</p>}
+      {!link ? (
+        <button type="button" onClick={generar} disabled={pending || !email} className="btn-primary w-full">
+          {pending ? "Generando…" : "Generar invitación"}
+        </button>
+      ) : (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <input readOnly className="input flex-1" value={link} onFocus={(e) => e.target.select()} />
+            <button type="button" onClick={copiar} className="btn-ghost shrink-0">
+              {copied ? <Check size={16} /> : <Copy size={16} />}
+            </button>
+          </div>
+          <p className="text-xs text-muted">Mandaselo por donde quieras (WhatsApp, Telegram, etc.). Vence en 7 días.</p>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -434,35 +520,73 @@ export default function GroupDetail({ g, categories, accounts, tags }: { g: Grup
             <li key={m.id} className="flex items-center justify-between gap-2 py-2 text-sm">
               <span>
                 {m.name}
-                {m.isMe && <span className="ml-1 text-xs text-muted">(vos)</span>}
+                {m.id === g.myMemberId && <span className="ml-1 text-xs text-muted">(vos)</span>}
                 {m.email && <span className="block text-xs text-muted">{m.email}</span>}
+                {m.linkedEmail && (
+                  <span className="mt-0.5 flex items-center gap-1 text-xs text-brand-500">
+                    <Link2 size={11} /> Vinculado a {m.linkedEmail}
+                  </span>
+                )}
+                {!m.linkedEmail && m.pendingInvite && (
+                  <span className="mt-0.5 flex items-center gap-1 text-xs text-amber-500">
+                    <Mail size={11} /> Invitación pendiente a {m.pendingInvite.email}
+                  </span>
+                )}
               </span>
-              <span className="flex items-center gap-2">
-                <PercentInput memberId={m.id} initial={m.defaultPercent} />
-                {!m.isMe && (
-                  <ConfirmButton action={async () => deleteMember(m.id)} className="btn-icon hover:text-red-500" message={`¿Sacar a ${m.name} del grupo?`}>
-                    <Trash2 size={15} />
-                  </ConfirmButton>
+              <span className="flex items-center gap-1">
+                <PercentInput memberId={m.id} initial={m.defaultPercent} disabled={!g.isOwner} />
+                {g.isOwner && m.id !== g.myMemberId && (
+                  <>
+                    {m.linkedEmail ? (
+                      <ConfirmButton
+                        action={async () => unlinkCollaborator(m.collaboratorId!)}
+                        className="btn-icon hover:text-red-500"
+                        message={`¿Desvincular la cuenta de ${m.name}? Sus gastos ya cargados quedan igual, pero deja de poder verlos ni editarlos.`}
+                      >
+                        <X size={15} />
+                      </ConfirmButton>
+                    ) : (
+                      <>
+                        <Modal title={m.pendingInvite ? `Reinvitar a ${m.name}` : `Vincular a ${m.name}`} triggerClassName="btn-icon" trigger={<Link2 size={15} />}>
+                          <VincularForm member={m} />
+                        </Modal>
+                        {m.pendingInvite && (
+                          <ConfirmButton
+                            action={async () => revokeInvite(m.pendingInvite!.id)}
+                            className="btn-icon hover:text-red-500"
+                            message={`¿Cancelar la invitación pendiente para ${m.name}?`}
+                          >
+                            <X size={15} />
+                          </ConfirmButton>
+                        )}
+                        <ConfirmButton action={async () => deleteMember(m.id)} className="btn-icon hover:text-red-500" message={`¿Sacar a ${m.name} del grupo?`}>
+                          <Trash2 size={15} />
+                        </ConfirmButton>
+                      </>
+                    )}
+                  </>
                 )}
               </span>
             </li>
           ))}
         </ul>
-        <div className="mt-3">
-          <Modal title="Agregar integrante" triggerClassName="btn-ghost" trigger={<><UserPlus size={16} /> Agregar integrante</>}>
-            <ActionForm action={addMember} submitLabel="Agregar">
-              <input type="hidden" name="groupId" value={g.id} />
-              <div>
-                <label className="label">Nombre</label>
-                <input name="name" required className="input" placeholder="Ej: Franco" autoFocus />
-              </div>
-              <div>
-                <label className="label">Email (opcional)</label>
-                <input name="email" type="email" className="input" placeholder="Para identificarlo si algún día usa la app" />
-              </div>
-            </ActionForm>
-          </Modal>
-        </div>
+        {g.isOwner && (
+          <div className="mt-3">
+            <Modal title="Agregar integrante" triggerClassName="btn-ghost" trigger={<><UserPlus size={16} /> Agregar integrante</>}>
+              <ActionForm action={addMember} submitLabel="Agregar">
+                <input type="hidden" name="groupId" value={g.id} />
+                <div>
+                  <label className="label">Nombre</label>
+                  <input name="name" required className="input" placeholder="Ej: Franco" autoFocus />
+                </div>
+                <div>
+                  <label className="label">Email (opcional)</label>
+                  <input name="email" type="email" className="input" placeholder="Para identificarlo si algún día usa la app" />
+                </div>
+              </ActionForm>
+            </Modal>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -477,12 +601,24 @@ export default function GroupDetail({ g, categories, accounts, tags }: { g: Grup
           <span className="flex items-center gap-2 text-sm text-muted">
             <Users size={15} /> {g.members.length} integrantes · {money(g.total, g.currency)} en total
           </span>
-          <Modal title="Editar grupo" triggerClassName="btn-icon" trigger={<Pencil size={15} />}>
-            <GroupForm g={g} />
-          </Modal>
-          <ConfirmButton action={async () => deleteGroup(g.id)} className="btn-icon hover:text-red-500" message={`¿Eliminar el grupo "${g.name}" y todos sus gastos?`}>
-            <Trash2 size={15} />
-          </ConfirmButton>
+          {g.isOwner ? (
+            <>
+              <Modal title="Editar grupo" triggerClassName="btn-icon" trigger={<Pencil size={15} />}>
+                <GroupForm g={g} />
+              </Modal>
+              <ConfirmButton action={async () => deleteGroup(g.id)} className="btn-icon hover:text-red-500" message={`¿Eliminar el grupo "${g.name}" y todos sus gastos?`}>
+                <Trash2 size={15} />
+              </ConfirmButton>
+            </>
+          ) : (
+            <ConfirmButton
+              action={async () => leaveGroup(g.id)}
+              className="btn-ghost hover:text-red-500"
+              message="¿Salir de este grupo? Dejás de ver y de poder editar sus gastos y planificados. Tu historial pasado queda igual."
+            >
+              <LogOut size={15} /> Salir del grupo
+            </ConfirmButton>
+          )}
         </div>
       </div>
 

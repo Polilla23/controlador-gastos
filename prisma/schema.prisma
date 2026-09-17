@@ -10,21 +10,21 @@ datasource db {
 
 // id = Supabase Auth user id (uuid). Created on first login.
 model User {
-  id                 String            @id
-  email              String            @unique
-  name               String            @default("")
+  id                 String              @id
+  email              String              @unique
+  name               String              @default("")
   avatarPath         String? // path del avatar en el bucket de Storage
-  telegramChatId     String?           @unique
-  telegramCode       String?           @unique // one-time code used to link the chat
-  notifyDays         Int               @default(3) // days before a due date to warn
-  notifyHour         Int               @default(9) // local hour for the daily digest
+  telegramChatId     String?             @unique
+  telegramCode       String?             @unique // one-time code used to link the chat
+  notifyDays         Int                 @default(3) // days before a due date to warn
+  notifyHour         Int                 @default(9) // local hour for the daily digest
   dashboard          Json? // { cards: string[], cardsMobile?: string[], accountIds: number[] }
   googleAccessToken  String? // Google Calendar OAuth
   googleRefreshToken String?
   googleTokenExpiry  DateTime?
   googleCalendarId   String? // calendario dedicado creado para la app
   googleEmail        String? // sólo para mostrar la cuenta conectada
-  createdAt          DateTime          @default(now())
+  createdAt          DateTime            @default(now())
   accounts           Account[]
   categories         Category[]
   tags               Tag[]
@@ -39,6 +39,7 @@ model User {
   groups             ShareGroup[]
   holdings           Holding[]
   investMoves        InvestMove[]
+  sharedGroupLinks   ShareCollaborator[]
 }
 
 model Account {
@@ -390,39 +391,81 @@ model Rule {
  */
 
 model ShareGroup {
-  id        Int            @id @default(autoincrement())
-  userId    String // quien lo creó
-  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  name      String
-  currency  String         @default("ARS")
-  note      String         @default("")
-  archived  Boolean        @default(false)
-  sortOrder Int            @default(0)
-  createdAt DateTime       @default(now())
-  members   ShareMember[]
-  expenses  ShareExpense[]
-  planned   Planned[]
+  id            Int                 @id @default(autoincrement())
+  userId        String // quien lo creó
+  user          User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name          String
+  currency      String              @default("ARS")
+  note          String              @default("")
+  archived      Boolean             @default(false)
+  sortOrder     Int                 @default(0)
+  createdAt     DateTime            @default(now())
+  members       ShareMember[]
+  expenses      ShareExpense[]
+  planned       Planned[]
+  invites       ShareInvite[]
+  collaborators ShareCollaborator[]
 
   @@index([userId, archived])
 }
 
 model ShareMember {
-  id             Int            @id @default(autoincrement())
+  id             Int                @id @default(autoincrement())
   groupId        Int
-  group          ShareGroup     @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  group          ShareGroup         @relation(fields: [groupId], references: [id], onDelete: Cascade)
   name           String
-  email          String         @default("")
-  /// Si es el propio dueño del grupo, para saber qué saldo es "mío".
-  isMe           Boolean        @default(false)
+  email          String             @default("")
+  /// Si es el propio dueño del grupo, para saber qué saldo es "mío" DESDE LA PERSPECTIVA DEL
+  /// DUEÑO. Un colaborador vinculado (ver ShareCollaborator) calcula "mi saldo" por su propio
+  /// link, no por este flag -- no usar `isMe` para saber "quién está mirando ahora".
+  isMe           Boolean            @default(false)
   /// % preseteado para dividir los gastos nuevos del grupo (opcional). Si todos los integrantes
   /// lo tienen cargado y suma ~100, el formulario de gasto nuevo arranca en modo "Porcentajes"
   /// con estos valores ya puestos, en vez de partes iguales.
   defaultPercent Float?
-  paid           ShareExpense[] @relation("PagadoPor")
+  paid           ShareExpense[]     @relation("PagadoPor")
   splits         ShareSplit[]
-  planned        Planned[]      @relation("GastoCompartidoCon")
+  planned        Planned[]          @relation("GastoCompartidoCon")
+  invite         ShareInvite?
+  collaborator   ShareCollaborator?
 
   @@index([groupId])
+}
+
+/// Invitación pendiente para vincular una cuenta real de Mis Finanzas a un integrante del grupo
+/// (ver ShareCollaborator). Se entrega como link (la app no manda emails) y sólo la puede aceptar
+/// quien esté logueado con el mismo email cargado acá.
+model ShareInvite {
+  id         Int         @id @default(autoincrement())
+  groupId    Int
+  group      ShareGroup  @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  memberId   Int         @unique // un invite pendiente por integrante
+  member     ShareMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  token      String      @unique
+  email      String // tiene que coincidir con el email de quien acepta
+  status     String      @default("PENDING") // PENDING | ACCEPTED | REVOKED
+  createdAt  DateTime    @default(now())
+  expiresAt  DateTime?
+  acceptedAt DateTime?
+
+  @@index([groupId])
+}
+
+/// Vínculo aceptado: qué integrante del grupo "es" qué cuenta real de Mis Finanzas. Habilita
+/// edición conjunta total de gastos y planificados de ese grupo para esa cuenta (no acciones
+/// administrativas del grupo en sí, que quedan reservadas al dueño -- ver share-access.ts).
+model ShareCollaborator {
+  id       Int         @id @default(autoincrement())
+  groupId  Int
+  group    ShareGroup  @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  memberId Int         @unique // qué integrante del grupo "es" este usuario real
+  member   ShareMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  userId   String
+  user     User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  linkedAt DateTime    @default(now())
+
+  @@unique([groupId, userId])
+  @@index([userId])
 }
 
 model ShareExpense {
@@ -435,9 +478,9 @@ model ShareExpense {
   paidById      Int
   paidBy        ShareMember  @relation("PagadoPor", fields: [paidById], references: [id], onDelete: Cascade)
   categoryId    Int?
-  accountId     Int? // de qué cuenta salió, cuando yo (isMe) pagué
+  accountId     Int? // de qué cuenta salió, cuando quien lo cargó pagó (su propia cuenta)
   account       Account?     @relation(fields: [accountId], references: [id], onDelete: SetNull)
-  transactionId Int? // el movimiento generado cuando yo (isMe) pagué, si se registró
+  transactionId Int? // el movimiento generado cuando quien lo cargó pagó, si se registró
   note          String       @default("")
   tags          Tag[]
   createdAt     DateTime     @default(now())

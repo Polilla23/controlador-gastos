@@ -1,4 +1,5 @@
 import { prisma } from "./prisma";
+import { groupMyMemberId, shareGroupAccessFilter } from "./share-access";
 
 /**
  * Gastos compartidos: quién puso qué, a quién le tocaba cuánto y, al final,
@@ -36,16 +37,20 @@ export function liquidar(saldos: Saldo[]): Liquidacion[] {
 
 export type Grupo = NonNullable<Awaited<ReturnType<typeof cargarGrupo>>>;
 
-/** Un grupo con sus gastos, saldos, liquidación sugerida y estadísticas. */
+/** Un grupo con sus gastos, saldos, liquidación sugerida y estadísticas. Accesible por el dueño o por cualquier colaborador vinculado. */
 export async function cargarGrupo(userId: string, groupId: number) {
   const group = await prisma.shareGroup.findFirst({
-    where: { id: groupId, userId },
+    where: { id: groupId, ...shareGroupAccessFilter(userId) },
     include: {
-      members: { orderBy: { id: "asc" } },
+      members: { orderBy: { id: "asc" }, include: { collaborator: { include: { user: { select: { email: true } } } }, invite: true } },
+      collaborators: true,
       expenses: { include: { splits: true, paidBy: true, tags: true }, orderBy: { date: "desc" } },
     },
   });
   if (!group) return null;
+
+  const isOwner = group.userId === userId;
+  const myMemberId = groupMyMemberId(group, userId);
 
   const categorias = await prisma.category.findMany({ where: { userId }, select: { id: true, name: true, color: true } });
   const catPorId = new Map(categorias.map((c) => [c.id, c]));
@@ -60,7 +65,7 @@ export async function cargarGrupo(userId: string, groupId: number) {
   const saldos: Saldo[] = group.members.map((m) => {
     const p = redondear(puso.get(m.id) ?? 0);
     const t = redondear(leToca.get(m.id) ?? 0);
-    return { memberId: m.id, nombre: m.name, esYo: m.isMe, puso: p, leToca: t, saldo: redondear(p - t) };
+    return { memberId: m.id, nombre: m.name, esYo: m.id === myMemberId, puso: p, leToca: t, saldo: redondear(p - t) };
   });
 
   // Estadísticas del grupo
@@ -82,6 +87,19 @@ export async function cargarGrupo(userId: string, groupId: number) {
 
   return {
     ...group,
+    members: group.members.map((m) => ({
+      id: m.id,
+      name: m.name,
+      email: m.email,
+      isMe: m.isMe,
+      defaultPercent: m.defaultPercent,
+      // Vinculado a una cuenta real, y con qué email; invitación pendiente (si hay una sin aceptar), para que la UI ofrezca invitar/revocar.
+      linkedEmail: m.collaborator?.user.email ?? null,
+      collaboratorId: m.collaborator?.id ?? null,
+      pendingInvite: m.invite && m.invite.status === "PENDING" ? { id: m.invite.id, email: m.invite.email } : null,
+    })),
+    isOwner,
+    myMemberId,
     expenses: group.expenses.map((e) => ({ ...e, categoria: e.categoryId ? (catPorId.get(e.categoryId)?.name ?? null) : null })),
     saldos,
     liquidacion: liquidar(saldos),
@@ -92,16 +110,17 @@ export async function cargarGrupo(userId: string, groupId: number) {
   };
 }
 
-/** Lista de grupos con el saldo propio de cada uno, para la pantalla principal. */
+/** Lista de grupos con el saldo propio de cada uno, para la pantalla principal. Incluye los grupos propios y aquéllos donde la cuenta es colaboradora vinculada. */
 export async function cargarGrupos(userId: string) {
   const grupos = await prisma.shareGroup.findMany({
-    where: { userId },
-    include: { members: true, expenses: { include: { splits: true } } },
+    where: shareGroupAccessFilter(userId),
+    include: { members: { include: { collaborator: { select: { userId: true } } } }, expenses: { include: { splits: true } } },
     orderBy: [{ archived: "asc" }, { sortOrder: "asc" }, { createdAt: "desc" }],
   });
 
   return grupos.map((g) => {
-    const yo = g.members.find((m) => m.isMe);
+    const isOwner = g.userId === userId;
+    const yo = isOwner ? g.members.find((m) => m.isMe) : g.members.find((m) => m.collaborator?.userId === userId);
     let puso = 0;
     let leToca = 0;
     for (const e of g.expenses) {

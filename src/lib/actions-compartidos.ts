@@ -1,5 +1,6 @@
 "use server";
 
+import { randomBytes } from "crypto";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
@@ -7,10 +8,12 @@ import { prisma } from "./prisma";
 import { requireUser, requireUserId } from "./auth";
 import { parseInput } from "./tz";
 import { assertOwnedTransaction, readLinkMode } from "./linkTransaction";
+import { requireGroupAccess } from "./share-access";
 
 const refresh = () => revalidatePath("/", "layout");
 const num = z.coerce.number();
 const redondear = (n: number) => Math.round(n * 100) / 100;
+const INVITE_DAYS = 7;
 
 /* ---------- Grupos ---------- */
 
@@ -23,7 +26,8 @@ export async function saveGroup(fd: FormData) {
   if (!name) throw new Error("Ponele un nombre al grupo");
 
   if (id) {
-    await prisma.shareGroup.update({ where: { id, userId: user.id }, data: { name, currency, note } });
+    await requireGroupAccess(id, user.id, { ownerOnly: true });
+    await prisma.shareGroup.update({ where: { id }, data: { name, currency, note } });
     refresh();
     return;
   }
@@ -43,13 +47,15 @@ export async function saveGroup(fd: FormData) {
 
 export async function deleteGroup(id: number) {
   const userId = await requireUserId();
-  await prisma.shareGroup.deleteMany({ where: { id, userId } });
+  await requireGroupAccess(id, userId, { ownerOnly: true });
+  await prisma.shareGroup.delete({ where: { id } });
   redirect("/compartidos");
 }
 
 export async function archiveGroup(id: number, archived: boolean) {
   const userId = await requireUserId();
-  await prisma.shareGroup.updateMany({ where: { id, userId }, data: { archived } });
+  await requireGroupAccess(id, userId, { ownerOnly: true });
+  await prisma.shareGroup.update({ where: { id }, data: { archived } });
   refresh();
 }
 
@@ -75,17 +81,18 @@ export async function addMember(fd: FormData) {
   const name = String(fd.get("name") ?? "").trim();
   const email = String(fd.get("email") ?? "").trim();
   if (!name) throw new Error("Poné el nombre");
-  if (!(await prisma.shareGroup.findFirst({ where: { id: groupId, userId } }))) throw new Error("El grupo no existe");
+  await requireGroupAccess(groupId, userId, { ownerOnly: true });
   if (await prisma.shareMember.findFirst({ where: { groupId, name } })) throw new Error(`${name} ya está en el grupo`);
   await prisma.shareMember.create({ data: { groupId, name, email } });
   refresh();
 }
 
-/** % por defecto con el que a este integrante le toca dividir los gastos nuevos del grupo (null = sin definir, se sigue repartiendo en partes iguales). */
+/** % por defecto con el que a este integrante le toca dividir los gastos nuevos del grupo (null = sin definir, se sigue repartiendo en partes iguales). Administrativo: sólo el dueño del grupo lo toca. */
 export async function setMemberPercent(id: number, percent: number | null) {
   const userId = await requireUserId();
-  const m = await prisma.shareMember.findUnique({ where: { id }, include: { group: true } });
-  if (!m || m.group.userId !== userId) throw new Error("No autorizado");
+  const m = await prisma.shareMember.findUnique({ where: { id } });
+  if (!m) throw new Error("No existe");
+  await requireGroupAccess(m.groupId, userId, { ownerOnly: true });
   if (percent != null && (percent < 0 || percent > 100)) throw new Error("Tiene que ser entre 0 y 100");
   await prisma.shareMember.update({ where: { id }, data: { defaultPercent: percent } });
   refresh();
@@ -93,8 +100,9 @@ export async function setMemberPercent(id: number, percent: number | null) {
 
 export async function deleteMember(id: number) {
   const userId = await requireUserId();
-  const m = await prisma.shareMember.findUnique({ where: { id }, include: { group: true, splits: true, paid: true } });
-  if (!m || m.group.userId !== userId) throw new Error("No autorizado");
+  const m = await prisma.shareMember.findUnique({ where: { id }, include: { splits: true, paid: true } });
+  if (!m) throw new Error("No existe");
+  await requireGroupAccess(m.groupId, userId, { ownerOnly: true });
   if (m.isMe) throw new Error("No podés sacarte del grupo");
   if (m.paid.length || m.splits.length) throw new Error(`${m.name} tiene gastos cargados: borralos primero`);
   await prisma.shareMember.delete({ where: { id } });
@@ -125,8 +133,7 @@ export async function saveGroupExpense(fd: FormData) {
   const d = expenseSchema.parse(Object.fromEntries(fd));
   const tagIds = fd.getAll("tagIds").map(Number).filter(Boolean);
 
-  const group = await prisma.shareGroup.findFirst({ where: { id: d.groupId, userId }, include: { members: true } });
-  if (!group) throw new Error("El grupo no existe");
+  const { group, myMemberId } = await requireGroupAccess(d.groupId, userId);
   const idsValidos = new Set(group.members.map((m) => m.id));
   if (!idsValidos.has(d.paidById)) throw new Error("Quien pagó no está en el grupo");
 
@@ -170,8 +177,9 @@ export async function saveGroupExpense(fd: FormData) {
     return;
   }
 
-  // Sólo cuando pago yo (isMe) tiene sentido que impacte en Transacciones.
-  const isMine = group.members.find((m) => m.id === d.paidById)?.isMe ?? false;
+  // Sólo cuando pagué YO (quien está cargando el gasto ahora, no necesariamente el dueño del
+  // grupo si es un colaborador vinculado) tiene sentido que impacte en Transacciones.
+  const isMine = d.paidById === myMemberId;
   const { mode, existingId } = readLinkMode(fd);
   let transactionId: number | null = null;
   if (isMine && mode === "existing" && existingId) {
@@ -206,8 +214,9 @@ export async function saveGroupExpense(fd: FormData) {
 
 export async function deleteGroupExpense(id: number) {
   const userId = await requireUserId();
-  const e = await prisma.shareExpense.findUnique({ where: { id }, include: { group: { select: { userId: true } } } });
-  if (!e || e.group.userId !== userId) throw new Error("No autorizado");
+  const e = await prisma.shareExpense.findUnique({ where: { id }, select: { groupId: true } });
+  if (!e) throw new Error("No existe");
+  await requireGroupAccess(e.groupId, userId);
   await prisma.shareExpense.delete({ where: { id } });
   refresh();
 }
@@ -228,34 +237,35 @@ export async function saldarEntre(fd: FormData) {
   const { mode, existingId } = readLinkMode(fd);
   if (!(monto > 0)) throw new Error("El monto tiene que ser mayor a cero");
 
-  const group = await prisma.shareGroup.findFirst({ where: { id: groupId, userId }, include: { members: true } });
-  if (!group) throw new Error("El grupo no existe");
+  const { group, myMemberId } = await requireGroupAccess(groupId, userId);
   const de = group.members.find((m) => m.id === deId);
   const a = group.members.find((m) => m.id === aId);
   if (!de || !a) throw new Error("Integrante inválido");
+  const deSoyYo = de.id === myMemberId;
+  const aSoyYo = a.id === myMemberId;
 
-  // Sólo si yo (isMe) pago o cobro tiene sentido que impacte en Transacciones.
+  // Sólo si YO (quien está registrando esto) pago o cobro tiene sentido que impacte en Transacciones.
   let transactionId: number | null = null;
-  if (mode === "existing" && existingId && (de.isMe || a.isMe)) {
+  if (mode === "existing" && existingId && (deSoyYo || aSoyYo)) {
     await assertOwnedTransaction(userId, existingId);
     transactionId = existingId;
   }
 
   // Si ninguno de los dos soy yo, no es un ingreso ni un egreso mío: sólo cancela saldos entre
   // terceros del grupo, y así se lo etiqueta en vez de dejarlo "sin categoría".
-  const categoryId = !de.isMe && !a.isMe ? await saldoPagadoCategoryId(userId) : null;
+  const categoryId = !deSoyYo && !aSoyYo ? await saldoPagadoCategoryId(userId) : null;
   const gasto = await prisma.shareExpense.create({
     data: { groupId, description: `Pago de ${de.name} a ${a.name}`, amount: monto, date: new Date(), paidById: deId, note, transactionId, categoryId },
   });
   await prisma.shareSplit.create({ data: { expenseId: gasto.id, memberId: aId, amount: monto } });
 
-  if (mode === "new" && accountId && (de.isMe || a.isMe)) {
+  if (mode === "new" && accountId && (deSoyYo || aSoyYo)) {
     const account = await prisma.account.findFirst({ where: { id: accountId, userId } });
     if (!account) throw new Error("Cuenta inválida");
     const tx = await prisma.transaction.create({
       data: {
         userId,
-        type: de.isMe ? "EXPENSE" : "INCOME",
+        type: deSoyYo ? "EXPENSE" : "INCOME",
         amount: monto,
         currency: account.currency,
         date: new Date(),
@@ -267,4 +277,84 @@ export async function saldarEntre(fd: FormData) {
     await prisma.shareExpense.update({ where: { id: gasto.id }, data: { transactionId: tx.id } });
   }
   refresh();
+}
+
+/* ---------- Vincular una cuenta real a un integrante (invitación + aceptación) ---------- */
+
+/**
+ * Genera (o renueva) la invitación para que `memberId` se vincule a una cuenta real de Mis
+ * Finanzas. Sólo el dueño del grupo invita. Devuelve el token: el link final
+ * (`/compartidos/invitaciones/<token>`) se arma en el cliente con `location.origin`, ya que esta
+ * app no tiene un dominio propio fijo configurado del lado del server (corre en Vercel con
+ * dominios de preview además del de producción).
+ */
+export async function inviteMemberToLink(memberId: number, email: string): Promise<{ token: string }> {
+  const userId = await requireUserId();
+  const correo = email.trim().toLowerCase();
+  if (!correo) throw new Error("Poné el email de la persona a invitar");
+  const m = await prisma.shareMember.findUnique({ where: { id: memberId }, include: { collaborator: true } });
+  if (!m) throw new Error("No existe");
+  await requireGroupAccess(m.groupId, userId, { ownerOnly: true });
+  if (m.isMe) throw new Error("Ese integrante ya sos vos");
+  if (m.collaborator) throw new Error(`${m.name} ya está vinculado a una cuenta`);
+
+  const token = randomBytes(24).toString("base64url");
+  const expiresAt = new Date(Date.now() + INVITE_DAYS * 24 * 60 * 60 * 1000);
+  await prisma.shareInvite.upsert({
+    where: { memberId },
+    create: { groupId: m.groupId, memberId, token, email: correo, expiresAt },
+    update: { token, email: correo, status: "PENDING", expiresAt, acceptedAt: null },
+  });
+  refresh();
+  return { token };
+}
+
+/** Cancela una invitación pendiente (antes de que la acepten). Sólo el dueño del grupo. */
+export async function revokeInvite(inviteId: number) {
+  const userId = await requireUserId();
+  const invite = await prisma.shareInvite.findUnique({ where: { id: inviteId } });
+  if (!invite) throw new Error("No existe");
+  await requireGroupAccess(invite.groupId, userId, { ownerOnly: true });
+  await prisma.shareInvite.delete({ where: { id: inviteId } });
+  refresh();
+}
+
+/**
+ * Acepta una invitación: la cuenta logueada tiene que tener el mismo email que se cargó al
+ * invitar (si no, alguien con el link pero sin ser la persona invitada podría vincularse solo).
+ * Revalida todo server-side, no confía en lo que ya haya mostrado la página de aceptación.
+ */
+export async function acceptInvite(token: string) {
+  const user = await requireUser();
+  const invite = await prisma.shareInvite.findUnique({ where: { token } });
+  if (!invite || invite.status !== "PENDING") throw new Error("Esta invitación ya no es válida");
+  if (invite.expiresAt && invite.expiresAt < new Date()) throw new Error("Esta invitación venció");
+  if (invite.email !== user.email.trim().toLowerCase()) throw new Error("Esta invitación es para otra cuenta (otro email)");
+  const yaVinculado = await prisma.shareCollaborator.findUnique({ where: { groupId_userId: { groupId: invite.groupId, userId: user.id } } });
+  if (yaVinculado) throw new Error("Ya estás vinculado a este grupo");
+
+  await prisma.$transaction([
+    prisma.shareCollaborator.create({ data: { groupId: invite.groupId, memberId: invite.memberId, userId: user.id } }),
+    prisma.shareInvite.update({ where: { id: invite.id }, data: { status: "ACCEPTED", acceptedAt: new Date() } }),
+  ]);
+  redirect(`/compartidos/${invite.groupId}`);
+}
+
+/** El dueño del grupo desvincula a un colaborador (le saca el acceso, no borra al integrante ni sus gastos). */
+export async function unlinkCollaborator(collaboratorId: number) {
+  const userId = await requireUserId();
+  const c = await prisma.shareCollaborator.findUnique({ where: { id: collaboratorId } });
+  if (!c) throw new Error("No existe");
+  await requireGroupAccess(c.groupId, userId, { ownerOnly: true });
+  await prisma.shareCollaborator.delete({ where: { id: collaboratorId } });
+  refresh();
+}
+
+/** Un colaborador vinculado se saca a sí mismo del grupo. */
+export async function leaveGroup(groupId: number) {
+  const userId = await requireUserId();
+  const { isOwner } = await requireGroupAccess(groupId, userId);
+  if (isOwner) throw new Error("Sos el dueño del grupo -- no podés salir, podés borrarlo o desvincular a los demás");
+  await prisma.shareCollaborator.deleteMany({ where: { groupId, userId } });
+  redirect("/compartidos");
 }

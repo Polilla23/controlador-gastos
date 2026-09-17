@@ -38,6 +38,10 @@ export type ShareGroupOpt = {
   id: number;
   name: string;
   members: { id: number; name: string; isMe: boolean; defaultPercent: number | null }[];
+  // Cuál integrante del grupo es "yo" desde esta cuenta -- el dueño original o, si es colaboradora
+  // vinculada, el integrante al que quedó vinculada. `isMe` (arriba) sigue siendo del dueño
+  // original: no sirve para saber "quién está cargando esto ahora".
+  myMemberId: number | null;
 };
 
 function TagPicker({ tags, initial }: { tags: TagOpt[]; initial: number[] }) {
@@ -91,9 +95,9 @@ function Fields({
   const [compartido, setCompartido] = useState(!!item?.shareGroupId);
   const [shareGroupId, setShareGroupId] = useState<number | "">(item?.shareGroupId ?? groups[0]?.id ?? "");
   const grupoElegido = groups.find((g) => g.id === shareGroupId);
-  const otros = grupoElegido?.members.filter((m) => !m.isMe) ?? [];
+  const otros = grupoElegido?.members.filter((m) => m.id !== grupoElegido.myMemberId) ?? [];
   const [shareMemberId, setShareMemberId] = useState<number | "">(item?.shareMemberId ?? otros[0]?.id ?? "");
-  const yo = grupoElegido?.members.find((m) => m.isMe);
+  const yo = grupoElegido?.members.find((m) => m.id === grupoElegido.myMemberId);
   const miPorcentaje = yo?.defaultPercent;
   return (
     <>
@@ -276,7 +280,7 @@ function ConfirmarForm({ item, accounts, categories, groups }: { item: PlannedRo
   // Si es un gasto compartido con % preseteado, el monto que se propone confirmar es sólo mi
   // parte, no el total -- el usuario puede seguir pisándolo a mano si hace falta.
   const grupo = item.shareGroupId ? groups.find((g) => g.id === item.shareGroupId) : undefined;
-  const miPorcentaje = grupo?.members.find((m) => m.isMe)?.defaultPercent;
+  const miPorcentaje = grupo?.members.find((m) => m.id === grupo.myMemberId)?.defaultPercent;
   const conParte = grupo && miPorcentaje != null ? Math.round(item.amount * (miPorcentaje / 100) * 100) / 100 : null;
   const compartidoCon = grupo?.members.find((m) => m.id === item.shareMemberId)?.name;
   return (

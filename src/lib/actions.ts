@@ -12,6 +12,7 @@ import { addDays, addMonths, civil, fromCivil, parseInput, startOfDay } from "./
 import { statementMonthForDate, type CardDates } from "./tarjetas";
 import { aplicarAlCrear } from "./reglas";
 import { syncGoogleCalendarForUser } from "./google-calendar-sync";
+import { plannedAccessFilter, resolveMyMemberInGroup, shareGroupAccessFilter } from "./share-access";
 
 const num = z.coerce.number();
 
@@ -523,18 +524,27 @@ export async function savePlanned(fd: FormData) {
   const notify = includeInTelegram && fd.get("notify") === "on";
   const autoConfirm = fd.get("autoConfirm") === "on";
   if (d.shareGroupId) {
-    const member = d.shareMemberId ? await prisma.shareMember.findFirst({ where: { id: d.shareMemberId, groupId: d.shareGroupId, group: { userId } } }) : null;
+    const member = d.shareMemberId ? await prisma.shareMember.findFirst({ where: { id: d.shareMemberId, groupId: d.shareGroupId, group: shareGroupAccessFilter(userId) } }) : null;
     if (!member) throw new Error("Elegí con quién del grupo se comparte");
   }
-  const base = { ...d, notify, autoConfirm, includeInTelegram, includeInCalendar, dueDate: parseInput(d.dueDate), userId, lastNotifiedOn: null };
-  if (id) await prisma.planned.update({ where: { id, userId }, data: { ...base, tags: { set: tagIds.map((t) => ({ id: t })) } } });
-  else await prisma.planned.create({ data: { ...base, tags: { connect: tagIds.map((t) => ({ id: t })) } } });
+  const base = { ...d, notify, autoConfirm, includeInTelegram, includeInCalendar, dueDate: parseInput(d.dueDate), lastNotifiedOn: null };
+  if (id) {
+    // Editar un planificado compartido: lo puede tocar el dueño original o cualquier colaborador
+    // vinculado al grupo con el que se comparte -- no sólo quien lo creó (edición conjunta).
+    const existing = await prisma.planned.findFirst({ where: { id, ...plannedAccessFilter(userId) } });
+    if (!existing) throw new Error("No autorizado");
+    await prisma.planned.update({ where: { id }, data: { ...base, tags: { set: tagIds.map((t) => ({ id: t })) } } });
+  } else {
+    await prisma.planned.create({ data: { ...base, userId, tags: { connect: tagIds.map((t) => ({ id: t })) } } });
+  }
   refresh();
 }
 
 export async function deletePlanned(id: number) {
   const userId = await requireUserId();
-  await prisma.planned.delete({ where: { id, userId } });
+  const existing = await prisma.planned.findFirst({ where: { id, ...plannedAccessFilter(userId) } });
+  if (!existing) throw new Error("No autorizado");
+  await prisma.planned.delete({ where: { id } });
   refresh();
 }
 
@@ -570,7 +580,11 @@ export async function applyPlannedConfirmation(
   // por el monto entero -- salvo que ya se haya pisado el monto a mano al confirmar.
   let amount = overrides?.amount ?? p.amount;
   if (p.shareGroupId && overrides?.amount === undefined) {
-    const yo = await prisma.shareMember.findFirst({ where: { groupId: p.shareGroupId, isMe: true } });
+    // "Mi parte" es relativa a quien es DUEÑO de este planificado (p.userId), no a quien lo está
+    // confirmando -- esto puede correr sin sesión (cron de autoconfirm), y el % preseteado del
+    // grupo sigue siendo el de la perspectiva de quien originalmente cargó el planificado.
+    const miMemberId = await resolveMyMemberInGroup(p.shareGroupId, p.userId);
+    const yo = miMemberId ? await prisma.shareMember.findUnique({ where: { id: miMemberId } }) : null;
     if (yo?.defaultPercent != null) amount = Math.round(p.amount * (yo.defaultPercent / 100) * 100) / 100;
   }
 
@@ -606,7 +620,7 @@ export async function applyPlannedConfirmation(
 
 export async function confirmPlanned(id: number) {
   const userId = await requireUserId();
-  const p = await prisma.planned.findFirst({ where: { id, userId }, include: { tags: true } });
+  const p = await prisma.planned.findFirst({ where: { id, ...plannedAccessFilter(userId) }, include: { tags: true } });
   if (!p) throw new Error("No existe");
   await applyPlannedConfirmation(p);
   refresh();
@@ -616,7 +630,7 @@ export async function confirmPlanned(id: number) {
 export async function confirmPlannedWithEdits(fd: FormData) {
   const userId = await requireUserId();
   const id = Number(fd.get("id"));
-  const p = await prisma.planned.findFirst({ where: { id, userId }, include: { tags: true } });
+  const p = await prisma.planned.findFirst({ where: { id, ...plannedAccessFilter(userId) }, include: { tags: true } });
   if (!p) throw new Error("No existe");
 
   const dateStr = String(fd.get("date") ?? "");
