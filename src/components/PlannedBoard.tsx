@@ -65,7 +65,23 @@ function TagPicker({ tags, initial }: { tags: TagOpt[]; initial: number[] }) {
   );
 }
 
-function Fields({ item, type, accounts, categories, tags, groups }: { item?: PlannedRow; type: string; accounts: AccountOpt[]; categories: CategoryOpt[]; tags: TagOpt[]; groups: ShareGroupOpt[] }) {
+function Fields({
+  item,
+  type,
+  accounts,
+  categories,
+  tags,
+  groups,
+  personas,
+}: {
+  item?: PlannedRow;
+  type: string;
+  accounts: AccountOpt[];
+  categories: CategoryOpt[];
+  tags: TagOpt[];
+  groups: ShareGroupOpt[];
+  personas: string[];
+}) {
   const kind = item?.type ?? type;
   const [includeInTelegram, setIncludeInTelegram] = useState(item?.includeInTelegram ?? true);
   const [description, setDescription] = useState(item?.description ?? "");
@@ -99,7 +115,19 @@ function Fields({ item, type, accounts, categories, tags, groups }: { item?: Pla
       </div>
       <div>
         <label className="label">{kind === "INCOME" ? "Quién me paga" : "A quién le pago"}</label>
-        <input name="counterparty" className="input" defaultValue={item?.counterparty} placeholder={kind === "INCOME" ? "Ej: Mi empleador" : "Ej: Metrogas"} />
+        <input
+          name="counterparty"
+          className="input"
+          list="personas-planificado"
+          autoComplete="off"
+          defaultValue={item?.counterparty}
+          placeholder={kind === "INCOME" ? "Ej: Mi empleador" : "Ej: Metrogas"}
+        />
+        <datalist id="personas-planificado">
+          {personas.map((p) => (
+            <option key={p} value={p} />
+          ))}
+        </datalist>
       </div>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div>
@@ -304,6 +332,7 @@ export default function PlannedBoard({
   categories,
   tags,
   groups,
+  personas,
   type,
   title,
   emptyText,
@@ -313,6 +342,7 @@ export default function PlannedBoard({
   categories: CategoryOpt[];
   tags: TagOpt[];
   groups: ShareGroupOpt[];
+  personas: string[];
   type: "INCOME" | "EXPENSE";
   title: string;
   emptyText: string;
@@ -361,7 +391,7 @@ export default function PlannedBoard({
           </Modal>
           <Modal title={`Editar ${p.description}`} triggerClassName="btn-icon" trigger={<Pencil size={15} />}>
             <ActionForm action={savePlanned}>
-              <Fields item={p} type={type} accounts={accounts} categories={categories} tags={tags} groups={groups} />
+              <Fields item={p} type={type} accounts={accounts} categories={categories} tags={tags} groups={groups} personas={personas} />
             </ActionForm>
           </Modal>
           <ConfirmButton action={async () => deletePlanned(p.id)} className="btn-icon hover:text-red-500" message="¿Eliminar este planificado?">
@@ -385,7 +415,7 @@ export default function PlannedBoard({
         <h2 className="font-bold">{title}</h2>
         <Modal title={type === "INCOME" ? "Nuevo ingreso previsto" : "Nuevo vencimiento"} triggerClassName="btn-ghost" trigger={<><Plus size={16} /> Nuevo</>}>
           <ActionForm action={savePlanned}>
-            <Fields type={type} accounts={accounts} categories={categories} tags={tags} groups={groups} />
+            <Fields type={type} accounts={accounts} categories={categories} tags={tags} groups={groups} personas={personas} />
           </ActionForm>
         </Modal>
       </div>
