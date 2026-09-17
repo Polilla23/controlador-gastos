@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition, type ReactNode } from "react";
+import { useRouter } from "next/navigation";
 import { useCloseModal } from "./Modal";
 
 /** Form that submits to a server action, shows errors, closes the enclosing modal and calls onDone on success. */
@@ -20,6 +21,7 @@ export default function ActionForm({
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
   const closeModal = useCloseModal();
+  const router = useRouter();
   return (
     <form
       className={className}
@@ -30,6 +32,9 @@ export default function ActionForm({
         start(async () => {
           try {
             await action(fd);
+            // Igual que en ConfirmButton/SavedFilters: llamar la acción directo no siempre alcanza
+            // para que la página actual se actualice sola con el revalidatePath del server.
+            router.refresh();
             closeModal();
             onDone?.();
           } catch (err) {

@@ -28,7 +28,7 @@ export default function RangePicker({ range, mobileExtra }: { range: Range; mobi
 
   return (
     <div className="flex w-full flex-wrap items-center justify-center gap-2 sm:w-auto sm:justify-start">
-      <div className="flex w-full items-center gap-2 sm:w-auto">
+      <div className={clsx("flex w-full items-center gap-2 sm:w-auto", !mobileExtra && "justify-center")}>
         <div className="flex h-9 items-center gap-0.5 rounded-xl border border-line bg-card px-1">
           {PRESETS.map((p) => (
             <button

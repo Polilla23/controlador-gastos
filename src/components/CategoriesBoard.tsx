@@ -146,8 +146,10 @@ export default function CategoriesBoard({ categories, kind, title }: { categorie
                         <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-white" style={{ background: c.color }}>
                           {c.iconBody && <Icono body={c.iconBody} size={12} />}
                         </span>
-                        <span className="truncate text-sm">{c.name}</span>
-                        {kind === "EXPENSE" && <span className="hidden shrink-0 text-xs text-muted sm:inline">· {NATURES[c.nature] ?? c.nature}</span>}
+                        <div className="min-w-0">
+                          <div className="truncate text-sm">{c.name}</div>
+                          {kind === "EXPENSE" && <div className="text-xs text-muted">{NATURES[c.nature] ?? c.nature}</div>}
+                        </div>
                       </div>
                       {actions(c)}
                     </div>

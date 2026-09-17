@@ -22,9 +22,19 @@ export default function SavedFilters({ filtros, scope }: { filtros: FiltroGuarda
   // Qué filtro está realmente activo ahora mismo, comparando contra la URL -- así el desplegable
   // no depende de "qué se clickeó" (que se puede desincronizar, ej. si StickyFilters restaura un
   // filtro solo al volver a entrar a la sección) sino de lo que de verdad está aplicado.
+  //
+  // tDesde/tHasta se ignoran en esta comparación a propósito: TrendRangeControl los persiste de
+  // forma independiente (a pedido explícito: "para siempre, hasta que yo lo vuelva a modificar",
+  // sin importar qué otro filtro se aplique) y los reinyecta solo con su propio efecto apenas
+  // detecta que faltan. Si esta comparación los tomara en cuenta, aplicar un filtro guardado sin
+  // tDesde/tHasta en su query (ej. "Sin tarjetas") funcionaba bien un instante, pero en cuanto
+  // TrendRangeControl los volvía a poner, el desplegable "perdía" el filtro elegido y volvía a
+  // mostrar "Mis filtros" -- aunque el filtro real (cuenta, etc.) seguía aplicado.
+  const IGNORED_KEYS = new Set(["tDesde", "tHasta"]);
   const coincide = (f: FiltroGuardado) => {
     const claves = Object.keys(f.query);
-    if ([...params.keys()].some((k) => !claves.includes(k))) return false;
+    const relevantes = [...params.keys()].filter((k) => !IGNORED_KEYS.has(k));
+    if (relevantes.some((k) => !claves.includes(k))) return false;
     return claves.every((k) => {
       const esperado = Array.isArray(f.query[k]) ? (f.query[k] as string[]) : [f.query[k] as string];
       const real = params.getAll(k);

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { CreditCard, Eye, EyeOff, Pencil, Plus, Trash2 } from "lucide-react";
 import ActionForm from "./ActionForm";
 import Modal from "./Modal";
@@ -131,6 +132,7 @@ function AccountFields({ account }: { account?: AccountRow }) {
 }
 
 export default function AccountsBoard({ accounts }: { accounts: AccountRow[] }) {
+  const router = useRouter();
   const [, start] = useTransition();
   return (
     <div className="card">
@@ -169,7 +171,7 @@ export default function AccountsBoard({ accounts }: { accounts: AccountRow[] }) 
                 type="button"
                 className="btn-icon"
                 title={a.includeInStats ? "Cuenta incluida en los indicadores" : "Cuenta excluida de los indicadores"}
-                onClick={() => start(() => toggleAccountStats(a.id, !a.includeInStats))}
+                onClick={() => start(async () => { await toggleAccountStats(a.id, !a.includeInStats); router.refresh(); })}
               >
                 {a.includeInStats ? <Eye size={16} /> : <EyeOff size={16} />}
               </button>

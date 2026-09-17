@@ -21,7 +21,7 @@ function Tarjeta({ g }: { g: GrupoRow }) {
           </p>
         </div>
       </div>
-      <div className="flex flex-wrap items-center gap-4">
+      <div className="flex flex-col items-end gap-1.5 sm:flex-row sm:items-center sm:gap-4">
         <div className="text-right">
           <div className="text-xs text-muted">Total del grupo</div>
           <div className="text-lg font-bold">{money(g.total, g.currency)}</div>

@@ -99,47 +99,52 @@ export function CategoryDonut({ slices, currency, empty }: { slices: Slice[]; cu
 
   return (
     <>
-      <div className="mt-2 flex flex-col items-center gap-4 sm:flex-row">
-        <div className="h-40 w-40 shrink-0">
-          <ResponsiveContainer>
-            <PieChart>
-              <Pie
-                data={slices}
-                dataKey="value"
-                nameKey="name"
-                innerRadius={46}
-                outerRadius={72}
-                paddingAngle={2}
-                stroke="none"
-                onClick={(_, i) => setOpen(slices[i])}
-                className="cursor-pointer outline-none"
-              >
-                {slices.map((c) => (
-                  <Cell key={c.id} fill={c.color} />
-                ))}
-              </Pie>
-              <Tooltip content={<ChartTooltip currency={currency} />} />
-            </PieChart>
-          </ResponsiveContainer>
-        </div>
-        <ul className="w-full min-w-0 flex-1 space-y-1.5 text-sm">
-          {slices.slice(0, 6).map((c) => (
-            <li key={c.id} className="min-w-0">
-              <button type="button" onClick={() => setOpen(c)} className="flex w-full min-w-0 items-center justify-between gap-2 rounded-lg px-1.5 py-1 text-left transition hover:bg-subtle">
-                <span className="flex min-w-0 items-center gap-2">
-                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-white" style={{ background: c.color }}>
-                    {c.iconBody ? <Icono body={c.iconBody} size={12} /> : null}
+      {/* h-full + justify-center: cuando la card se estira más alta que el contenido (el donut +
+          hasta 6 categorías tienen una altura fija), esto lo mantiene centrado en el medio de la
+          card en vez de pegado arriba con espacio vacío abajo. */}
+      <div className="flex h-full flex-col items-center justify-center">
+        <div className="flex w-full flex-col items-center gap-4 sm:flex-row">
+          <div className="h-40 w-40 shrink-0">
+            <ResponsiveContainer>
+              <PieChart>
+                <Pie
+                  data={slices}
+                  dataKey="value"
+                  nameKey="name"
+                  innerRadius={46}
+                  outerRadius={72}
+                  paddingAngle={2}
+                  stroke="none"
+                  onClick={(_, i) => setOpen(slices[i])}
+                  className="cursor-pointer outline-none"
+                >
+                  {slices.map((c) => (
+                    <Cell key={c.id} fill={c.color} />
+                  ))}
+                </Pie>
+                <Tooltip content={<ChartTooltip currency={currency} />} />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+          <ul className="w-full min-w-0 flex-1 space-y-1.5 text-sm">
+            {slices.slice(0, 6).map((c) => (
+              <li key={c.id} className="min-w-0">
+                <button type="button" onClick={() => setOpen(c)} className="flex w-full min-w-0 items-center justify-between gap-2 rounded-lg px-1.5 py-1 text-left transition hover:bg-subtle">
+                  <span className="flex min-w-0 items-center gap-2">
+                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-white" style={{ background: c.color }}>
+                      {c.iconBody ? <Icono body={c.iconBody} size={12} /> : null}
+                    </span>
+                    <span className="truncate">{c.name}</span>
                   </span>
-                  <span className="truncate">{c.name}</span>
-                </span>
-                <span className="flex shrink-0 items-center gap-1 text-muted">
-                  {Math.round((c.value / total) * 100)}%
-                  {c.children.length > 1 && <ChevronRight size={13} />}
-                </span>
-              </button>
-            </li>
-          ))}
-        </ul>
+                  <span className="flex shrink-0 items-center gap-1 text-muted">
+                    {Math.round((c.value / total) * 100)}%
+                    <ChevronRight size={13} />
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
       </div>
 
       {open &&

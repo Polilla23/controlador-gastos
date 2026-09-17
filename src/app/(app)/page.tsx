@@ -62,15 +62,19 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
             grababa sin querer esa exclusión como el default permanente de la cuenta.
             Esta instancia (fuera del RangePicker) sólo se ve en desktop -- en mobile el mismo
             botón vive dentro de RangePicker, al lado de Día/Semana/Mes/Año/Rango. */}
-        <DashboardConfig
-          cards={prefs.cards}
-          cardsMobile={prefs.cardsMobile}
-          accounts={data.accounts.map((a) => ({ id: a.id, name: a.name, currency: a.currency, color: a.color, selected: prefs.accountIds.includes(a.id) }))}
-          triggerClassName="btn-ghost h-9 hidden sm:inline-flex"
-        />
-        <Modal title="Nuevo registro" triggerClassName="btn-primary hidden md:inline-flex" trigger={<><Plus size={16} /> Nuevo registro</>}>
-          <TransactionForm accounts={data.accounts} categories={categories} tags={tags} budgets={budgets} quotes={quotes} />
-        </Modal>
+        {/* Personalizar y Nuevo registro van agrupados en su propio flex: así, si el header no
+            entra en una sola línea y algo tiene que bajar de renglón, bajan juntos -- Nuevo
+            registro nunca queda solo, separado de Personalizar, debajo del selector de período. */}
+        <div className="hidden items-center gap-2 sm:flex">
+          <DashboardConfig
+            cards={prefs.cards}
+            cardsMobile={prefs.cardsMobile}
+            accounts={data.accounts.map((a) => ({ id: a.id, name: a.name, currency: a.currency, color: a.color, selected: prefs.accountIds.includes(a.id) }))}
+          />
+          <Modal title="Nuevo registro" triggerClassName="btn-primary hidden md:inline-flex" trigger={<><Plus size={16} /> Nuevo registro</>}>
+            <TransactionForm accounts={data.accounts} categories={categories} tags={tags} budgets={budgets} quotes={quotes} />
+          </Modal>
+        </div>
       </PageHeader>
 
       <DashboardCards data={data} cards={prefs.cards} cardsMobile={prefs.cardsMobile} sizes={prefs.sizes} sizesMobile={prefs.sizesMobile} />
