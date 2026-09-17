@@ -9,7 +9,17 @@ import { Sortable } from "./ui";
 type AccountOpt = { id: number; name: string; currency: string; color: string; selected: boolean };
 
 /** Lets the user pick which cards appear on the dashboard, in what order, and which accounts feed them. Web y celular se ordenan por separado. */
-export default function DashboardConfig({ cards, cardsMobile, accounts }: { cards: string[]; cardsMobile: string[]; accounts: AccountOpt[] }) {
+export default function DashboardConfig({
+  cards,
+  cardsMobile,
+  accounts,
+  triggerClassName = "btn-ghost h-9",
+}: {
+  cards: string[];
+  cardsMobile: string[];
+  accounts: AccountOpt[];
+  triggerClassName?: string;
+}) {
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<"desktop" | "mobile">("desktop");
   const [sel, setSel] = useState(cards);
@@ -31,7 +41,7 @@ export default function DashboardConfig({ cards, cardsMobile, accounts }: { card
 
   return (
     <>
-      <button type="button" className="btn-ghost h-9" onClick={() => setOpen(true)}>
+      <button type="button" className={triggerClassName} onClick={() => setOpen(true)}>
         <SlidersHorizontal size={16} /> <span className="hidden sm:inline">Personalizar</span>
       </button>
 

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Bell, CalendarDays, KeyRound, MessageCircle, RefreshCw, Send, Smartphone, Trash2, Unlink, Upload, UserRound } from "lucide-react";
+import { Bell, BookOpen, CalendarDays, KeyRound, MessageCircle, RefreshCw, Send, Smartphone, Trash2, Unlink, Upload, UserRound } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { disconnectGoogleCalendar, regenerateTelegramCode, saveNotificationPrefs, unlinkTelegram } from "@/lib/actions";
@@ -259,9 +259,14 @@ async function renderPerfil(user: Awaited<ReturnType<typeof requireUser>>) {
             <Upload size={18} className="text-brand-500" /> Importar desde CSV
           </h2>
           <p className="mb-3 text-sm text-muted">Traé tus movimientos de otra app (por ejemplo, Wallet) desde un archivo CSV, mapeando columnas y corrigiendo valores.</p>
-          <Link href="/perfil/importar" className="btn-primary">
-            <Upload size={14} /> Importar CSV
-          </Link>
+          <div className="flex flex-wrap items-center gap-2">
+            <Link href="/perfil/importar" className="btn-primary">
+              <Upload size={14} /> Importar CSV
+            </Link>
+            <a href="https://claude.ai/code/artifact/dffa4f21-6909-4193-b47c-fd4a3c53ab5e" target="_blank" rel="noreferrer" className="btn-ghost">
+              <BookOpen size={14} /> Instructivo
+            </a>
+          </div>
         </section>
 
         <section className="card">

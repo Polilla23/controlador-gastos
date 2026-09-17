@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition, type ReactNode } from "react";
+import { useEffect, useState, useTransition, type ReactNode } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -291,6 +291,39 @@ function Pronostico({ d }: { d: Dashboard }) {
   );
 }
 
+/**
+ * Cuánto mostrar de una lista recortada ("Ver más"/"Ver menos"), persistido en localStorage por
+ * card: una vez que el usuario pide ver más registros, eso queda así hasta que lo cambie de
+ * nuevo -- no se resetea al navegar y volver. Arranca en `initial` en el primer render (server y
+ * cliente coinciden, sin hydration mismatch) y el efecto ajusta apenas monta si hay algo guardado.
+ */
+function usePersistedShown(key: string, initial: number): [number, (n: number) => void] {
+  const [shown, setShown] = useState(initial);
+  useEffect(() => {
+    try {
+      const saved = Number(localStorage.getItem(`verMas:${key}`));
+      // Ajusta después del primer render (no en el initializer de useState) a propósito: leer
+      // localStorage durante el render chocaría con el HTML ya generado en el server (que no
+      // tiene acceso a localStorage), y produciría un hydration mismatch.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      if (saved > initial) setShown(saved);
+    } catch {
+      // ignorar
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const update = (n: number) => {
+    setShown(n);
+    try {
+      if (n <= initial) localStorage.removeItem(`verMas:${key}`);
+      else localStorage.setItem(`verMas:${key}`, String(n));
+    } catch {
+      // ignorar
+    }
+  };
+  return [shown, update];
+}
+
 /** Botones debajo de una lista recortada: pedir más de a un poco, o volver al tamaño inicial sin recargar la página. */
 function VerMas({ total, shown, initial, step, onMore, onLess }: { total: number; shown: number; initial: number; step: number; onMore: () => void; onLess: () => void }) {
   const hayMas = shown < total;
@@ -313,7 +346,7 @@ function VerMas({ total, shown, initial, step, onMore, onLess }: { total: number
 }
 
 function ProximosPagos({ d }: { d: Dashboard }) {
-  const [shown, setShown] = useState(6);
+  const [shown, setShown] = usePersistedShown("proximosPagos", 6);
   if (!d.planned.length)
     return (
       <div className="py-6 text-center">
@@ -352,7 +385,7 @@ function ProximosPagos({ d }: { d: Dashboard }) {
         );
       })}
     </ul>
-    <VerMas total={d.planned.length} shown={shown} initial={6} step={6} onMore={() => setShown((s) => s + 6)} onLess={() => setShown(6)} />
+    <VerMas total={d.planned.length} shown={shown} initial={6} step={6} onMore={() => setShown(shown + 6)} onLess={() => setShown(6)} />
     </>
   );
 }
@@ -432,7 +465,7 @@ function Tarjetas({ d }: { d: Dashboard }) {
 }
 
 function Cuotas({ d }: { d: Dashboard }) {
-  const [shown, setShown] = useState(5);
+  const [shown, setShown] = usePersistedShown("cuotas", 5);
   if (!d.plans.length)
     return (
       <div className="py-6 text-center">
@@ -464,7 +497,7 @@ function Cuotas({ d }: { d: Dashboard }) {
         </li>
       ))}
     </ul>
-    <VerMas total={d.plans.length} shown={shown} initial={5} step={5} onMore={() => setShown((s) => s + 5)} onLess={() => setShown(5)} />
+    <VerMas total={d.plans.length} shown={shown} initial={5} step={5} onMore={() => setShown(shown + 5)} onLess={() => setShown(5)} />
     </>
   );
 }
@@ -499,7 +532,7 @@ function Libro({ d }: { d: Dashboard }) {
 }
 
 function Movimientos({ d }: { d: Dashboard }) {
-  const [shown, setShown] = useState(8);
+  const [shown, setShown] = usePersistedShown("movimientos", 8);
   if (!d.recent.length) return <Empty>Todavía no hay movimientos.</Empty>;
   return (
     <>
@@ -527,7 +560,7 @@ function Movimientos({ d }: { d: Dashboard }) {
         </li>
       ))}
     </ul>
-    <VerMas total={d.recent.length} shown={shown} initial={8} step={8} onMore={() => setShown((s) => s + 8)} onLess={() => setShown(8)} />
+    <VerMas total={d.recent.length} shown={shown} initial={8} step={8} onMore={() => setShown(shown + 8)} onLess={() => setShown(8)} />
     </>
   );
 }
@@ -726,7 +759,7 @@ function CardsGrid({
             {rendered && (
               <>
                 <div className="shrink-0 pb-1.5">{rendered.header}</div>
-                <div className="dash-card-scroll min-h-0 flex-1 overflow-y-auto pb-1">{rendered.body}</div>
+                <div className="dash-card-scroll min-h-0 flex-1 overflow-y-auto pb-1 pr-2">{rendered.body}</div>
               </>
             )}
           </div>

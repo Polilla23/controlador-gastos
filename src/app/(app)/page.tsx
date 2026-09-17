@@ -43,10 +43,31 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
     <>
       <StickyFilters scope="DASHBOARD" />
       <PageHeader title="Resumen" subtitle="Tu situación financiera de un vistazo" sticky>
-        <RangePicker range={range} />
+        <RangePicker
+          range={range}
+          mobileExtra={
+            <DashboardConfig
+              cards={prefs.cards}
+              cardsMobile={prefs.cardsMobile}
+              accounts={data.accounts.map((a) => ({ id: a.id, name: a.name, currency: a.currency, color: a.color, selected: prefs.accountIds.includes(a.id) }))}
+            />
+          }
+        />
         <DashboardTagFilter tags={tags} selected={tagId} />
         <SavedFilters filtros={filtros.map((f) => ({ id: f.id, name: f.name, query: f.query as Record<string, string | string[]> }))} scope="DASHBOARD" />
-        <DashboardConfig cards={prefs.cards} cardsMobile={prefs.cardsMobile} accounts={data.accounts.map((a) => ({ id: a.id, name: a.name, currency: a.currency, color: a.color, selected: a.selected }))} />
+        {/* "selected" tiene que salir de lo que está persistido en Personalizar (prefs.accountIds),
+            no de `data.accounts[i].selected` -- ese último refleja la vista ACTUAL, que puede estar
+            recortada por un filtro guardado (ej. "Sin tarjetas") aplicado sólo por la URL. Si se
+            usara ese valor acá, abrir Personalizar mientras un filtro así está activo y guardar
+            grababa sin querer esa exclusión como el default permanente de la cuenta.
+            Esta instancia (fuera del RangePicker) sólo se ve en desktop -- en mobile el mismo
+            botón vive dentro de RangePicker, al lado de Día/Semana/Mes/Año/Rango. */}
+        <DashboardConfig
+          cards={prefs.cards}
+          cardsMobile={prefs.cardsMobile}
+          accounts={data.accounts.map((a) => ({ id: a.id, name: a.name, currency: a.currency, color: a.color, selected: prefs.accountIds.includes(a.id) }))}
+          triggerClassName="btn-ghost h-9 hidden sm:inline-flex"
+        />
         <Modal title="Nuevo registro" triggerClassName="btn-primary hidden md:inline-flex" trigger={<><Plus size={16} /> Nuevo registro</>}>
           <TransactionForm accounts={data.accounts} categories={categories} tags={tags} budgets={budgets} quotes={quotes} />
         </Modal>

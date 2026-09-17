@@ -2,7 +2,7 @@
 
 import { useRouter, usePathname } from "next/navigation";
 import { ChevronLeft, ChevronRight, CalendarRange } from "lucide-react";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import clsx from "clsx";
 import { shiftRange, toInputDate, type Range } from "@/lib/format";
 
@@ -14,8 +14,13 @@ const PRESETS: { key: Range["preset"]; label: string }[] = [
   { key: "rango", label: "Rango" },
 ];
 
-/** Period selector shared by the dashboard and the transactions list. */
-export default function RangePicker({ range }: { range: Range }) {
+/**
+ * Period selector shared by the dashboard and the transactions list. `mobileExtra` es un slot
+ * opcional (usado por Resumen para el botón de "Personalizar") que se muestra sólo en mobile, a
+ * la derecha de los botones de Día/Semana/Mes/Año/Rango -- forzando ese renglón a su propia línea
+ * para que el label del período quede debajo, tal como se ve en desktop no cambia nada.
+ */
+export default function RangePicker({ range, mobileExtra }: { range: Range; mobileExtra?: ReactNode }) {
   const router = useRouter();
   const path = usePathname();
   const [open, setOpen] = useState(false);
@@ -23,17 +28,20 @@ export default function RangePicker({ range }: { range: Range }) {
 
   return (
     <div className="flex w-full flex-wrap items-center justify-center gap-2 sm:w-auto sm:justify-start">
-      <div className="flex h-9 items-center gap-0.5 rounded-xl border border-line bg-card px-1">
-        {PRESETS.map((p) => (
-          <button
-            key={p.key}
-            type="button"
-            onClick={() => (p.key === "rango" ? setOpen(true) : go(new URLSearchParams({ preset: p.key, ancla: range.anchor }).toString()))}
-            className={clsx("rounded-lg px-2.5 py-1 text-xs font-semibold transition", range.preset === p.key ? "bg-brand-500 text-white" : "text-muted hover:bg-subtle")}
-          >
-            {p.label}
-          </button>
-        ))}
+      <div className="flex w-full items-center gap-2 sm:w-auto">
+        <div className="flex h-9 items-center gap-0.5 rounded-xl border border-line bg-card px-1">
+          {PRESETS.map((p) => (
+            <button
+              key={p.key}
+              type="button"
+              onClick={() => (p.key === "rango" ? setOpen(true) : go(new URLSearchParams({ preset: p.key, ancla: range.anchor }).toString()))}
+              className={clsx("rounded-lg px-2.5 py-1 text-xs font-semibold transition", range.preset === p.key ? "bg-brand-500 text-white" : "text-muted hover:bg-subtle")}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+        {mobileExtra && <div className="ml-auto sm:hidden">{mobileExtra}</div>}
       </div>
 
       <div className="flex h-9 items-center gap-1 rounded-xl border border-line bg-card px-1">
