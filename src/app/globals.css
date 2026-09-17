@@ -54,8 +54,15 @@ body {
 }
 
 @layer components {
+  /* min-w-0: sin esto, cuando una `.card` es hija directa de un `.grid` (Planificados, Deudas,
+     Categorías, etc.) el navegador NO la achica por debajo del ancho mínimo de su contenido
+     (comportamiento por defecto de los ítems de grid, min-width:auto) -- en mobile, con una sola
+     columna implícita, eso hace que la card (y todo lo de adentro) se estire más ancha que la
+     pantalla y haya que hacer zoom out para ver el resto. Confirmado midiendo en vivo: el grid
+     container medía 325px pero el track calculado terminaba en 481px por esto. min-w-0 no cambia
+     nada fuera de un contexto flex/grid, así que es seguro en cualquier otro lado que se use `.card`. */
   .card {
-    @apply rounded-2xl border border-line bg-card p-4 shadow-sm sm:p-5;
+    @apply min-w-0 rounded-2xl border border-line bg-card p-4 shadow-sm sm:p-5;
   }
   .btn {
     @apply inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition disabled:opacity-50;
