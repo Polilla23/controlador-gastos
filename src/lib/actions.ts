@@ -325,7 +325,9 @@ export async function saveTransaction(fd: FormData) {
     toAccountId: d.type === "TRANSFER" ? d.toAccountId : null,
     toAmount: d.type === "TRANSFER" ? d.toAmount : null,
     fxRate: d.type === "TRANSFER" ? d.fxRate : null,
-    categoryId: d.type === "TRANSFER" ? null : d.categoryId,
+    // Una transferencia también puede tener categoría (ej. "Ahorro", "Pago de tarjeta") -- no hay
+    // motivo para forzarla a null sólo por ser TRANSFER.
+    categoryId: d.categoryId,
     budgetId,
   };
 

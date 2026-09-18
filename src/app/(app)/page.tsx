@@ -65,7 +65,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
         {/* Personalizar y Nuevo registro van agrupados en su propio flex, después de "Mis filtros"
             -- orden pedido: Día/Semana/Mes/Año/Rango, período, etiquetas, Mis filtros, Personalizar,
             Nuevo registro, todo en la misma línea. Si no entra y algo baja de renglón, bajan juntos. */}
-        <div className="hidden items-center gap-2 sm:flex">
+        <div className="hidden items-center gap-1.5 sm:flex">
           <DashboardConfig
             cards={prefs.cards}
             cardsMobile={prefs.cardsMobile}

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Pencil, Plus, Trash2 } from "lucide-react";
+import { Pencil, Trash2 } from "lucide-react";
 import ActionForm from "./ActionForm";
 import Modal from "./Modal";
 import ConfirmButton from "./ConfirmButton";
@@ -100,8 +100,8 @@ function CamposFiltro({
   );
 }
 
-/** Crear un filtro nuevo desde el Maestro de Filtros, eligiendo a mano para qué sección es. */
-function NuevoFiltro({ accounts, categories, tags }: { accounts: AccountOpt[]; categories: CategoryOpt[]; tags: TagOpt[] }) {
+/** Crear un filtro nuevo desde el Maestro de Filtros, eligiendo a mano para qué sección es. Se usa desde el header de la página (filtros/page.tsx), no desde adentro de la card de la lista. */
+export function NuevoFiltro({ accounts, categories, tags }: { accounts: AccountOpt[]; categories: CategoryOpt[]; tags: TagOpt[] }) {
   const [scope, setScope] = useState("TX");
   return (
     <ActionForm action={createFilter} submitLabel="Crear filtro">
@@ -134,12 +134,6 @@ export default function FiltersBoard({
 }) {
   return (
     <div className="card">
-      <div className="mb-4 flex justify-end">
-        <Modal title="Nuevo filtro" trigger={<><Plus size={16} /> Nuevo filtro</>}>
-          <NuevoFiltro accounts={accounts} categories={categories} tags={tags} />
-        </Modal>
-      </div>
-
       {filters.length === 0 && <p className="py-8 text-center text-sm text-muted">Todavía no guardaste ningún filtro.</p>}
       <ul className="divide-y divide-line">
         {filters.map((f) => (

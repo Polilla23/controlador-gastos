@@ -216,12 +216,12 @@ export default function TransactionForm({
           {/* Mandamos el instante absoluto: el servidor corre en UTC y no debe reinterpretar la hora. */}
           <input type="hidden" name="date" value={date ? parseInput(date).toISOString() : ""} />
         </div>
-        {type !== "TRANSFER" && (
-          <div>
-            <label className="label">Categoría</label>
-            <CategorySelect categories={categories} kind={type} defaultValue={initial?.categoryId} />
-          </div>
-        )}
+        <div>
+          <label className="label">Categoría</label>
+          {/* Una transferencia no es ingreso ni egreso, así que no tiene sentido filtrar por "kind"
+              como en los otros dos tipos -- se puede elegir cualquier categoría (ej. "Ahorro"). */}
+          <CategorySelect categories={categories} kind={type === "TRANSFER" ? undefined : type} defaultValue={initial?.categoryId} />
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">

@@ -16,7 +16,11 @@ export default function PageHeader({ title, subtitle, children, sticky = false }
         <h1 className="text-xl font-bold sm:text-2xl">{title}</h1>
         {subtitle && <p className="text-sm text-muted">{subtitle}</p>}
       </div>
-      {children && <div className="flex w-full flex-wrap items-center gap-2 max-sm:justify-center sm:w-auto">{children}</div>}
+      {/* gap-1.5 en vez de gap-2: en Resumen, con Día/Semana/Mes/Año/Rango + período + etiquetas +
+          Mis filtros + Personalizar + Nuevo registro todos juntos, unos pocos px de más hacían que
+          el último grupo (Personalizar/Nuevo registro) se cayera solo a su propio renglón aunque
+          "casi" entraba en una pantalla de escritorio normal. */}
+      {children && <div className="flex w-full flex-wrap items-center gap-1.5 max-sm:justify-center sm:w-auto">{children}</div>}
     </div>
   );
 }

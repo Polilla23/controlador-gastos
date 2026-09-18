@@ -1,7 +1,9 @@
+import { Plus } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { requireUserId } from "@/lib/auth";
 import PageHeader from "@/components/PageHeader";
-import FiltersBoard from "@/components/FiltersBoard";
+import Modal from "@/components/Modal";
+import FiltersBoard, { NuevoFiltro } from "@/components/FiltersBoard";
 
 export default async function FiltrosPage() {
   const userId = await requireUserId();
@@ -14,7 +16,11 @@ export default async function FiltrosPage() {
 
   return (
     <>
-      <PageHeader title="Filtros" subtitle="Todos los filtros que guardaste en Transacciones y en Resumen, en un solo lugar" />
+      <PageHeader title="Filtros" subtitle="Todos los filtros que guardaste en Transacciones y en Resumen, en un solo lugar">
+        <Modal title="Nuevo filtro" trigger={<><Plus size={16} /> Nuevo filtro</>}>
+          <NuevoFiltro accounts={accounts} categories={categories} tags={tags} />
+        </Modal>
+      </PageHeader>
       <FiltersBoard
         filters={filters.map((f) => ({ id: f.id, name: f.name, scope: f.scope, query: f.query as Record<string, string | string[]> }))}
         accounts={accounts}
