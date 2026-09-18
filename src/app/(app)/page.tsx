@@ -54,7 +54,6 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
           }
         />
         <DashboardTagFilter tags={tags} selected={tagId} />
-        <SavedFilters filtros={filtros.map((f) => ({ id: f.id, name: f.name, query: f.query as Record<string, string | string[]> }))} scope="DASHBOARD" />
         {/* "selected" tiene que salir de lo que está persistido en Personalizar (prefs.accountIds),
             no de `data.accounts[i].selected` -- ese último refleja la vista ACTUAL, que puede estar
             recortada por un filtro guardado (ej. "Sin tarjetas") aplicado sólo por la URL. Si se
@@ -62,9 +61,9 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
             grababa sin querer esa exclusión como el default permanente de la cuenta.
             Esta instancia (fuera del RangePicker) sólo se ve en desktop -- en mobile el mismo
             botón vive dentro de RangePicker, al lado de Día/Semana/Mes/Año/Rango. */}
-        {/* Personalizar y Nuevo registro van agrupados en su propio flex: así, si el header no
-            entra en una sola línea y algo tiene que bajar de renglón, bajan juntos -- Nuevo
-            registro nunca queda solo, separado de Personalizar, debajo del selector de período. */}
+        {/* Personalizar y Nuevo registro van agrupados en su propio flex, y ANTES de "Mis filtros"
+            (a pedido explícito: los dos a la izquierda de Mis filtros, todo en la misma línea) --
+            si el header no entra en una sola línea y algo tiene que bajar de renglón, bajan juntos. */}
         <div className="hidden items-center gap-2 sm:flex">
           <DashboardConfig
             cards={prefs.cards}
@@ -75,6 +74,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
             <TransactionForm accounts={data.accounts} categories={categories} tags={tags} budgets={budgets} quotes={quotes} />
           </Modal>
         </div>
+        <SavedFilters filtros={filtros.map((f) => ({ id: f.id, name: f.name, query: f.query as Record<string, string | string[]> }))} scope="DASHBOARD" />
       </PageHeader>
 
       <DashboardCards data={data} cards={prefs.cards} cardsMobile={prefs.cardsMobile} sizes={prefs.sizes} sizesMobile={prefs.sizesMobile} />

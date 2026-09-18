@@ -1,6 +1,8 @@
 import { APP_TZ, addDays, addMonths, civil, fromCivil, isoDay, isoDayTime, monthKey as tzMonthKey, startOfDay, startOfMonth, startOfWeek, startOfYear } from "./tz";
 
 export const CURRENCIES = ["ARS", "USD", "EUR", "BRL"] as const;
+/** Valor especial para filtros de categoría/etiqueta/persona/descripción: "quiero los registros que NO tienen esto asignado", no un id real. */
+export const EMPTY_FILTER = "__vacio__";
 export const ACCOUNT_TYPES: Record<string, string> = {
   CASH: "Efectivo",
   BANK: "Cuenta bancaria",

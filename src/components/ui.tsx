@@ -44,10 +44,23 @@ export function Sortable<T extends { id: number | string }>({
 }) {
   const [order, setOrder] = useState(items);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }), useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }));
-  // Keep in sync when the server sends a different list (add/delete).
   const ids = order.map((i) => String(i.id));
   const incoming = items.map((i) => String(i.id));
-  if (incoming.length !== ids.length || incoming.some((id) => !ids.includes(id))) setOrder(items);
+  if (incoming.length !== ids.length || incoming.some((id) => !ids.includes(id))) {
+    // Se agregó o sacó algo (ej. un integrante nuevo, una cuenta borrada): el orden entero viene
+    // de nuevo del server.
+    setOrder(items);
+  } else {
+    // Mismo conjunto de ids -- pero algún campo de un item puede haber cambiado igual (ej. tildar
+    // el ojito de "sumar a indicadores", editar un nombre) sin que se haya tocado el orden. Antes
+    // esto se ignoraba del todo (sólo se resincronizaba si cambiaba el CONJUNTO de ids), así que
+    // cualquier cambio de contenido en un item ya listado en `order` quedaba pisado por el estado
+    // local viejo hasta que se recargaba la página a mano. Se refresca el CONTENIDO manteniendo el
+    // ORDEN actual (evita que la lista "salte" apenas se suelta un drag).
+    const byId = new Map(items.map((i) => [String(i.id), i]));
+    const refrescado = ids.map((id) => byId.get(id)!);
+    if (JSON.stringify(refrescado) !== JSON.stringify(order)) setOrder(refrescado);
+  }
 
   const onDragEnd = ({ active, over }: DragEndEvent) => {
     if (!over || active.id === over.id) return;

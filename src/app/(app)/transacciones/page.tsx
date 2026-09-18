@@ -1,8 +1,8 @@
-import { Plus, Search } from "lucide-react";
+import { Plus } from "lucide-react";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireUserId } from "@/lib/auth";
-import { accountLabel, money, resolveRange, TX_TYPES } from "@/lib/format";
+import { accountLabel, money, resolveRange, EMPTY_FILTER, TX_TYPES } from "@/lib/format";
 import { statementLabel } from "@/lib/tarjetas";
 import PageHeader from "@/components/PageHeader";
 import RangePicker from "@/components/RangePicker";
@@ -11,6 +11,7 @@ import TransactionForm from "@/components/TransactionForm";
 import TransactionsTable from "@/components/TransactionsTable";
 import SavedFilters from "@/components/SavedFilters";
 import MultiSelectFilter from "@/components/MultiSelectFilter";
+import TextOrEmptyFilter from "@/components/TextOrEmptyFilter";
 import StickyFilters from "@/components/StickyFilters";
 import { cotizaciones } from "@/lib/cotizaciones";
 
@@ -24,25 +25,44 @@ export default async function TransaccionesPage({ searchParams }: { searchParams
   const range = resolveRange(sp as Record<string, string | undefined>);
 
   const cuentaIds = asList(sp.cuenta).map(Number).filter((n) => !Number.isNaN(n));
-  const categoriaIds = asList(sp.categoria).map(Number).filter((n) => !Number.isNaN(n));
-  const etiquetaIds = asList(sp.etiqueta).map(Number).filter((n) => !Number.isNaN(n));
-  const persona = asOne(sp.persona) ?? "";
+  const categoriaRaw = asList(sp.categoria);
+  const categoriaIds = categoriaRaw.map(Number).filter((n) => !Number.isNaN(n));
+  const categoriaVacia = categoriaRaw.includes(EMPTY_FILTER);
+  const etiquetaRaw = asList(sp.etiqueta);
+  const etiquetaIds = etiquetaRaw.map(Number).filter((n) => !Number.isNaN(n));
+  const etiquetaVacia = etiquetaRaw.includes(EMPTY_FILTER);
+  const personaRaw = asOne(sp.persona) ?? "";
+  const personaVacia = personaRaw === EMPTY_FILTER;
+  const persona = personaVacia ? "" : personaRaw;
+  const qRaw = asOne(sp.q) ?? "";
+  const descripcionVacia = qRaw === EMPTY_FILTER;
   const resumen = asOne(sp.resumen);
 
+  // Cada condición que necesita un OR interno (ej. "categoría X o sin categoría") se junta acá en
+  // vez de pisar `where.OR` directo, porque puede haber más de una a la vez (categoría, etiqueta y
+  // la búsqueda de texto son independientes entre sí).
+  const and: Prisma.TransactionWhereInput[] = [];
   const where: Prisma.TransactionWhereInput = { userId, date: { gte: range.start, lt: range.end } };
   if (sp.tipo) where.type = asOne(sp.tipo);
   if (cuentaIds.length === 1) where.accountId = cuentaIds[0];
   else if (cuentaIds.length > 1) where.accountId = { in: cuentaIds };
-  if (categoriaIds.length === 1) where.categoryId = categoriaIds[0];
+
+  if (categoriaVacia && categoriaIds.length) and.push({ OR: [{ categoryId: { in: categoriaIds } }, { categoryId: null }] });
+  else if (categoriaVacia) where.categoryId = null;
+  else if (categoriaIds.length === 1) where.categoryId = categoriaIds[0];
   else if (categoriaIds.length > 1) where.categoryId = { in: categoriaIds };
-  if (etiquetaIds.length === 1) where.tags = { some: { id: etiquetaIds[0] } };
+
+  if (etiquetaVacia && etiquetaIds.length) and.push({ OR: [{ tags: { some: { id: { in: etiquetaIds } } } }, { tags: { none: {} } }] });
+  else if (etiquetaVacia) where.tags = { none: {} };
+  else if (etiquetaIds.length === 1) where.tags = { some: { id: etiquetaIds[0] } };
   else if (etiquetaIds.length > 1) where.tags = { some: { id: { in: etiquetaIds } } };
-  if (persona) where.counterparty = { contains: persona, mode: "insensitive" };
+
+  if (personaVacia) where.counterparty = "";
+  else if (persona) where.counterparty = { contains: persona, mode: "insensitive" };
   if (resumen) where.statementMonth = resumen;
-  if (sp.q) {
-    const q = asOne(sp.q)!;
-    where.OR = [{ description: { contains: q, mode: "insensitive" } }, { note: { contains: q, mode: "insensitive" } }];
-  }
+  if (descripcionVacia) where.description = "";
+  else if (qRaw) and.push({ OR: [{ description: { contains: qRaw, mode: "insensitive" } }, { note: { contains: qRaw, mode: "insensitive" } }] });
+  if (and.length) where.AND = and;
 
   const [rows, accounts, categories, tags, filtros, previos, budgets] = await Promise.all([
     prisma.transaction.findMany({
@@ -126,22 +146,13 @@ export default async function TransaccionesPage({ searchParams }: { searchParams
             <input type="hidden" name="hasta" value={new Date(range.end.getTime() - 86400000).toISOString().slice(0, 10)} />
           </>
         )}
-        <div>
-          <label className="label">Buscar</label>
-          <div className="relative">
-            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
-            <input name="q" className="input pl-9" defaultValue={asOne(sp.q) ?? ""} placeholder="Descripción o nota" />
-          </div>
-        </div>
-        <div>
-          <label className="label">Persona</label>
-          <input name="persona" list="personas-conocidas" className="input" defaultValue={persona} placeholder="Nombre o apellido" />
-          <datalist id="personas-conocidas">
-            {counterparties.map((c) => (
-              <option key={c} value={c} />
-            ))}
-          </datalist>
-        </div>
+        <TextOrEmptyFilter name="q" label="Buscar" initial={qRaw} placeholder="Descripción o nota" />
+        <TextOrEmptyFilter name="persona" label="Persona" initial={personaRaw} placeholder="Nombre o apellido" list="personas-conocidas" />
+        <datalist id="personas-conocidas">
+          {counterparties.map((c) => (
+            <option key={c} value={c} />
+          ))}
+        </datalist>
         <div>
           <label className="label">Tipo</label>
           <select name="tipo" className="input" defaultValue={asOne(sp.tipo) ?? ""}>
@@ -162,13 +173,21 @@ export default async function TransaccionesPage({ searchParams }: { searchParams
         <MultiSelectFilter
           name="categoria"
           label="Categoría"
-          initial={categoriaIds}
-          options={categories
-            .slice()
-            .sort((a, b) => a.name.localeCompare(b.name, "es"))
-            .map((c) => ({ id: c.id, label: c.name, parentId: c.parentId }))}
+          initial={categoriaRaw}
+          options={[
+            { id: EMPTY_FILTER, label: "(Sin categoría)" },
+            ...categories
+              .slice()
+              .sort((a, b) => a.name.localeCompare(b.name, "es"))
+              .map((c) => ({ id: c.id, label: c.name, parentId: c.parentId })),
+          ]}
         />
-        <MultiSelectFilter name="etiqueta" label="Etiqueta" initial={etiquetaIds} options={tags.map((t) => ({ id: t.id, label: `#${t.name}` }))} />
+        <MultiSelectFilter
+          name="etiqueta"
+          label="Etiqueta"
+          initial={etiquetaRaw}
+          options={[{ id: EMPTY_FILTER, label: "(Sin etiqueta)" }, ...tags.map((t) => ({ id: t.id, label: `#${t.name}` }))]}
+        />
         {statementMonths.length > 0 && (
           <div>
             <label className="label">Resumen de tarjeta</label>

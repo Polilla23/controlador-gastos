@@ -57,7 +57,8 @@ export default async function PlanificadosPage() {
       acc[i.currency][i.type === "INCOME" ? "totalIn" : "totalOut"] += miParte(i);
       return acc;
     }, {}),
-  );
+    // ARS primero siempre, después el resto en el orden en que van apareciendo.
+  ).sort((a, b) => (a.currency === "ARS" ? -1 : b.currency === "ARS" ? 1 : 0));
 
   return (
     <>

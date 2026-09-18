@@ -6,8 +6,9 @@ import Modal from "./Modal";
 import ConfirmButton from "./ConfirmButton";
 import { type CategoryOpt } from "./CategorySelect";
 import MultiSelectFilter from "./MultiSelectFilter";
+import TextOrEmptyFilter from "./TextOrEmptyFilter";
 import { deleteFilter, updateFilter } from "@/lib/actions";
-import { TX_TYPES } from "@/lib/format";
+import { EMPTY_FILTER, TX_TYPES } from "@/lib/format";
 import type { AccountOpt, TagOpt } from "./TransactionForm";
 
 export type FilterRow = { id: number; name: string; scope: string; query: Record<string, string | string[]> };
@@ -23,12 +24,16 @@ function describe(q: Record<string, string | string[]>, accounts: AccountOpt[], 
   const cuentaIds = asArr(q.cuenta);
   if (cuentaIds.length) parts.push(`Cuenta: ${cuentaIds.map((id) => accounts.find((a) => String(a.id) === id)?.name ?? id).join(", ")}`);
   const categoriaIds = asArr(q.categoria);
-  if (categoriaIds.length) parts.push(`Categoría: ${categoriaIds.map((id) => categories.find((c) => String(c.id) === id)?.name ?? id).join(", ")}`);
+  if (categoriaIds.length)
+    parts.push(`Categoría: ${categoriaIds.map((id) => (id === EMPTY_FILTER ? "(sin categoría)" : (categories.find((c) => String(c.id) === id)?.name ?? id))).join(", ")}`);
   const etiquetaIds = asArr(q.etiqueta);
-  if (etiquetaIds.length) parts.push(`Etiqueta: ${etiquetaIds.map((id) => `#${tags.find((t) => String(t.id) === id)?.name ?? id}`).join(", ")}`);
+  if (etiquetaIds.length)
+    parts.push(`Etiqueta: ${etiquetaIds.map((id) => (id === EMPTY_FILTER ? "(sin etiqueta)" : `#${tags.find((t) => String(t.id) === id)?.name ?? id}`)).join(", ")}`);
   const persona = asOneStr(q.persona);
-  if (persona) parts.push(`Persona: "${persona}"`);
-  if (q.q) parts.push(`Buscar: "${q.q}"`);
+  if (persona === EMPTY_FILTER) parts.push("Persona: (vacía)");
+  else if (persona) parts.push(`Persona: "${persona}"`);
+  if (q.q === EMPTY_FILTER) parts.push("Buscar: (descripción vacía)");
+  else if (q.q) parts.push(`Buscar: "${q.q}"`);
   if (q.preset) parts.push(`Período: ${q.preset}`);
   return parts.length ? parts.join(" · ") : "Sin condiciones";
 }
@@ -77,16 +82,20 @@ export default function FiltersBoard({
                     </select>
                   </div>
                   <MultiSelectFilter name="cuenta" label="Cuenta" initial={asArr(f.query.cuenta)} options={accounts.map((a) => ({ id: a.id, label: `${a.name} (${a.currency})` }))} />
-                  <MultiSelectFilter name="categoria" label="Categoría" initial={asArr(f.query.categoria)} options={categories.map((c) => ({ id: c.id, label: c.name }))} />
-                  <MultiSelectFilter name="etiqueta" label="Etiqueta" initial={asArr(f.query.etiqueta)} options={tags.map((t) => ({ id: t.id, label: `#${t.name}` }))} />
-                  <div>
-                    <label className="label">Persona</label>
-                    <input name="persona" className="input" defaultValue={asOneStr(f.query.persona)} placeholder="Nombre o apellido (coincidencia)" />
-                  </div>
-                  <div>
-                    <label className="label">Buscar</label>
-                    <input name="q" className="input" defaultValue={f.query.q ?? ""} placeholder="Descripción o nota" />
-                  </div>
+                  <MultiSelectFilter
+                    name="categoria"
+                    label="Categoría"
+                    initial={asArr(f.query.categoria)}
+                    options={[{ id: EMPTY_FILTER, label: "(Sin categoría)" }, ...categories.map((c) => ({ id: c.id, label: c.name }))]}
+                  />
+                  <MultiSelectFilter
+                    name="etiqueta"
+                    label="Etiqueta"
+                    initial={asArr(f.query.etiqueta)}
+                    options={[{ id: EMPTY_FILTER, label: "(Sin etiqueta)" }, ...tags.map((t) => ({ id: t.id, label: `#${t.name}` }))]}
+                  />
+                  <TextOrEmptyFilter name="persona" label="Persona" initial={asOneStr(f.query.persona)} placeholder="Nombre o apellido (coincidencia)" />
+                  <TextOrEmptyFilter name="q" label="Buscar" initial={typeof f.query.q === "string" ? f.query.q : ""} placeholder="Descripción o nota" />
                   <p className="text-xs text-muted">El período (fechas) de este filtro no se edita acá: guardalo de nuevo con el mismo nombre desde Transacciones o Resumen para actualizarlo.</p>
                 </ActionForm>
               </Modal>
