@@ -1,13 +1,14 @@
 "use client";
 
-import { Pencil, Trash2 } from "lucide-react";
+import { useState } from "react";
+import { Pencil, Plus, Trash2 } from "lucide-react";
 import ActionForm from "./ActionForm";
 import Modal from "./Modal";
 import ConfirmButton from "./ConfirmButton";
 import { type CategoryOpt } from "./CategorySelect";
 import MultiSelectFilter from "./MultiSelectFilter";
 import TextOrEmptyFilter from "./TextOrEmptyFilter";
-import { deleteFilter, updateFilter } from "@/lib/actions";
+import { createFilter, deleteFilter, updateFilter } from "@/lib/actions";
 import { EMPTY_FILTER, TX_TYPES } from "@/lib/format";
 import type { AccountOpt, TagOpt } from "./TransactionForm";
 
@@ -38,6 +39,88 @@ function describe(q: Record<string, string | string[]>, accounts: AccountOpt[], 
   return parts.length ? parts.join(" · ") : "Sin condiciones";
 }
 
+/**
+ * Campos de condiciones, compartidos por "Nuevo filtro" y "Editar". Resumen sólo lee
+ * cuenta/etiqueta de un filtro guardado (ver src/app/(app)/page.tsx) -- tipo, categoría, persona
+ * y buscar no tienen efecto ahí, así que se ocultan para esa sección en vez de dejar cargar algo
+ * que después "no hace nada" (el mismo bug que ya pasó una vez con un filtro de Resumen).
+ */
+function CamposFiltro({
+  scope,
+  defaults = {},
+  accounts,
+  categories,
+  tags,
+}: {
+  scope: string;
+  defaults?: Record<string, string | string[]>;
+  accounts: AccountOpt[];
+  categories: CategoryOpt[];
+  tags: TagOpt[];
+}) {
+  const soloResumen = scope === "DASHBOARD";
+  return (
+    <>
+      {!soloResumen && (
+        <div>
+          <label className="label">Tipo</label>
+          <select name="tipo" className="input" defaultValue={typeof defaults.tipo === "string" ? defaults.tipo : ""}>
+            <option value="">Todos</option>
+            {Object.entries(TX_TYPES).map(([k, v]) => (
+              <option key={k} value={k}>
+                {v}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+      <MultiSelectFilter name="cuenta" label="Cuenta" initial={asArr(defaults.cuenta)} options={accounts.map((a) => ({ id: a.id, label: `${a.name} (${a.currency})` }))} />
+      {!soloResumen && (
+        <MultiSelectFilter
+          name="categoria"
+          label="Categoría"
+          initial={asArr(defaults.categoria)}
+          options={[{ id: EMPTY_FILTER, label: "(Sin categoría)" }, ...categories.map((c) => ({ id: c.id, label: c.name }))]}
+        />
+      )}
+      <MultiSelectFilter
+        name="etiqueta"
+        label="Etiqueta"
+        initial={asArr(defaults.etiqueta)}
+        options={[{ id: EMPTY_FILTER, label: "(Sin etiqueta)" }, ...tags.map((t) => ({ id: t.id, label: `#${t.name}` }))]}
+      />
+      {!soloResumen && (
+        <>
+          <TextOrEmptyFilter name="persona" label="Persona" initial={asOneStr(defaults.persona)} placeholder="Nombre o apellido (coincidencia)" />
+          <TextOrEmptyFilter name="q" label="Buscar" initial={typeof defaults.q === "string" ? defaults.q : ""} placeholder="Descripción o nota" />
+        </>
+      )}
+      {soloResumen && <p className="text-xs text-muted">En Resumen sólo se puede filtrar por cuenta y etiqueta -- el resto de las condiciones no aplica ahí.</p>}
+    </>
+  );
+}
+
+/** Crear un filtro nuevo desde el Maestro de Filtros, eligiendo a mano para qué sección es. */
+function NuevoFiltro({ accounts, categories, tags }: { accounts: AccountOpt[]; categories: CategoryOpt[]; tags: TagOpt[] }) {
+  const [scope, setScope] = useState("TX");
+  return (
+    <ActionForm action={createFilter} submitLabel="Crear filtro">
+      <div>
+        <label className="label">Nombre</label>
+        <input name="name" required className="input" placeholder="Ej: Gastos fijos del mes" autoFocus />
+      </div>
+      <div>
+        <label className="label">Sección</label>
+        <select name="scope" className="input" value={scope} onChange={(e) => setScope(e.target.value)}>
+          <option value="TX">Transacciones</option>
+          <option value="DASHBOARD">Resumen</option>
+        </select>
+      </div>
+      <CamposFiltro scope={scope} accounts={accounts} categories={categories} tags={tags} />
+    </ActionForm>
+  );
+}
+
 export default function FiltersBoard({
   filters,
   accounts,
@@ -51,6 +134,12 @@ export default function FiltersBoard({
 }) {
   return (
     <div className="card">
+      <div className="mb-4 flex justify-end">
+        <Modal title="Nuevo filtro" trigger={<><Plus size={16} /> Nuevo filtro</>}>
+          <NuevoFiltro accounts={accounts} categories={categories} tags={tags} />
+        </Modal>
+      </div>
+
       {filters.length === 0 && <p className="py-8 text-center text-sm text-muted">Todavía no guardaste ningún filtro.</p>}
       <ul className="divide-y divide-line">
         {filters.map((f) => (
@@ -70,32 +159,7 @@ export default function FiltersBoard({
                     <label className="label">Nombre</label>
                     <input name="name" required className="input" defaultValue={f.name} />
                   </div>
-                  <div>
-                    <label className="label">Tipo</label>
-                    <select name="tipo" className="input" defaultValue={f.query.tipo ?? ""}>
-                      <option value="">Todos</option>
-                      {Object.entries(TX_TYPES).map(([k, v]) => (
-                        <option key={k} value={k}>
-                          {v}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <MultiSelectFilter name="cuenta" label="Cuenta" initial={asArr(f.query.cuenta)} options={accounts.map((a) => ({ id: a.id, label: `${a.name} (${a.currency})` }))} />
-                  <MultiSelectFilter
-                    name="categoria"
-                    label="Categoría"
-                    initial={asArr(f.query.categoria)}
-                    options={[{ id: EMPTY_FILTER, label: "(Sin categoría)" }, ...categories.map((c) => ({ id: c.id, label: c.name }))]}
-                  />
-                  <MultiSelectFilter
-                    name="etiqueta"
-                    label="Etiqueta"
-                    initial={asArr(f.query.etiqueta)}
-                    options={[{ id: EMPTY_FILTER, label: "(Sin etiqueta)" }, ...tags.map((t) => ({ id: t.id, label: `#${t.name}` }))]}
-                  />
-                  <TextOrEmptyFilter name="persona" label="Persona" initial={asOneStr(f.query.persona)} placeholder="Nombre o apellido (coincidencia)" />
-                  <TextOrEmptyFilter name="q" label="Buscar" initial={typeof f.query.q === "string" ? f.query.q : ""} placeholder="Descripción o nota" />
+                  <CamposFiltro scope={f.scope} defaults={f.query} accounts={accounts} categories={categories} tags={tags} />
                   <p className="text-xs text-muted">El período (fechas) de este filtro no se edita acá: guardalo de nuevo con el mismo nombre desde Transacciones o Resumen para actualizarlo.</p>
                 </ActionForm>
               </Modal>

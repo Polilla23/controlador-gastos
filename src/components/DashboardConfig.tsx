@@ -4,7 +4,6 @@ import { useState, useTransition } from "react";
 import { Check, Plus, SlidersHorizontal, Trash2, X } from "lucide-react";
 import { CARDS } from "@/lib/cards";
 import { saveDashboard } from "@/lib/actions";
-import { Sortable } from "./ui";
 
 type AccountOpt = { id: number; name: string; currency: string; color: string; selected: boolean };
 
@@ -78,7 +77,7 @@ export default function DashboardConfig({
 
             <section className="mb-5">
               <div className="mb-2 flex items-center justify-between gap-2">
-                <h3 className="label mb-0">Tarjetas del resumen{tab === "mobile" ? " · arrastrá para ordenar" : ""}</h3>
+                <h3 className="label mb-0">Tarjetas del resumen</h3>
                 <div className="flex gap-1 rounded-lg border border-line p-0.5 text-xs">
                   <button type="button" onClick={() => setTab("desktop")} className={`rounded-md px-2 py-1 font-medium ${tab === "desktop" ? "bg-subtle" : "text-muted"}`}>
                     Web
@@ -88,11 +87,15 @@ export default function DashboardConfig({
                   </button>
                 </div>
               </div>
-              {tab === "desktop" && <p className="mb-2 text-xs text-muted">El orden y el tamaño de cada card se ajustan arrastrándolas directamente en Resumen.</p>}
+              {/* El orden y el tamaño de cada card se ajustan arrastrándolas directamente en Resumen
+                  -- en desktop con el mouse, en celular con el dedo -- así que acá sólo se elige
+                  qué cards mostrar, sin otra forma de reordenar (evita el mismo gesto duplicado en
+                  dos lugares distintos, tanto en web como en celular). */}
+              <p className="mb-2 text-xs text-muted">El orden y el tamaño de cada card se ajustan arrastrándolas directamente en Resumen.</p>
               {chosen.length === 0 && <p className="text-sm text-muted">No hay tarjetas elegidas.</p>}
-              {(() => {
-                const row = (c: (typeof CARDS)[number]) => (
-                  <div className="flex items-center justify-between gap-2 rounded-xl border border-line px-3 py-2">
+              <div className="space-y-1">
+                {chosen.map((c) => (
+                  <div key={c.id} className="flex items-center justify-between gap-2 rounded-xl border border-line px-3 py-2">
                     <div className="min-w-0">
                       <div className="truncate text-sm font-semibold">{c.title}</div>
                       <div className="truncate text-xs text-muted">{c.question}</div>
@@ -102,22 +105,8 @@ export default function DashboardConfig({
                       <Trash2 size={15} />
                     </button>
                   </div>
-                );
-                // En web el orden ya se ajusta arrastrando directamente en Resumen -- acá sólo se
-                // elige qué cards mostrar, sin otra forma de reordenar (evita el mismo gesto
-                // duplicado en dos lugares distintos).
-                return tab === "mobile" ? (
-                  <Sortable items={chosen} onReorder={(ids) => setActiveSel(ids.map(String))}>
-                    {row}
-                  </Sortable>
-                ) : (
-                  <div className="space-y-1">
-                    {chosen.map((c) => (
-                      <div key={c.id}>{row(c)}</div>
-                    ))}
-                  </div>
-                );
-              })()}
+                ))}
+              </div>
             </section>
 
             {available.length > 0 && (

@@ -75,6 +75,13 @@ export async function toggleRule(id: number, active: boolean) {
   refresh();
 }
 
+/** El orden importa: las reglas se aplican en este orden, así que el usuario puede arrastrar para decidir cuál gana si dos coinciden. */
+export async function reorderRules(ids: number[]) {
+  const userId = await requireUserId();
+  await prisma.$transaction(ids.map((id, i) => prisma.rule.updateMany({ where: { id, userId }, data: { sortOrder: i } })));
+  refresh();
+}
+
 export type PreviewFila = { id: number; fecha: Date; descripcion: string; reglas: string[]; cambios: string[] };
 
 const cambiosDe = (efecto: ReturnType<typeof efectoDe>, t: { categoryId: number | null; description: string; note: string; counterparty: string; tags: { id: number }[] }, nombreCategoria: Map<number, string>, nombreEtiqueta: Map<number, string>) => {

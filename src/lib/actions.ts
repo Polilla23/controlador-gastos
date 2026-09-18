@@ -947,12 +947,8 @@ export async function deleteFilter(id: number) {
   refresh();
 }
 
-/** Maestro de Filtros: renombrar y/o cambiar las condiciones de un filtro ya guardado. */
-export async function updateFilter(fd: FormData) {
-  const userId = await requireUserId();
-  const id = Number(fd.get("id"));
-  const name = String(fd.get("name") ?? "").trim();
-  if (!name) throw new Error("Ponele un nombre al filtro");
+/** Arma el `query` de un SavedFilter a partir de los campos con nombre del Maestro de Filtros (no de una URL cruda, como sí hace `saveFilter`). */
+function queryFromFields(fd: FormData): Record<string, string | string[]> {
   const multi = ["cuenta", "categoria", "etiqueta"] as const;
   const single = ["tipo", "q", "persona"] as const;
   const query: Record<string, string | string[]> = {};
@@ -965,7 +961,30 @@ export async function updateFilter(fd: FormData) {
     const v = String(fd.get(k) ?? "").trim();
     if (v) query[k] = v;
   }
-  await prisma.savedFilter.updateMany({ where: { id, userId }, data: { name, query } });
+  return query;
+}
+
+/** Maestro de Filtros: renombrar y/o cambiar las condiciones de un filtro ya guardado. */
+export async function updateFilter(fd: FormData) {
+  const userId = await requireUserId();
+  const id = Number(fd.get("id"));
+  const name = String(fd.get("name") ?? "").trim();
+  if (!name) throw new Error("Ponele un nombre al filtro");
+  await prisma.savedFilter.updateMany({ where: { id, userId }, data: { name, query: queryFromFields(fd) } });
+  refresh();
+}
+
+/** Maestro de Filtros: crear un filtro nuevo desde cero, eligiendo a mano la sección (Transacciones/Resumen) a la que pertenece -- sin depender de tener esa sección abierta con la URL ya armada. */
+export async function createFilter(fd: FormData) {
+  const userId = await requireUserId();
+  const name = String(fd.get("name") ?? "").trim();
+  const scope = String(fd.get("scope") ?? "TX");
+  if (!name) throw new Error("Ponele un nombre al filtro");
+  await prisma.savedFilter.upsert({
+    where: { userId_scope_name: { userId, scope, name } },
+    create: { userId, name, scope, query: queryFromFields(fd) },
+    update: { query: queryFromFields(fd) },
+  });
   refresh();
 }
 

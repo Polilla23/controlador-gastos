@@ -7,7 +7,8 @@ import Modal, { useCloseModal } from "./Modal";
 import ConfirmButton from "./ConfirmButton";
 import CategorySelect, { type CategoryOpt } from "./CategorySelect";
 import MultiSelectFilter from "./MultiSelectFilter";
-import { aplicarReglasA, deleteRule, previsualizarReglas, saveRule, toggleRule, type PreviewFila } from "@/lib/actions-reglas";
+import { Sortable } from "./ui";
+import { aplicarReglasA, deleteRule, previsualizarReglas, reorderRules, saveRule, toggleRule, type PreviewFila } from "@/lib/actions-reglas";
 import { fmtDate, TX_TYPES } from "@/lib/format";
 
 type Cuenta = { id: number; name: string; currency: string };
@@ -242,6 +243,7 @@ export default function RulesBoard({
   personas: string[];
 }) {
   const [resultado, setResultado] = useState<string | null>(null);
+  const [, start] = useTransition();
 
   return (
     <>
@@ -265,9 +267,11 @@ export default function RulesBoard({
         </div>
       )}
 
-      <div className="space-y-3">
-        {rules.map((r) => (
-          <div key={r.id} className={`card ${r.active ? "" : "opacity-60"}`}>
+      {rules.length > 1 && <p className="mb-2 text-xs text-muted">Arrastrá desde el asa para cambiar el orden -- se van aplicando de arriba hacia abajo.</p>}
+
+      <Sortable items={rules} onReorder={(ids) => start(() => reorderRules(ids.map(Number)))}>
+        {(r) => (
+          <div className={`card ${r.active ? "" : "opacity-60"}`}>
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div className="min-w-0">
                 <h2 className="truncate font-bold">{r.name}</h2>
@@ -360,8 +364,8 @@ export default function RulesBoard({
               </div>
             </div>
           </div>
-        ))}
-      </div>
+        )}
+      </Sortable>
     </>
   );
 }

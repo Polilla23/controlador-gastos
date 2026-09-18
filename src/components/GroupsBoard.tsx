@@ -11,11 +11,10 @@ export type GrupoRow = { id: number; name: string; currency: string; miembros: n
 
 function Tarjeta({ g }: { g: GrupoRow }) {
   return (
-    // flex-col con sm:flex-row en vez de flex-wrap: con flex-wrap, si el monto del grupo es más
-    // largo (más dígitos), a veces entra en la misma línea que el nombre y a veces no, así que
-    // cada card terminaba viéndose distinto según cuánto medía su propio contenido. Con flex-col
-    // fijo en mobile, todas las cards apilan de la misma manera siempre, sin importar el ancho.
-    <Link href={`/compartidos/${g.id}`} className="card flex flex-col gap-3 transition hover:border-brand-400 sm:flex-row sm:items-center sm:justify-between">
+    // Prioridad: quedar en la misma línea siempre que entre (flex-wrap), pero con todo centrado
+    // verticalmente entre sí (items-center) y el bloque de la derecha compacto, así si tiene que
+    // bajar de renglón no queda "el nombre muy arriba, el total muy abajo" con un salto grande.
+    <Link href={`/compartidos/${g.id}`} className="card flex flex-wrap items-center justify-between gap-x-3 gap-y-2 transition hover:border-brand-400">
       <div className="flex min-w-0 items-center gap-3">
         <Users size={18} className="shrink-0 text-muted" />
         <div className="min-w-0">
@@ -25,7 +24,7 @@ function Tarjeta({ g }: { g: GrupoRow }) {
           </p>
         </div>
       </div>
-      <div className="flex flex-col items-end gap-1.5 self-end sm:flex-row sm:items-center sm:gap-4 sm:self-auto">
+      <div className="flex flex-wrap items-center justify-end gap-x-4 gap-y-1">
         <div className="text-right">
           <div className="text-xs text-muted">Total del grupo</div>
           <div className="text-lg font-bold">{money(g.total, g.currency)}</div>

@@ -6,7 +6,7 @@ import RulesBoard from "@/components/RulesBoard";
 
 export default async function ReglasPage() {
   const userId = await requireUserId();
-  const [rules, accounts, categories, tags, personas] = await Promise.all([
+  const [rulesRaw, accounts, categories, tags, personas] = await Promise.all([
     prisma.rule.findMany({
       where: { userId },
       include: { setTags: true, setCategory: { select: { name: true } }, matchAccounts: true, matchToAccounts: true },
@@ -17,6 +17,15 @@ export default async function ReglasPage() {
     prisma.tag.findMany({ where: { userId }, orderBy: { name: "asc" } }),
     listarPersonas(userId),
   ]);
+
+  // Primera vez que se usa el orden manual: arrancamos de A a Z (después el usuario puede
+  // arrastrar para cambiarlo a gusto, como en Categorías).
+  let rules = rulesRaw;
+  if (rulesRaw.length > 1 && rulesRaw.every((r) => r.sortOrder === 0)) {
+    const sorted = [...rulesRaw].sort((a, b) => a.name.localeCompare(b.name, "es"));
+    await prisma.$transaction(sorted.map((r, i) => prisma.rule.update({ where: { id: r.id }, data: { sortOrder: i } })));
+    rules = sorted.map((r, i) => ({ ...r, sortOrder: i }));
+  }
 
   return (
     <>
