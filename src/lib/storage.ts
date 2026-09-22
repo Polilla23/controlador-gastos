@@ -16,10 +16,24 @@ export async function storeAttachment(userId: string, transactionId: number, dat
   return path;
 }
 
+/** Stores the original PDF of a card statement under <userId>/resumen-<importId>-<timestamp>.pdf. */
+export async function storeStatementPdf(userId: string, importId: number, data: Buffer | ArrayBuffer) {
+  const path = `${userId}/resumen-${importId}-${Date.now()}.pdf`;
+  const { error } = await supabaseAdmin().storage.from(BUCKET).upload(path, data, { contentType: "application/pdf" });
+  if (error) throw new Error(`No se pudo guardar el resumen: ${error.message}`);
+  return path;
+}
+
 export async function signedUrl(path: string, seconds = 600) {
   const { data, error } = await supabaseAdmin().storage.from(BUCKET).createSignedUrl(path, seconds);
   if (error || !data) throw new Error("No se pudo generar el enlace del archivo");
   return data.signedUrl;
+}
+
+export async function downloadStored(path: string): Promise<Buffer> {
+  const { data, error } = await supabaseAdmin().storage.from(BUCKET).download(path);
+  if (error || !data) throw new Error("No se pudo leer el archivo guardado");
+  return Buffer.from(await data.arrayBuffer());
 }
 
 export async function removeStored(path: string) {
