@@ -6,7 +6,7 @@ import { CheckCircle2, Copy, XCircle } from "lucide-react";
 import ConfirmButton from "./ConfirmButton";
 import { confirmarImportacionAction, descartarImportacionAction } from "@/lib/actions-importaciones";
 import { money, fmtDate } from "@/lib/format";
-import { nombreBanco } from "@/lib/statement-imports";
+import { nombreBanco } from "@/lib/statement-parsers/types";
 
 type Item = {
   id: number;

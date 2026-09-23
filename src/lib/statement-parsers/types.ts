@@ -25,3 +25,10 @@ export type ResumenParseado = {
 };
 
 export type ResultadoParseo = { ok: true; resumen: ResumenParseado } | { ok: false; motivo: string };
+
+const BANCOS: Record<string, string> = {
+  SANTANDER: "Santander",
+  ICBC_VISA: "ICBC (Visa)",
+  ICBC_MASTERCARD: "ICBC (Mastercard)",
+};
+export const nombreBanco = (bank: string) => BANCOS[bank] ?? bank;

@@ -1,5 +1,6 @@
 import { prisma } from "./prisma";
 import { parseStatementPdf } from "./statement-parsers";
+import { nombreBanco } from "./statement-parsers/types";
 import { reglasDe, efectoDe, type Candidato } from "./reglas";
 import { statementMonthFor } from "./tarjetas";
 import { storeStatementPdf, downloadStored } from "./storage";
@@ -21,12 +22,7 @@ import { storeStatementPdf, downloadStored } from "./storage";
  * dos turnos distintos de la conversación.
  */
 
-const BANCOS: Record<string, string> = {
-  SANTANDER: "Santander",
-  ICBC_VISA: "ICBC (Visa)",
-  ICBC_MASTERCARD: "ICBC (Mastercard)",
-};
-export const nombreBanco = (bank: string) => BANCOS[bank] ?? bank;
+export { nombreBanco };
 
 export async function tarjetasDisponibles(userId: string) {
   return prisma.account.findMany({
