@@ -43,6 +43,7 @@ model User {
   holdings           Holding[]
   investMoves        InvestMove[]
   sharedGroupLinks   ShareCollaborator[]
+  statementImports   StatementImport[]
 }
 
 model Account {
@@ -83,48 +84,51 @@ model Account {
   investMoves         InvestMove[]
   ruleMatches         Rule[]             @relation("RuleMatchAccounts")
   ruleMatchesTo       Rule[]             @relation("RuleMatchToAccounts")
+  statementImports    StatementImport[]
 
   @@index([userId])
 }
 
 model Category {
-  id           Int               @id @default(autoincrement())
-  userId       String
-  user         User              @relation(fields: [userId], references: [id], onDelete: Cascade)
-  name         String
-  kind         String // INCOME | EXPENSE
-  color        String            @default("#6B7280")
-  icon         String            @default("tag")
-  nature       String            @default("NEED") // MUST | NEED | WANT (expense nature)
-  sortOrder    Int               @default(0)
-  parentId     Int? // one level of nesting: parent categories group subcategories
-  parent       Category?         @relation("Subcategories", fields: [parentId], references: [id], onDelete: Cascade)
-  children     Category[]        @relation("Subcategories")
-  transactions Transaction[]
-  installments InstallmentPlan[]
-  planned      Planned[]
-  budgets      Budget[]
-  rules        Rule[]
-  debts        Debt[]
+  id                   Int                   @id @default(autoincrement())
+  userId               String
+  user                 User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name                 String
+  kind                 String // INCOME | EXPENSE
+  color                String                @default("#6B7280")
+  icon                 String                @default("tag")
+  nature               String                @default("NEED") // MUST | NEED | WANT (expense nature)
+  sortOrder            Int                   @default(0)
+  parentId             Int? // one level of nesting: parent categories group subcategories
+  parent               Category?             @relation("Subcategories", fields: [parentId], references: [id], onDelete: Cascade)
+  children             Category[]            @relation("Subcategories")
+  transactions         Transaction[]
+  installments         InstallmentPlan[]
+  planned              Planned[]
+  budgets              Budget[]
+  rules                Rule[]
+  debts                Debt[]
+  statementImportItems StatementImportItem[]
 
   @@unique([userId, name, parentId])
   @@index([userId])
 }
 
 model Tag {
-  id            Int            @id @default(autoincrement())
-  userId        String
-  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  name          String
-  color         String         @default("#24C092")
-  icon          String? // nombre del ícono elegido en el selector
-  sortOrder     Int            @default(0)
-  transactions  Transaction[]
-  planned       Planned[]
-  budgets       Budget[]
-  rules         Rule[]
-  debts         Debt[]
-  shareExpenses ShareExpense[]
+  id                   Int                   @id @default(autoincrement())
+  userId               String
+  user                 User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name                 String
+  color                String                @default("#24C092")
+  icon                 String? // nombre del ícono elegido en el selector
+  sortOrder            Int                   @default(0)
+  transactions         Transaction[]
+  planned              Planned[]
+  budgets              Budget[]
+  rules                Rule[]
+  debts                Debt[]
+  shareExpenses        ShareExpense[]
+  statementImportItems StatementImportItem[]
 
   @@unique([userId, name])
 }
@@ -563,4 +567,63 @@ model Attachment {
   mimeType      String
   source        String      @default("WEB") // WEB | TELEGRAM
   createdAt     DateTime    @default(now())
+}
+
+/**
+ * ---------- Importación de resúmenes de tarjeta ----------
+ */
+
+/// Un PDF de resumen de tarjeta subido para convertir sus consumos en gastos.
+/// Nunca crea Transaction directamente: primero queda AWAITING_ACCOUNT (recién
+/// subido, todavía sin saber a qué tarjeta corresponde -- pasa por Telegram,
+/// donde el PDF y la respuesta con la cuenta llegan en mensajes separados) o
+/// PENDING (ya con sus items, previsualización con reglas aplicadas), y sólo
+/// al confirmar se generan los movimientos reales.
+model StatementImport {
+  id               Int                   @id @default(autoincrement())
+  userId           String
+  user             User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accountId        Int?
+  account          Account?              @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  bank             String // SANTANDER | ICBC_VISA | ICBC_MASTERCARD
+  source           String                @default("TELEGRAM") // TELEGRAM | WEB
+  status           String                @default("AWAITING_ACCOUNT") // AWAITING_ACCOUNT | PENDING | CONFIRMED | DISCARDED
+  cardLastFour     String?
+  periodEnd        DateTime? // cierre actual declarado por el resumen
+  dueDate          DateTime? // vencimiento actual declarado por el resumen
+  declaredTotalArs Float?
+  declaredTotalUsd Float?
+  attachmentPath   String? // PDF original en Supabase Storage
+  createdAt        DateTime              @default(now())
+  confirmedAt      DateTime?
+  items            StatementImportItem[]
+
+  @@index([userId, status])
+}
+
+/// Un renglón parseado del resumen, con el efecto de las reglas ya calculado
+/// para mostrarlo en la previsualización antes de crear el gasto real.
+model StatementImportItem {
+  id                       Int             @id @default(autoincrement())
+  importId                 Int
+  import                   StatementImport @relation(fields: [importId], references: [id], onDelete: Cascade)
+  date                     DateTime // fecha efectiva a usar en la Transaction
+  rawDescription           String // texto tal cual viene del resumen
+  resolvedDescription      String? // si alguna regla la renombró
+  amount                   Float
+  currency                 String
+  installmentNo            Int?
+  installmentTotal         Int?
+  voucherNumber            String? // "comprobante" del resumen; clave natural para deduplicar
+  kind                     String // CONSUMO | IMPUESTO
+  categoryId               Int?
+  category                 Category?       @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  tags                     Tag[]
+  matchedRuleNames         String          @default("") // CSV, sólo para mostrar qué reglas aplicaron
+  status                   String          @default("PENDING") // PENDING | DUPLICATE | CONFIRMED | SKIPPED
+  skipReason               String? // por qué no se va a crear el gasto (ej. moneda distinta a la cuenta)
+  duplicateOfTransactionId Int?
+  transactionId            Int? // el movimiento creado, una vez confirmado
+
+  @@index([importId])
 }
