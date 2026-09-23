@@ -363,3 +363,26 @@ export async function runReminders() {
   }
   return { users: users.length, sent };
 }
+
+/** Avisa por Telegram a quien programó un backup periódico y ya le toca. Idempotent per day. */
+export async function runBackupReminders() {
+  const today = new Date();
+  const users = await prisma.user.findMany({
+    where: { telegramChatId: { not: null }, backupFrequencyDays: { not: null } },
+  });
+
+  let sent = 0;
+  for (const user of users) {
+    if (sameDay(user.lastBackupReminderOn, today)) continue;
+    const desde = user.lastBackupAt ?? user.createdAt;
+    const dias = Math.floor((today.getTime() - desde.getTime()) / 86400000);
+    if (dias < user.backupFrequencyDays!) continue;
+    await sendText(
+      user.telegramChatId!,
+      `💾 <b>Backup de tus datos</b>\nHace ${dias} días que no descargás un backup. Entrá a <b>Perfil</b> en la app y tocá "Descargar backup" para tener tus datos a mano.`,
+    );
+    await prisma.user.update({ where: { id: user.id }, data: { lastBackupReminderOn: today } });
+    sent++;
+  }
+  return { sent };
+}

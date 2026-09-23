@@ -762,6 +762,15 @@ export async function saveNotificationPrefs(fd: FormData) {
   revalidatePath("/perfil");
 }
 
+/** null = "Nunca" (sin recordatorio); si no, cada cuántos días te avisamos por Telegram que hagas un backup. */
+export async function saveBackupPrefs(fd: FormData) {
+  const userId = await requireUserId();
+  const raw = fd.get("backupFrequencyDays");
+  const backupFrequencyDays = raw && raw !== "" ? Number(raw) : null;
+  await prisma.user.update({ where: { id: userId }, data: { backupFrequencyDays } });
+  revalidatePath("/perfil");
+}
+
 export async function disconnectGoogleCalendar() {
   const userId = await requireUserId();
   await prisma.user.update({

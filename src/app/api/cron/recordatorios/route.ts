@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { runReminders } from "@/lib/telegram";
+import { runBackupReminders, runReminders } from "@/lib/telegram";
 import { autoConfirmPlanned, rollCardDates } from "@/lib/actions";
 import { syncGoogleCalendars } from "@/lib/google-calendar-sync";
 import { googleConfigured } from "@/lib/google-calendar";
@@ -17,6 +17,7 @@ export async function GET(req: Request) {
   const autoConfirmed = await autoConfirmPlanned();
   const cardDatesRolled = await rollCardDates();
   const reminders = await runReminders();
+  const backups = await runBackupReminders();
   const calendar = googleConfigured() ? await syncGoogleCalendars() : { usuarios: 0 };
-  return NextResponse.json({ ...reminders, autoConfirmed, cardDatesRolled, calendar });
+  return NextResponse.json({ ...reminders, autoConfirmed, cardDatesRolled, calendar, backups });
 }

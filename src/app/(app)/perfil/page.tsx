@@ -1,8 +1,8 @@
 import Link from "next/link";
-import { Bell, BookOpen, CalendarDays, KeyRound, MessageCircle, RefreshCw, Send, Smartphone, Trash2, Unlink, Upload, UserRound } from "lucide-react";
+import { Bell, BookOpen, CalendarDays, Download, HardDriveDownload, KeyRound, MessageCircle, RefreshCw, Send, Smartphone, Trash2, Unlink, Upload, UserRound } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
-import { disconnectGoogleCalendar, regenerateTelegramCode, saveNotificationPrefs, unlinkTelegram } from "@/lib/actions";
+import { disconnectGoogleCalendar, regenerateTelegramCode, saveBackupPrefs, saveNotificationPrefs, unlinkTelegram } from "@/lib/actions";
 import { changePassword, removeAvatar, updateProfile } from "@/lib/actions-perfil";
 import { fmtDate } from "@/lib/format";
 import { googleConfigured } from "@/lib/google-calendar";
@@ -287,6 +287,37 @@ async function renderPerfil(user: Awaited<ReturnType<typeof requireUser>>) {
             Borrar todos tus datos deja la cuenta vacía, como el primer día. Tu usuario, tu correo y tu vínculo con Telegram se conservan.
           </p>
           <DangerZone />
+        </section>
+
+        <section className="card">
+          <h2 className="mb-1 flex items-center gap-2 font-bold">
+            <HardDriveDownload size={18} className="text-brand-500" /> Backup local
+          </h2>
+          <p className="mb-3 text-sm text-muted">
+            Descargá un archivo JSON con todos tus datos (cuentas, registros, categorías, planificados, presupuestos, metas, deudas, reglas, gastos compartidos e inversiones). No incluye los
+            archivos adjuntos en sí, sólo a qué registro pertenecen.
+          </p>
+          <div className="flex flex-wrap items-center gap-3">
+            <a href="/api/backup" className="btn-primary">
+              <Download size={14} /> Descargar backup
+            </a>
+            <span className="text-xs text-muted">{user.lastBackupAt ? `Último backup: ${fmtDate(user.lastBackupAt)}` : "Todavía no descargaste ninguno."}</span>
+          </div>
+          <div className="mt-4 border-t border-line pt-4">
+            <ActionForm action={saveBackupPrefs} submitLabel="Guardar">
+              <div>
+                <label className="label">Recordame por Telegram cada</label>
+                <select name="backupFrequencyDays" className="input w-48" defaultValue={user.backupFrequencyDays ?? ""}>
+                  <option value="">Nunca</option>
+                  <option value="7">7 días</option>
+                  <option value="15">15 días</option>
+                  <option value="30">30 días</option>
+                  <option value="90">90 días</option>
+                </select>
+              </div>
+            </ActionForm>
+            {!user.telegramChatId && user.backupFrequencyDays != null && <p className="mt-3 text-xs text-amber-600">Vinculá tu Telegram para recibir este aviso.</p>}
+          </div>
         </section>
 
         <section className="card">
