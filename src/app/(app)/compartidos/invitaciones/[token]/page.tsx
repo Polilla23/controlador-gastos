@@ -53,7 +53,13 @@ export default async function InvitacionPage({ params }: { params: Promise<{ tok
         )}
 
         {!vencida && !emailNoCoincide && (
-          <ActionForm action={async () => acceptInvite(token)} submitLabel="Aceptar y vincular mi cuenta">
+          <ActionForm
+            action={async () => {
+              "use server";
+              await acceptInvite(token);
+            }}
+            submitLabel="Aceptar y vincular mi cuenta"
+          >
             <p className="text-xs text-muted">Podés desvincularte cuando quieras desde el grupo, sin perder tu historial.</p>
           </ActionForm>
         )}
