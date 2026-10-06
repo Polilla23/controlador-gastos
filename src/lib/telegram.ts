@@ -4,6 +4,7 @@ import { money, fmtDate, fmtDayMonth } from "./format";
 import { APP_TZ, addDays, civil as civilOf, fromCivil, monthKey, startOfDay } from "./tz";
 import { cargarPresupuestos } from "./presupuestos";
 import { accountBalances } from "./balances";
+import { forEachIsolated } from "./cron-safe";
 import { proximosCierres } from "./tarjetas";
 import { cotizaciones, NOMBRE_MOSTRAR } from "./cotizaciones";
 import { iniciarCarga, elegirCuenta, confirmarImportacion, descartarImportacion, tarjetasDisponibles, nombreBanco } from "./statement-imports";
@@ -409,7 +410,8 @@ export async function runReminders() {
   });
 
   let sent = 0;
-  for (const user of users) {
+  // Aislado por usuario: una falla (red, un dato raro) no debe frenar los avisos de los demás.
+  const { failed } = await forEachIsolated(users, (u) => `recordatorio del usuario ${u.id}`, async (user) => {
     const limit = addDays(startOfDay(today), user.notifyDays + 1);
     const lines: string[] = [];
     const touchedPlanned: number[] = [];
@@ -464,15 +466,15 @@ export async function runReminders() {
       marcarPresupuestos.push({ id: b.id, periodo });
     }
 
-    if (!lines.length) continue;
+    if (!lines.length) return;
     await sendText(user.telegramChatId!, `<b>Recordatorio</b>\n${lines.join("\n")}`);
     for (const m of marcarPresupuestos) await prisma.budget.update({ where: { id: m.id }, data: { warnedFor: m.periodo } });
     if (marcarDeudas.length) await prisma.debt.updateMany({ where: { id: { in: marcarDeudas } }, data: { lastNotifiedOn: today } });
     sent++;
     if (touchedPlanned.length) await prisma.planned.updateMany({ where: { id: { in: touchedPlanned } }, data: { lastNotifiedOn: today } });
     if (touchedCards.length) await prisma.account.updateMany({ where: { id: { in: touchedCards } }, data: { lastNotifiedOn: today } });
-  }
-  return { users: users.length, sent };
+  });
+  return { users: users.length, sent, failed };
 }
 
 /** Avisa por Telegram a quien programó un backup periódico y ya le toca. Idempotent per day. */
@@ -483,17 +485,17 @@ export async function runBackupReminders() {
   });
 
   let sent = 0;
-  for (const user of users) {
-    if (sameDay(user.lastBackupReminderOn, today)) continue;
+  const { failed } = await forEachIsolated(users, (u) => `aviso de backup del usuario ${u.id}`, async (user) => {
+    if (sameDay(user.lastBackupReminderOn, today)) return;
     const desde = user.lastBackupAt ?? user.createdAt;
     const dias = Math.floor((today.getTime() - desde.getTime()) / 86400000);
-    if (dias < user.backupFrequencyDays!) continue;
+    if (dias < user.backupFrequencyDays!) return;
     await sendText(
       user.telegramChatId!,
       `💾 <b>Backup de tus datos</b>\nHace ${dias} días que no descargás un backup. Entrá a <b>Perfil</b> en la app y tocá "Descargar backup" para tener tus datos a mano.`,
     );
     await prisma.user.update({ where: { id: user.id }, data: { lastBackupReminderOn: today } });
     sent++;
-  }
-  return { sent };
+  });
+  return { sent, failed };
 }

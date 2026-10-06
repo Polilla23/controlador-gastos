@@ -1,15 +1,14 @@
 import { NextResponse } from "next/server";
 import { handleUpdate, type TgUpdate } from "@/lib/telegram";
+import { rejectIfBadSecret } from "@/lib/endpoint-secret";
 
 /**
  * Telegram webhook. Register it once with:
  * https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://TU-APP.vercel.app/api/telegram&secret_token=<TELEGRAM_WEBHOOK_SECRET>
  */
 export async function POST(req: Request) {
-  const secret = process.env.TELEGRAM_WEBHOOK_SECRET;
-  if (secret && req.headers.get("x-telegram-bot-api-secret-token") !== secret) {
-    return new NextResponse("Unauthorized", { status: 401 });
-  }
+  const rejected = rejectIfBadSecret("TELEGRAM_WEBHOOK_SECRET", req.headers.get("x-telegram-bot-api-secret-token"));
+  if (rejected) return rejected;
   try {
     await handleUpdate((await req.json()) as TgUpdate);
   } catch (err) {
