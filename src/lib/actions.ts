@@ -13,6 +13,7 @@ import { statementMonthForDate, type CardDates } from "./tarjetas";
 import { aplicarAlCrear } from "./reglas";
 import { syncGoogleCalendarForUser } from "./google-calendar-sync";
 import { plannedAccessFilter, resolveMyMemberInGroup, shareGroupAccessFilter } from "./share-access";
+import { forEachIsolated } from "./cron-safe";
 
 const num = z.coerce.number();
 
@@ -663,8 +664,10 @@ export async function confirmPlannedWithEdits(fd: FormData) {
 export async function autoConfirmPlanned() {
   const finDeHoy = addDays(startOfDay(), 1);
   const due = await prisma.planned.findMany({ where: { autoConfirm: true, done: false, dueDate: { lt: finDeHoy } }, include: { tags: true } });
-  for (const p of due) await applyPlannedConfirmation(p);
-  return due.length;
+  // Aislado por planificado: uno que no se puede confirmar (ej. su dueño todavía no tiene ninguna
+  // cuenta cargada) no frena la confirmación de los de los demás usuarios.
+  const { ok, failed } = await forEachIsolated(due, (p) => `autoconfirmar el planificado #${p.id}`, (p) => applyPlannedConfirmation(p));
+  return { confirmados: ok, fallidos: failed };
 }
 
 /**

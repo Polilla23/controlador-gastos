@@ -2,6 +2,7 @@ import { prisma } from "./prisma";
 import { isoDay, startOfDay, addDays } from "./tz";
 import { upsertDueDateEvent, type GoogleUser } from "./google-calendar";
 import { proximosCierres } from "./tarjetas";
+import { forEachIsolated } from "./cron-safe";
 
 const LOOKAHEAD_DIAS = 45;
 
@@ -55,11 +56,14 @@ async function syncOneUser(user: GoogleUser): Promise<void> {
   }
 }
 
-/** Paso del cron diario: sincroniza a todos los usuarios conectados. */
+/**
+ * Paso del cron diario: sincroniza a todos los usuarios conectados. Aislado por usuario: a uno
+ * con Google desconectado o el token vencido le falla la API, pero no debe frenar a los demás.
+ */
 export async function syncGoogleCalendars() {
   const users = await prisma.user.findMany({ where: { googleRefreshToken: { not: null } } });
-  for (const user of users) await syncOneUser(user);
-  return { usuarios: users.length };
+  const { failed } = await forEachIsolated(users, (u) => `sincronizar Google Calendar del usuario ${u.id}`, syncOneUser);
+  return { usuarios: users.length, fallidos: failed };
 }
 
 /** Sincroniza ya mismo, para un solo usuario (botón "Sincronizar ahora" en Configuraciones). */
