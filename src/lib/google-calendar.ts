@@ -31,7 +31,7 @@ function oauthClient() {
   return new google.auth.OAuth2(process.env.GOOGLE_CLIENT_ID, process.env.GOOGLE_CLIENT_SECRET, process.env.GOOGLE_REDIRECT_URI);
 }
 
-/** URL de consentimiento de Google. `state` lleva el userId para saber a quién guardarle el token en el callback. */
+/** URL de consentimiento de Google. `state` es un nonce aleatorio atado a la sesión (ver google-oauth-state.ts), no el userId. */
 export function authUrl(state: string): string {
   return oauthClient().generateAuthUrl({ access_type: "offline", prompt: "consent", scope: SCOPES, state });
 }
