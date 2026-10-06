@@ -308,24 +308,38 @@ export default function DebtsBoard({
     );
   };
 
-  const totalMeDeben = abiertas.filter((d) => d.direction === "I_LENT").reduce((s, d) => s + (d.amount - d.payments.reduce((x, p) => x + p.amount, 0)), 0);
-  const totalDebo = abiertas.filter((d) => d.direction === "I_OWE").reduce((s, d) => s + (d.amount - d.payments.reduce((x, p) => x + p.amount, 0)), 0);
-  const moneda = abiertas[0]?.currency ?? "ARS";
+  // Cada deuda tiene su propia moneda: los totales se arman por moneda, nunca sumando pesos con dólares.
+  const totalesPorMoneda = new Map<string, { meDeben: number; debo: number }>();
+  for (const d of abiertas) {
+    const t = totalesPorMoneda.get(d.currency) ?? { meDeben: 0, debo: 0 };
+    const falta = d.amount - d.payments.reduce((x, p) => x + p.amount, 0);
+    if (d.direction === "I_LENT") t.meDeben += falta;
+    else t.debo += falta;
+    totalesPorMoneda.set(d.currency, t);
+  }
+  const totales = [...totalesPorMoneda].sort(([a], [b]) => (a === "ARS" ? -1 : b === "ARS" ? 1 : a.localeCompare(b)));
+  if (!totales.length) totales.push(["ARS", { meDeben: 0, debo: 0 }]);
 
   return (
     <>
       <div className="mb-5 grid gap-3 sm:grid-cols-3">
         <div className="card">
           <div className="kpi-label">Me deben</div>
-          <div className="kpi-value text-brand-500">{money(totalMeDeben, moneda)}</div>
+          {totales.map(([moneda, t]) => (
+            <div key={moneda} className="kpi-value text-brand-500">{money(t.meDeben, moneda)}</div>
+          ))}
         </div>
         <div className="card">
           <div className="kpi-label">Debo</div>
-          <div className="kpi-value text-amber-500">{money(totalDebo, moneda)}</div>
+          {totales.map(([moneda, t]) => (
+            <div key={moneda} className="kpi-value text-amber-500">{money(t.debo, moneda)}</div>
+          ))}
         </div>
         <div className="card">
           <div className="kpi-label">Neto</div>
-          <div className={`kpi-value ${totalMeDeben - totalDebo < 0 ? "text-red-500" : ""}`}>{money(totalMeDeben - totalDebo, moneda)}</div>
+          {totales.map(([moneda, t]) => (
+            <div key={moneda} className={`kpi-value ${t.meDeben - t.debo < 0 ? "text-red-500" : ""}`}>{money(t.meDeben - t.debo, moneda)}</div>
+          ))}
         </div>
       </div>
 
