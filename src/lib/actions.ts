@@ -10,7 +10,7 @@ import { supabaseServer } from "./supabase";
 import { storeAttachment, removeStored } from "./storage";
 import { addDays, addMonths, civil, fromCivil, parseInput, startOfDay } from "./tz";
 import { statementMonthForDate, type CardDates } from "./tarjetas";
-import { aplicarAlCrear } from "./reglas";
+import { aplicarAlCrear, efectoParaCrear } from "./reglas";
 import { syncGoogleCalendarForUser } from "./google-calendar-sync";
 import { plannedAccessFilter, resolveMyMemberInGroup, shareGroupAccessFilter } from "./share-access";
 import { forEachIsolated } from "./cron-safe";
@@ -344,15 +344,30 @@ export async function saveTransaction(fd: FormData) {
       data: { ...base, amount: d.amount, date, tags: { set: tagIds.map((t) => ({ id: t })) } },
     });
   } else if (d.type === "EXPENSE" && d.installments > 1) {
+    // Las reglas se evalúan una sola vez, antes de crear, y valen para todas las cuotas: así cada
+    // cuota conserva su "(n/total)" aunque la regla le cambie el nombre. (Antes las cuotas eran el
+    // único alta manual que se saltaba las reglas.)
+    const efecto = await efectoParaCrear(userId, {
+      type: d.type,
+      description: d.description,
+      counterparty: base.counterparty,
+      note: d.note,
+      accountId: d.accountId,
+      toAccountId: base.toAccountId,
+    });
+    const descripcion = efecto.description ?? (d.description || "Compra en cuotas");
+    const categoryId = efecto.categoryId !== undefined ? efecto.categoryId : d.categoryId;
+    const todasLasTags = [...new Set([...tagIds, ...efecto.tagIds])];
+
     const plan = await prisma.installmentPlan.create({
       data: {
         userId,
-        description: d.description || "Compra en cuotas",
+        description: descripcion,
         totalAmount: d.amount,
         installments: d.installments,
         startDate: date,
         accountId: d.accountId,
-        categoryId: d.categoryId,
+        categoryId,
       },
     });
     const parts = splitAmount(d.amount, d.installments);
@@ -365,10 +380,13 @@ export async function saveTransaction(fd: FormData) {
             date: addMonths(date, i),
             // Cada cuota recalcula a qué resumen corresponde según su propia fecha, no la de la cuota 1.
             statementMonth: account.type === "CREDIT_CARD" ? statementMonthForDate(addMonths(date, i), account) : null,
-            description: `${d.description || "Compra en cuotas"} (${i + 1}/${d.installments})`,
+            description: `${descripcion} (${i + 1}/${d.installments})`,
+            note: efecto.note ?? base.note,
+            counterparty: efecto.counterparty ?? base.counterparty,
+            categoryId,
             planId: plan.id,
             installmentNo: i + 1,
-            tags: { connect: tagIds.map((t) => ({ id: t })) },
+            tags: { connect: todasLasTags.map((t) => ({ id: t })) },
           },
         }),
       ),
@@ -591,6 +609,21 @@ export async function applyPlannedConfirmation(
     if (yo?.defaultPercent != null) amount = Math.round(p.amount * (yo.defaultPercent / 100) * 100) / 100;
   }
 
+  // Las reglas de automatización también corren acá, igual que en un alta manual: un gasto fijo que
+  // se genera solo (cron) o se confirma a mano tiene que quedar clasificado como si lo hubieras
+  // cargado vos. Se evalúan antes de crear para crear ya con los valores finales.
+  const note = overrides?.note ?? p.note;
+  const efecto = await efectoParaCrear(p.userId, {
+    type: p.type,
+    description: p.description,
+    counterparty: p.counterparty,
+    note,
+    accountId,
+    toAccountId: null,
+  });
+  const categoryId = efecto.categoryId !== undefined ? efecto.categoryId : overrides?.categoryId !== undefined ? overrides.categoryId : p.categoryId;
+  const tagIds = [...new Set([...p.tags.map((t) => t.id), ...efecto.tagIds])];
+
   await prisma.transaction.create({
     data: {
       userId: p.userId,
@@ -598,12 +631,12 @@ export async function applyPlannedConfirmation(
       amount,
       currency: p.currency,
       date: overrides?.date ?? new Date(),
-      description: p.description,
-      counterparty: p.counterparty,
-      note: overrides?.note ?? p.note,
+      description: efecto.description ?? p.description,
+      counterparty: efecto.counterparty ?? p.counterparty,
+      note: efecto.note ?? note,
       accountId,
-      categoryId: overrides?.categoryId !== undefined ? overrides.categoryId : p.categoryId,
-      tags: { connect: p.tags.map((t) => ({ id: t.id })) },
+      categoryId,
+      tags: { connect: tagIds.map((id) => ({ id })) },
     },
   });
 

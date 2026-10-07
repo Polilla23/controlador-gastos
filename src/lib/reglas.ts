@@ -72,6 +72,15 @@ export function efectoDe(reglas: ReglaConTags[], t: Candidato): Efecto {
   return efecto;
 }
 
+/**
+ * Calcula el efecto de las reglas ANTES de crear, para crear ya con los valores finales. Hace
+ * falta cuando se crean varias filas de golpe (cuotas) o cuando el texto se arma alrededor de lo
+ * que pone la regla (ej. "Netflix (3/12)"): aplicar sobre lo ya creado pisaría ese armado.
+ */
+export async function efectoParaCrear(userId: string, t: Candidato): Promise<Efecto> {
+  return efectoDe(await reglasDe(userId), t);
+}
+
 /** Aplica las reglas a un registro recién creado. */
 export async function aplicarAlCrear(userId: string, transactionId: number, t: Candidato) {
   const reglas = await reglasDe(userId);
