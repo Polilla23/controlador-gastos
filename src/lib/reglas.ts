@@ -1,4 +1,5 @@
 import { prisma } from "./prisma";
+import { forEachIsolated } from "./cron-safe";
 
 /**
  * Reglas de automatización: cuando un registro coincide con los criterios de una
@@ -72,6 +73,15 @@ export function efectoDe(reglas: ReglaConTags[], t: Candidato): Efecto {
   return efecto;
 }
 
+/**
+ * Calcula el efecto de las reglas ANTES de crear, para crear ya con los valores finales. Hace
+ * falta cuando se crean varias filas de golpe (cuotas) o cuando el texto se arma alrededor de lo
+ * que pone la regla (ej. "Netflix (3/12)"): aplicar sobre lo ya creado pisaría ese armado.
+ */
+export async function efectoParaCrear(userId: string, t: Candidato): Promise<Efecto> {
+  return efectoDe(await reglasDe(userId), t);
+}
+
 /** Aplica las reglas a un registro recién creado. */
 export async function aplicarAlCrear(userId: string, transactionId: number, t: Candidato) {
   const reglas = await reglasDe(userId);
@@ -109,10 +119,11 @@ export async function ejecutarReglasProgramadas(ahora = new Date()) {
 
   let reglasEjecutadas = 0;
   let registrosTocados = 0;
-  for (const r of reglas) {
+  // Una regla que falla no frena a las demás (ni a las de otros usuarios).
+  const { failed } = await forEachIsolated(reglas, (r) => `la regla programada #${r.id}`, async (r) => {
     const cada = r.scheduleDays!;
     // Margen de 3 hs: el cron no corre exactamente a la misma hora todos los días.
-    if (r.lastRunAt && ahora.getTime() - r.lastRunAt.getTime() < cada * DIA - 3 * HORA) continue;
+    if (r.lastRunAt && ahora.getTime() - r.lastRunAt.getTime() < cada * DIA - 3 * HORA) return;
 
     const desde = r.lastRunAt ?? r.createdAt;
     const registros = await prisma.transaction.findMany({
@@ -136,6 +147,6 @@ export async function ejecutarReglasProgramadas(ahora = new Date()) {
     }
     await prisma.rule.update({ where: { id: r.id }, data: { lastRunAt: ahora } });
     reglasEjecutadas++;
-  }
-  return { reglasEjecutadas, registrosTocados };
+  });
+  return { reglasEjecutadas, registrosTocados, fallidas: failed };
 }

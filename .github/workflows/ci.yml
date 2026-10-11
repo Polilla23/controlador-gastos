@@ -1,0 +1,58 @@
+name: CI
+
+# Corre en cada PR y en cada push a main: lint, tipos y build de producción.
+# Es una red de seguridad barata: este repo no tiene tests, así que lo mínimo es que
+# lo que se mergea al menos compile, tipe y pase el linter.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# Si se pushea de nuevo a la misma rama/PR, se cancela la corrida anterior.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verificar:
+    name: Lint, tipos y build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      # Valores de relleno, a propósito: el build no necesita conectarse a nada, y así este
+      # workflow nunca usa (ni debe recibir) credenciales reales de la base, Supabase o Telegram.
+      DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
+      DIRECT_URL: postgresql://ci:ci@localhost:5432/ci
+      NEXT_PUBLIC_SUPABASE_URL: https://ci.supabase.co
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ci
+      SUPABASE_SERVICE_ROLE_KEY: ci
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      # El cliente de Prisma se genera desde schema.prisma y los tipos dependen de él.
+      # No se confía sólo en el postinstall (npm puede bloquear scripts de instalación).
+      - name: Generar el cliente de Prisma
+        run: npx prisma generate
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Tipos
+        run: npx tsc --noEmit
+
+      - name: Build
+        run: npm run build

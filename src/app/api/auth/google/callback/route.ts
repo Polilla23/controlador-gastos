@@ -1,19 +1,29 @@
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
+import { currentUserId } from "@/lib/auth";
 import { exchangeCode, fetchGoogleEmail } from "@/lib/google-calendar";
+import { oauthStateMatches, OAUTH_STATE_COOKIE, OAUTH_STATE_PATH } from "@/lib/google-oauth-state";
 
 /** Vuelta del consentimiento de Google: guarda los tokens y el email conectado. */
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const code = url.searchParams.get("code");
-  const userId = url.searchParams.get("state");
   const error = url.searchParams.get("error");
   const destino = new URL("/perfil", url.origin);
 
-  if (error || !code || !userId) {
-    destino.searchParams.set("google", "error");
-    return NextResponse.redirect(destino);
-  }
+  // El nonce de un solo uso se descarta pase lo que pase.
+  const finish = (resultado: "ok" | "error") => {
+    destino.searchParams.set("google", resultado);
+    const res = NextResponse.redirect(destino);
+    res.cookies.set(OAUTH_STATE_COOKIE, "", { path: OAUTH_STATE_PATH, maxAge: 0 });
+    return res;
+  };
+
+  // A quién se le guardan los tokens lo decide la sesión, nunca un valor de la URL.
+  const userId = await currentUserId();
+  const stateCookie = (await cookies()).get(OAUTH_STATE_COOKIE)?.value;
+  if (error || !code || !userId || !oauthStateMatches(stateCookie, url.searchParams.get("state"))) return finish("error");
 
   try {
     const tokens = await exchangeCode(code);
@@ -27,10 +37,9 @@ export async function GET(req: Request) {
         googleEmail: email,
       },
     });
-    destino.searchParams.set("google", "ok");
+    return finish("ok");
   } catch (e) {
     console.error("google oauth callback failed", e);
-    destino.searchParams.set("google", "error");
+    return finish("error");
   }
-  return NextResponse.redirect(destino);
 }
