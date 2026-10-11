@@ -3,6 +3,7 @@ import { runBackupReminders, runReminders } from "@/lib/telegram";
 import { autoConfirmPlanned, rollCardDates } from "@/lib/actions";
 import { syncGoogleCalendars } from "@/lib/google-calendar-sync";
 import { googleConfigured } from "@/lib/google-calendar";
+import { ejecutarReglasProgramadas } from "@/lib/reglas";
 
 export const maxDuration = 60;
 
@@ -18,6 +19,7 @@ export async function GET(req: Request) {
   const cardDatesRolled = await rollCardDates();
   const reminders = await runReminders();
   const backups = await runBackupReminders();
+  const reglas = await ejecutarReglasProgramadas();
   const calendar = googleConfigured() ? await syncGoogleCalendars() : { usuarios: 0 };
-  return NextResponse.json({ ...reminders, autoConfirmed, cardDatesRolled, calendar, backups });
+  return NextResponse.json({ ...reminders, autoConfirmed, cardDatesRolled, calendar, backups, reglas });
 }

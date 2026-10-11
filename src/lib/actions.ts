@@ -147,6 +147,7 @@ const categorySchema = z.object({
   icon: z.string().optional().transform((v) => v || "tag"),
   nature: z.string().default("NEED"),
   parentId: optInt,
+  defaultTagId: optInt,
 });
 
 export async function saveCategory(fd: FormData) {
@@ -159,6 +160,7 @@ export async function saveCategory(fd: FormData) {
     if (parent.parentId) throw new Error("Sólo se permite un nivel de subcategorías");
     if (id === d.parentId) throw new Error("Una categoría no puede ser su propia madre");
   }
+  if (d.defaultTagId && !(await prisma.tag.findFirst({ where: { id: d.defaultTagId, userId } }))) throw new Error("Etiqueta inválida");
   if (id) {
     const hasChildren = await prisma.category.count({ where: { parentId: id } });
     if (hasChildren && d.parentId) throw new Error("Esta categoría ya tiene subcategorías, no puede depender de otra");
@@ -780,10 +782,21 @@ export async function disconnectGoogleCalendar() {
   revalidatePath("/perfil");
 }
 
+/** Los errores de Google se devuelven en vez de tirarse: en producción Next oculta el mensaje de un throw en un Server Action (queda el genérico "React error #441"). */
+async function conErrorVisible(fn: () => Promise<{ synced: boolean }>): Promise<{ synced: boolean; error?: string }> {
+  try {
+    return await fn();
+  } catch (e) {
+    console.error("google calendar sync failed", e);
+    const msg = e instanceof Error ? e.message : "Error desconocido";
+    return { synced: false, error: `Google respondió con un error: ${msg}` };
+  }
+}
+
 /** Sincroniza Google Calendar ya mismo (en vez de esperar al cron diario). */
 export async function sincronizarGoogleCalendarAhora() {
   const userId = await requireUserId();
-  const result = await syncGoogleCalendarForUser(userId);
+  const result = await conErrorVisible(() => syncGoogleCalendarForUser(userId));
   revalidatePath("/perfil");
   return result;
 }
@@ -801,7 +814,7 @@ export async function sincronizarGoogleCalendarAhora() {
 export async function reiniciarCalendarioGoogle() {
   const userId = await requireUserId();
   await prisma.user.update({ where: { id: userId }, data: { googleCalendarId: null } });
-  const result = await syncGoogleCalendarForUser(userId);
+  const result = await conErrorVisible(() => syncGoogleCalendarForUser(userId));
   revalidatePath("/perfil");
   return result;
 }
@@ -961,7 +974,7 @@ export async function deleteFilter(id: number) {
 /** Arma el `query` de un SavedFilter a partir de los campos con nombre del Maestro de Filtros (no de una URL cruda, como sí hace `saveFilter`). */
 function queryFromFields(fd: FormData): Record<string, string | string[]> {
   const multi = ["cuenta", "categoria", "etiqueta"] as const;
-  const single = ["tipo", "q", "persona"] as const;
+  const single = ["tipo", "q", "persona", "adjuntos"] as const;
   const query: Record<string, string | string[]> = {};
   for (const k of multi) {
     const vals = fd.getAll(k).map(String).filter(Boolean);

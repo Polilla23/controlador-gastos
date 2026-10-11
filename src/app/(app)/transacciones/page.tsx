@@ -14,6 +14,7 @@ import MultiSelectFilter from "@/components/MultiSelectFilter";
 import TextOrEmptyFilter from "@/components/TextOrEmptyFilter";
 import StickyFilters from "@/components/StickyFilters";
 import { cotizaciones } from "@/lib/cotizaciones";
+import { listarPersonas } from "@/lib/personas";
 
 type SP = Record<string, string | string[] | undefined>;
 const asList = (v: string | string[] | undefined) => (v == null ? [] : Array.isArray(v) ? v : [v]);
@@ -37,6 +38,7 @@ export default async function TransaccionesPage({ searchParams }: { searchParams
   const qRaw = asOne(sp.q) ?? "";
   const descripcionVacia = qRaw === EMPTY_FILTER;
   const resumen = asOne(sp.resumen);
+  const adjuntos = asOne(sp.adjuntos);
 
   // Cada condición que necesita un OR interno (ej. "categoría X o sin categoría") se junta acá en
   // vez de pisar `where.OR` directo, porque puede haber más de una a la vez (categoría, etiqueta y
@@ -60,11 +62,13 @@ export default async function TransaccionesPage({ searchParams }: { searchParams
   if (personaVacia) where.counterparty = "";
   else if (persona) where.counterparty = { contains: persona, mode: "insensitive" };
   if (resumen) where.statementMonth = resumen;
+  if (adjuntos === "sin") where.attachments = { none: {} };
+  else if (adjuntos === "con") where.attachments = { some: {} };
   if (descripcionVacia) where.description = "";
   else if (qRaw) and.push({ OR: [{ description: { contains: qRaw, mode: "insensitive" } }, { note: { contains: qRaw, mode: "insensitive" } }] });
   if (and.length) where.AND = and;
 
-  const [rows, accounts, categories, tags, filtros, previos, budgets] = await Promise.all([
+  const [rows, accounts, categories, tags, filtros, counterparties, budgets] = await Promise.all([
     prisma.transaction.findMany({
       where,
       orderBy: [{ date: "desc" }, { id: "desc" }],
@@ -75,16 +79,9 @@ export default async function TransaccionesPage({ searchParams }: { searchParams
     prisma.category.findMany({ where: { userId }, orderBy: { name: "asc" } }),
     prisma.tag.findMany({ where: { userId }, orderBy: { name: "asc" } }),
     prisma.savedFilter.findMany({ where: { userId, scope: "TX" }, orderBy: { name: "asc" } }),
-    prisma.transaction.findMany({
-      where: { userId, counterparty: { not: "" } },
-      distinct: ["counterparty"],
-      select: { counterparty: true },
-      orderBy: { counterparty: "asc" },
-      take: 200,
-    }),
+    listarPersonas(userId),
     prisma.budget.findMany({ where: { userId, archived: false }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
   ]);
-  const counterparties = previos.map((p) => p.counterparty);
 
   // Si eligieron una sola tarjeta de crédito, ofrecemos filtrar por resumen ("paga octubre de 2026").
   const singleAccount = cuentaIds.length === 1 ? accounts.find((a) => a.id === cuentaIds[0]) : undefined;
@@ -137,7 +134,7 @@ export default async function TransaccionesPage({ searchParams }: { searchParams
         </div>
       )}
 
-      <form className="card mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-8 xl:items-end">
+      <form className="card mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-9 xl:items-end">
         <input type="hidden" name="preset" value={range.preset} />
         <input type="hidden" name="ancla" value={range.anchor} />
         {range.preset === "rango" && (
@@ -188,6 +185,14 @@ export default async function TransaccionesPage({ searchParams }: { searchParams
           initial={etiquetaRaw}
           options={[{ id: EMPTY_FILTER, label: "(Sin etiqueta)" }, ...tags.map((t) => ({ id: t.id, label: `#${t.name}` }))]}
         />
+        <div>
+          <label className="label">Comprobantes</label>
+          <select name="adjuntos" className="input" defaultValue={adjuntos ?? ""}>
+            <option value="">Todos</option>
+            <option value="sin">Sin comprobantes</option>
+            <option value="con">Con comprobantes</option>
+          </select>
+        </div>
         {statementMonths.length > 0 && (
           <div>
             <label className="label">Resumen de tarjeta</label>
@@ -206,7 +211,7 @@ export default async function TransaccionesPage({ searchParams }: { searchParams
         </button>
       </form>
 
-      <TransactionsTable rows={rows} accounts={accounts} categories={categories} tags={tags} budgets={budgets} quotes={quotes} />
+      <TransactionsTable rows={rows} accounts={accounts} categories={categories} tags={tags} budgets={budgets} quotes={quotes} counterparties={counterparties} />
       {rows.length === 300 && <p className="mt-3 text-center text-xs text-muted">Se muestran los 300 registros más recientes del período. Acotá el rango para ver el resto.</p>}
     </>
   );

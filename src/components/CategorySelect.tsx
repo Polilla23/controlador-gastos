@@ -1,6 +1,6 @@
 "use client";
 
-export type CategoryOpt = { id: number; name: string; kind: string; color: string; parentId: number | null };
+export type CategoryOpt = { id: number; name: string; kind: string; color: string; parentId: number | null; defaultTagId?: number | null };
 
 /** Native select with subcategories nested under their parent group. */
 export default function CategorySelect({
@@ -29,7 +29,8 @@ export default function CategorySelect({
   className?: string;
   required?: boolean;
 }) {
-  const pool = kind ? categories.filter((c) => c.kind === kind) : categories;
+  // Las categorías "Otros" (kind OTHER) no son ni de ingreso ni de egreso: sirven para los dos tipos.
+  const pool = kind ? categories.filter((c) => c.kind === kind || c.kind === "OTHER") : categories;
   const parents = pool.filter((c) => !c.parentId).sort((a, b) => a.name.localeCompare(b.name));
   const kids = (id: number) => pool.filter((c) => c.parentId === id).sort((a, b) => a.name.localeCompare(b.name));
   const orphans = pool.filter((c) => c.parentId && !parents.some((p) => p.id === c.parentId));

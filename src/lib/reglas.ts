@@ -91,3 +91,51 @@ export async function aplicarAlCrear(userId: string, transactionId: number, t: C
   });
   return efecto;
 }
+
+const HORA = 3600 * 1000;
+const DIA = 24 * HORA;
+
+/**
+ * Paso del cron diario: las reglas con periodicidad ("cada N días") que ya les toca se aplican
+ * solas a los registros cargados desde su última ejecución (o desde que se creó la regla, la
+ * primera vez) -- los de antes ya los toca la regla al crearse el registro, o a mano desde
+ * "Aplicar a los registros existentes". Sólo se cambia lo que realmente difiere.
+ */
+export async function ejecutarReglasProgramadas(ahora = new Date()) {
+  const reglas = await prisma.rule.findMany({
+    where: { active: true, scheduleDays: { not: null } },
+    include: { setTags: { select: { id: true, name: true } }, matchAccounts: { select: { id: true } }, matchToAccounts: { select: { id: true } } },
+  });
+
+  let reglasEjecutadas = 0;
+  let registrosTocados = 0;
+  for (const r of reglas) {
+    const cada = r.scheduleDays!;
+    // Margen de 3 hs: el cron no corre exactamente a la misma hora todos los días.
+    if (r.lastRunAt && ahora.getTime() - r.lastRunAt.getTime() < cada * DIA - 3 * HORA) continue;
+
+    const desde = r.lastRunAt ?? r.createdAt;
+    const registros = await prisma.transaction.findMany({
+      where: { userId: r.userId, createdAt: { gt: desde } },
+      select: { id: true, type: true, description: true, counterparty: true, note: true, accountId: true, toAccountId: true, categoryId: true, tags: { select: { id: true } } },
+    });
+    for (const t of registros) {
+      const efecto = efectoDe([r], t);
+      if (!efecto.reglas.length) continue;
+      const tagsNuevos = efecto.tagIds.filter((id) => !t.tags.some((x) => x.id === id));
+      const cambios = {
+        ...(efecto.categoryId !== undefined && efecto.categoryId !== t.categoryId ? { categoryId: efecto.categoryId } : {}),
+        ...(efecto.description && efecto.description !== t.description ? { description: efecto.description } : {}),
+        ...(efecto.note && efecto.note !== t.note ? { note: efecto.note } : {}),
+        ...(efecto.counterparty && efecto.counterparty !== t.counterparty ? { counterparty: efecto.counterparty } : {}),
+        ...(tagsNuevos.length ? { tags: { connect: tagsNuevos.map((id) => ({ id })) } } : {}),
+      };
+      if (!Object.keys(cambios).length) continue;
+      await prisma.transaction.update({ where: { id: t.id }, data: cambios });
+      registrosTocados++;
+    }
+    await prisma.rule.update({ where: { id: r.id }, data: { lastRunAt: ahora } });
+    reglasEjecutadas++;
+  }
+  return { reglasEjecutadas, registrosTocados };
+}

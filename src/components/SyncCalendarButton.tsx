@@ -9,12 +9,12 @@ export default function SyncCalendarButton() {
   const [pending, start] = useTransition();
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
-  const runWith = (fn: () => Promise<{ synced: boolean }>, okText: string) => {
+  const runWith = (fn: () => Promise<{ synced: boolean; error?: string }>, okText: string) => {
     setMsg(null);
     start(async () => {
       try {
         const r = await fn();
-        setMsg(r.synced ? { ok: true, text: okText } : { ok: false, text: "No se pudo: no hay una cuenta de Google conectada." });
+        setMsg(r.synced ? { ok: true, text: okText } : { ok: false, text: r.error ?? "No se pudo: no hay una cuenta de Google conectada." });
       } catch (e) {
         setMsg({ ok: false, text: e instanceof Error ? e.message : "Hubo un error." });
       }

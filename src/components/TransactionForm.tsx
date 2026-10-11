@@ -40,9 +40,8 @@ const TYPES = [
   { key: "TRANSFER", label: "Transferencia", cls: "bg-blue-500" },
 ];
 
-function TagPicker({ tags, initial }: { tags: TagOpt[]; initial: number[] }) {
-  const [sel, setSel] = useState<number[]>(initial);
-  const toggle = (id: number) => setSel((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
+function TagPicker({ tags, sel, onToggle }: { tags: TagOpt[]; sel: number[]; onToggle: (id: number) => void }) {
+  const toggle = onToggle;
   return (
     <div className="flex flex-wrap gap-2">
       {sel.map((id) => (
@@ -105,6 +104,16 @@ export default function TransactionForm({
   const [description, setDescription] = useState(initial?.description ?? "");
   const [note, setNote] = useState(initial?.note ?? "");
   const [hasBudget, setHasBudget] = useState(!!lockedBudgetId || !!initial?.budgetId);
+  const [categoryId, setCategoryId] = useState(initial?.categoryId != null ? String(initial.categoryId) : "");
+  const [tagIds, setTagIds] = useState<number[]>(initial?.tags.map((t) => t.id) ?? []);
+
+  // Al elegir una categoría se tilda sola su etiqueta predeterminada (o la de su categoría madre).
+  const pickCategory = (v: string) => {
+    setCategoryId(v);
+    const cat = categories.find((c) => String(c.id) === v);
+    const tagId = cat?.defaultTagId ?? categories.find((c) => c.id === cat?.parentId)?.defaultTagId ?? null;
+    if (tagId && tags.some((t) => t.id === tagId)) setTagIds((s) => (s.includes(tagId) ? s : [...s, tagId]));
+  };
   // Si ya tenía una nota distinta de la descripción, respetamos esa decisión y no la volvemos a pisar.
   const [noteEdited, setNoteEdited] = useState(!!initial && initial.note !== initial.description);
 
@@ -220,7 +229,7 @@ export default function TransactionForm({
           <label className="label">Categoría</label>
           {/* Una transferencia no es ingreso ni egreso, así que no tiene sentido filtrar por "kind"
               como en los otros dos tipos -- se puede elegir cualquier categoría (ej. "Ahorro"). */}
-          <CategorySelect categories={categories} kind={type === "TRANSFER" ? undefined : type} defaultValue={initial?.categoryId} />
+          <CategorySelect categories={categories} kind={type === "TRANSFER" ? undefined : type} value={categoryId} onChange={pickCategory} />
         </div>
       </div>
 
@@ -350,7 +359,7 @@ export default function TransactionForm({
       {tags.length > 0 && (
         <div>
           <label className="label">Etiquetas</label>
-          <TagPicker tags={tags} initial={initial?.tags.map((t) => t.id) ?? []} />
+          <TagPicker tags={tags} sel={tagIds} onToggle={(id) => setTagIds((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]))} />
         </div>
       )}
 

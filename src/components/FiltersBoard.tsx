@@ -35,6 +35,8 @@ function describe(q: Record<string, string | string[]>, accounts: AccountOpt[], 
   else if (persona) parts.push(`Persona: "${persona}"`);
   if (q.q === EMPTY_FILTER) parts.push("Buscar: (descripción vacía)");
   else if (q.q) parts.push(`Buscar: "${q.q}"`);
+  if (q.adjuntos === "sin") parts.push("Sin comprobantes");
+  else if (q.adjuntos === "con") parts.push("Con comprobantes");
   if (q.preset) parts.push(`Período: ${q.preset}`);
   return parts.length ? parts.join(" · ") : "Sin condiciones";
 }
@@ -93,6 +95,14 @@ function CamposFiltro({
         <>
           <TextOrEmptyFilter name="persona" label="Persona" initial={asOneStr(defaults.persona)} placeholder="Nombre o apellido (coincidencia)" />
           <TextOrEmptyFilter name="q" label="Buscar" initial={typeof defaults.q === "string" ? defaults.q : ""} placeholder="Descripción o nota" />
+          <div>
+            <label className="label">Comprobantes</label>
+            <select name="adjuntos" className="input" defaultValue={typeof defaults.adjuntos === "string" ? defaults.adjuntos : ""}>
+              <option value="">Todos</option>
+              <option value="sin">Sin comprobantes</option>
+              <option value="con">Con comprobantes</option>
+            </select>
+          </div>
         </>
       )}
       {soloResumen && <p className="text-xs text-muted">En Resumen sólo se puede filtrar por cuenta y etiqueta -- el resto de las condiciones no aplica ahí.</p>}

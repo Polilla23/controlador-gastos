@@ -106,7 +106,7 @@ async function proximosDelPeriodo(userId: string, titulo: string, start: Date, e
       orderBy: { dueDate: "asc" },
     }),
     prisma.account.findMany({ where: { userId, type: "CREDIT_CARD", archived: false, dueDay: { not: null } } }),
-    prisma.debt.findMany({ where: { userId, dueDate: { gte: start, lt: end } }, include: { payments: true } }),
+    prisma.debt.findMany({ where: { userId, isCredit: false, dueDate: { gte: start, lt: end } }, include: { payments: true } }),
     cotizaciones(),
   ]);
   const mep = quotes.find((q) => q.code === "bolsa")?.sell ?? null;
@@ -435,7 +435,7 @@ export async function runReminders() {
     }
 
     // Deudas con vencimiento cerca.
-    const deudas = await prisma.debt.findMany({ where: { userId: user.id, status: "OPEN", notify: true, dueDate: { not: null } }, include: { payments: true } });
+    const deudas = await prisma.debt.findMany({ where: { userId: user.id, isCredit: false, status: "OPEN", notify: true, dueDate: { not: null } }, include: { payments: true } });
     const marcarDeudas: number[] = [];
     for (const d of deudas) {
       if (!d.dueDate || d.dueDate > limit || sameDay(d.lastNotifiedOn, today)) continue;

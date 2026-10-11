@@ -22,9 +22,12 @@ export type CategoryRow = {
   count: number;
   icon: string | null;
   iconBody: string | null;
+  defaultTagId: number | null;
 };
 
-function Fields({ category, parents, kind, parentId }: { category?: CategoryRow; parents: CategoryRow[]; kind?: string; parentId?: number }) {
+type TagOpt = { id: number; name: string; color: string };
+
+function Fields({ category, parents, kind, parentId, tags }: { category?: CategoryRow; parents: CategoryRow[]; kind?: string; parentId?: number; tags: TagOpt[] }) {
   const fixedKind = category?.kind ?? kind ?? "EXPENSE";
   return (
     <>
@@ -60,6 +63,20 @@ function Fields({ category, parents, kind, parentId }: { category?: CategoryRow;
           <p className="mt-1 text-xs text-muted">Se usa en el gráfico &quot;Naturaleza del gasto&quot; y en los gastos fijos.</p>
         </div>
       )}
+      {tags.length > 0 && (
+        <div>
+          <label className="label">Etiqueta predeterminada</label>
+          <select name="defaultTagId" className="input" defaultValue={category?.defaultTagId ?? ""}>
+            <option value="">Ninguna</option>
+            {tags.map((t) => (
+              <option key={t.id} value={t.id}>
+                #{t.name}
+              </option>
+            ))}
+          </select>
+          <p className="mt-1 text-xs text-muted">Se tilda sola al elegir esta categoría en un registro nuevo (las subcategorías sin etiqueta propia usan la de su categoría madre).</p>
+        </div>
+      )}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div>
           <label className="label">Color</label>
@@ -74,7 +91,7 @@ function Fields({ category, parents, kind, parentId }: { category?: CategoryRow;
   );
 }
 
-export default function CategoriesBoard({ categories, kind, title }: { categories: CategoryRow[]; kind: string; title: string }) {
+export default function CategoriesBoard({ categories, tags, kind, title }: { categories: CategoryRow[]; tags: TagOpt[]; kind: string; title: string }) {
   const [, start] = useTransition();
   const pool = categories.filter((c) => c.kind === kind);
   const parents = pool.filter((c) => !c.parentId).sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name, "es"));
@@ -86,7 +103,7 @@ export default function CategoriesBoard({ categories, kind, title }: { categorie
       <span className="mr-1 hidden text-xs text-muted sm:inline">{c.count} mov.</span>
       <Modal title={`Editar ${c.name}`} triggerClassName="btn-icon" trigger={<Pencil size={15} />}>
         <ActionForm action={saveCategory}>
-          <Fields category={c} parents={categories} />
+          <Fields category={c} parents={categories} tags={tags} />
         </ActionForm>
       </Modal>
       <ConfirmButton
@@ -105,11 +122,12 @@ export default function CategoriesBoard({ categories, kind, title }: { categorie
         <h2 className="font-bold">{title}</h2>
         <Modal title={`Nueva categoría de ${title.toLowerCase()}`} triggerClassName="btn-ghost" trigger={<><Plus size={16} /> Nueva</>}>
           <ActionForm action={saveCategory}>
-            <Fields parents={categories} kind={kind} />
+            <Fields parents={categories} kind={kind} tags={tags} />
           </ActionForm>
         </Modal>
       </div>
 
+      {kind === "OTHER" && <p className="mb-2 text-xs text-muted">Estas categorías se pueden usar tanto en ingresos como en egresos.</p>}
       {parents.length === 0 && <p className="py-6 text-center text-sm text-muted">No hay categorías todavía.</p>}
       {parents.length > 1 && <p className="mb-2 text-xs text-muted">Arrastrá desde el asa para cambiar el orden.</p>}
 
@@ -129,7 +147,7 @@ export default function CategoriesBoard({ categories, kind, title }: { categorie
               <div className="flex items-center gap-1">
                 <Modal title={`Nueva subcategoría de ${p.name}`} triggerClassName="btn-icon" trigger={<Plus size={15} />}>
                   <ActionForm action={saveCategory}>
-                    <Fields parents={categories} kind={kind} parentId={p.id} />
+                    <Fields parents={categories} kind={kind} parentId={p.id} tags={tags} />
                   </ActionForm>
                 </Modal>
                 {actions(p)}

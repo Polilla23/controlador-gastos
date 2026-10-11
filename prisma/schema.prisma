@@ -10,40 +10,40 @@ datasource db {
 
 // id = Supabase Auth user id (uuid). Created on first login.
 model User {
-  id                 String              @id
-  email              String              @unique
-  name               String              @default("")
-  avatarPath         String? // path del avatar en el bucket de Storage
-  telegramChatId     String?             @unique
-  telegramCode       String?             @unique // one-time code used to link the chat
-  notifyDays         Int                 @default(3) // days before a due date to warn
-  notifyHour         Int                 @default(9) // local hour for the daily digest
-  backupFrequencyDays  Int?              // null = sin recordatorio de backup; si no, cada cuántos días avisar
-  lastBackupAt         DateTime?         // se actualiza solo al descargar un backup (manual o desde el aviso)
-  lastBackupReminderOn DateTime?         // dedupe diario del aviso de Telegram, mismo patrón que lastNotifiedOn
-  dashboard          Json? // { cards: string[], cardsMobile?: string[], accountIds: number[] }
-  googleAccessToken  String? // Google Calendar OAuth
-  googleRefreshToken String?
-  googleTokenExpiry  DateTime?
-  googleCalendarId   String? // calendario dedicado creado para la app
-  googleEmail        String? // sólo para mostrar la cuenta conectada
-  createdAt          DateTime            @default(now())
-  accounts           Account[]
-  categories         Category[]
-  tags               Tag[]
-  transactions       Transaction[]
-  plans              InstallmentPlan[]
-  planned            Planned[]
-  filters            SavedFilter[]
-  budgets            Budget[]
-  goals              Goal[]
-  debts              Debt[]
-  rules              Rule[]
-  groups             ShareGroup[]
-  holdings           Holding[]
-  investMoves        InvestMove[]
-  sharedGroupLinks   ShareCollaborator[]
-  statementImports   StatementImport[]
+  id                   String              @id
+  email                String              @unique
+  name                 String              @default("")
+  avatarPath           String? // path del avatar en el bucket de Storage
+  telegramChatId       String?             @unique
+  telegramCode         String?             @unique // one-time code used to link the chat
+  notifyDays           Int                 @default(3) // days before a due date to warn
+  notifyHour           Int                 @default(9) // local hour for the daily digest
+  backupFrequencyDays  Int? // null = sin recordatorio de backup; si no, cada cuántos días avisar
+  lastBackupAt         DateTime? // se actualiza solo al descargar un backup (manual o desde el aviso)
+  lastBackupReminderOn DateTime? // dedupe diario del aviso de Telegram, mismo patrón que lastNotifiedOn
+  dashboard            Json? // { cards: string[], cardsMobile?: string[], accountIds: number[] }
+  googleAccessToken    String? // Google Calendar OAuth
+  googleRefreshToken   String?
+  googleTokenExpiry    DateTime?
+  googleCalendarId     String? // calendario dedicado creado para la app
+  googleEmail          String? // sólo para mostrar la cuenta conectada
+  createdAt            DateTime            @default(now())
+  accounts             Account[]
+  categories           Category[]
+  tags                 Tag[]
+  transactions         Transaction[]
+  plans                InstallmentPlan[]
+  planned              Planned[]
+  filters              SavedFilter[]
+  budgets              Budget[]
+  goals                Goal[]
+  debts                Debt[]
+  rules                Rule[]
+  groups               ShareGroup[]
+  holdings             Holding[]
+  investMoves          InvestMove[]
+  sharedGroupLinks     ShareCollaborator[]
+  statementImports     StatementImport[]
 }
 
 model Account {
@@ -94,12 +94,15 @@ model Category {
   userId               String
   user                 User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
   name                 String
-  kind                 String // INCOME | EXPENSE
+  kind                 String // INCOME | EXPENSE | OTHER (las "Otros" sirven tanto para ingresos como para egresos)
   color                String                @default("#6B7280")
   icon                 String                @default("tag")
   nature               String                @default("NEED") // MUST | NEED | WANT (expense nature)
   sortOrder            Int                   @default(0)
   parentId             Int? // one level of nesting: parent categories group subcategories
+  /// Etiqueta que se tilda sola al elegir esta categoría en un registro nuevo (si no tiene, hereda la de su categoría madre).
+  defaultTagId         Int?
+  defaultTag           Tag?                  @relation("CategoryDefaultTag", fields: [defaultTagId], references: [id], onDelete: SetNull)
   parent               Category?             @relation("Subcategories", fields: [parentId], references: [id], onDelete: Cascade)
   children             Category[]            @relation("Subcategories")
   transactions         Transaction[]
@@ -129,6 +132,7 @@ model Tag {
   debts                Debt[]
   shareExpenses        ShareExpense[]
   statementImportItems StatementImportItem[]
+  defaultForCategories Category[]            @relation("CategoryDefaultTag")
 
   @@unique([userId, name])
 }
@@ -188,6 +192,7 @@ model InstallmentPlan {
   categoryId   Int?
   category     Category?     @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   transactions Transaction[]
+  debts        Debt[]
   createdAt    DateTime      @default(now())
 
   @@index([userId])
@@ -311,27 +316,36 @@ model GoalContribution {
 
 /// Plata prestada o pedida prestada, fuera del circuito de gastos.
 model Debt {
-  id             Int           @id @default(autoincrement())
-  userId         String
-  user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  direction      String // I_LENT (le presté) | I_OWE (me prestaron)
-  counterparty   String // a quién / quién
-  description    String        @default("")
-  amount         Float
-  currency       String        @default("ARS")
-  date           DateTime // cuándo se hizo
-  dueDate        DateTime? // cuándo hay que devolverla
-  accountId      Int?
-  account        Account?      @relation(fields: [accountId], references: [id], onDelete: SetNull)
-  categoryId     Int?
-  category       Category?     @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  tags           Tag[]
-  transactionId  Int? // el movimiento generado al crear la deuda, si se registró
-  status         String        @default("OPEN") // OPEN | CLOSED
-  notify         Boolean       @default(true)
-  lastNotifiedOn DateTime?
-  createdAt      DateTime      @default(now())
-  payments       DebtPayment[]
+  id                Int              @id @default(autoincrement())
+  userId            String
+  user              User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  direction         String // I_LENT (le presté) | I_OWE (me prestaron)
+  counterparty      String // a quién / quién
+  description       String           @default("")
+  amount            Float
+  currency          String           @default("ARS")
+  date              DateTime // cuándo se hizo
+  dueDate           DateTime? // cuándo hay que devolverla
+  accountId         Int?
+  account           Account?         @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  categoryId        Int?
+  category          Category?        @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  tags              Tag[]
+  transactionId     Int? // el movimiento generado al crear la deuda, si se registró
+  /// Crédito (sólo "me prestaron"): monto prestado, cuotas, valor de cada cuota e interés mensual (%).
+  /// "amount" es el total a devolver; las cuotas viven en "plan" (aparecen en Cuotas).
+  isCredit          Boolean          @default(false)
+  principal         Float?
+  installments      Int?
+  installmentAmount Float?
+  interestRate      Float?
+  planId            Int?
+  plan              InstallmentPlan? @relation(fields: [planId], references: [id], onDelete: SetNull)
+  status            String           @default("OPEN") // OPEN | CLOSED
+  notify            Boolean          @default(true)
+  lastNotifiedOn    DateTime?
+  createdAt         DateTime         @default(now())
+  payments          DebtPayment[]
 
   @@index([userId, status])
 }
@@ -376,6 +390,9 @@ model Rule {
   name                String
   active              Boolean   @default(true)
   sortOrder           Int       @default(0)
+  /// Cada cuántos días se ejecuta sola sobre los registros nuevos (null = sólo manual).
+  scheduleDays        Int?
+  lastRunAt           DateTime?
   /// Palabras separadas por coma; se buscan en descripción, contraparte y nota.
   keywords            String    @default("")
   matchType           String    @default("ANY") // ANY | INCOME | EXPENSE | TRANSFER

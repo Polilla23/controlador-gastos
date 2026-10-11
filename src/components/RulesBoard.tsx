@@ -29,7 +29,17 @@ export type RuleRow = {
   setCounterparty: string;
   setTags: Etiqueta[];
   categoria: string | null;
+  scheduleDays: number | null;
+  lastRunAt: Date | null;
 };
+
+const PERIODICIDADES: [string, string][] = [
+  ["", "Sólo manual"],
+  ["1", "Todos los días"],
+  ["7", "Cada 7 días"],
+  ["15", "Cada 15 días"],
+  ["30", "Cada 30 días"],
+];
 
 function TagPicker({ tags, initial }: { tags: Etiqueta[]; initial: number[] }) {
   const [sel, setSel] = useState<number[]>(initial);
@@ -141,6 +151,19 @@ function Campos({ r, accounts, categories, tags, personas }: { r?: RuleRow; acco
           </div>
         </div>
       </fieldset>
+
+      <div>
+        <label className="label">Ejecutar automáticamente</label>
+        <select name="scheduleDays" className="input" defaultValue={r?.scheduleDays != null ? String(r.scheduleDays) : ""}>
+          {PERIODICIDADES.map(([v, label]) => (
+            <option key={v} value={v}>
+              {label}
+            </option>
+          ))}
+          {r?.scheduleDays != null && !PERIODICIDADES.some(([v]) => v === String(r.scheduleDays)) && <option value={String(r.scheduleDays)}>Cada {r.scheduleDays} días</option>}
+        </select>
+        <p className="mt-1 text-xs text-muted">Con periodicidad, la regla se aplica sola a los registros cargados desde la última vez que corrió. Igual la podés aplicar a mano cuando quieras desde &quot;Aplicar a los registros existentes&quot;.</p>
+      </div>
     </>
   );
 }
@@ -275,7 +298,10 @@ export default function RulesBoard({
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div className="min-w-0">
                 <h2 className="truncate font-bold">{r.name}</h2>
-                <p className="text-xs text-muted">{r.active ? "Activa" : "Pausada"}</p>
+                <p className="text-xs text-muted">
+                  {r.active ? "Activa" : "Pausada"}
+                  {r.scheduleDays != null ? ` · se ejecuta ${r.scheduleDays === 1 ? "todos los días" : `cada ${r.scheduleDays} días`}${r.lastRunAt ? ` (última: ${fmtDate(r.lastRunAt)})` : ""}` : " · sólo manual"}
+                </p>
               </div>
               <div className="flex shrink-0 items-center gap-0.5">
                 <ConfirmButton

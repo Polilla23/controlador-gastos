@@ -12,7 +12,9 @@ export default function ActionForm({
   className = "space-y-4",
   submitLabel = "Guardar",
 }: {
-  action: (fd: FormData) => Promise<void>;
+  // Un Server Action que devuelve { error } muestra ese mensaje tal cual; tirar un Error en
+  // producción lo reemplaza por un texto genérico ("React error #441") y se pierde el motivo.
+  action: (fd: FormData) => Promise<void | { error: string }>;
   onDone?: () => void;
   children: ReactNode;
   className?: string;
@@ -31,7 +33,11 @@ export default function ActionForm({
         setError(null);
         start(async () => {
           try {
-            await action(fd);
+            const res = await action(fd);
+            if (res && typeof res === "object" && "error" in res) {
+              setError(res.error);
+              return;
+            }
             // Igual que en ConfirmButton/SavedFilters: llamar la acción directo no siempre alcanza
             // para que la página actual se actualice sola con el revalidatePath del server.
             router.refresh();
@@ -40,7 +46,8 @@ export default function ActionForm({
           } catch (err) {
             // Next's redirect() works by throwing; let it propagate.
             if (err instanceof Error && err.message === "NEXT_REDIRECT") throw err;
-            setError(err instanceof Error ? err.message : "Error al guardar");
+            const msg = err instanceof Error ? err.message : "";
+            setError(!msg || /Server Components render/i.test(msg) ? "Ocurrió un error en el servidor. Probá de nuevo." : msg);
           }
         });
       }}

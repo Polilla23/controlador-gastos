@@ -2,22 +2,17 @@ import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/auth";
 import { signedUrl } from "@/lib/storage";
 import { cotizaciones } from "@/lib/cotizaciones";
+import { listarPersonas } from "@/lib/personas";
 import Nav from "@/components/Nav";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await requireUser();
-  const [avatarUrl, accounts, categories, tags, previos, budgets, { lista: quotes }] = await Promise.all([
+  const [avatarUrl, accounts, categories, tags, personas, budgets, { lista: quotes }] = await Promise.all([
     user.avatarPath ? signedUrl(user.avatarPath, 3600).catch(() => null) : null,
     prisma.account.findMany({ where: { userId: user.id, archived: false }, orderBy: [{ sortOrder: "asc" }, { id: "asc" }] }),
     prisma.category.findMany({ where: { userId: user.id }, orderBy: { name: "asc" } }),
     prisma.tag.findMany({ where: { userId: user.id }, orderBy: { name: "asc" } }),
-    prisma.transaction.findMany({
-      where: { userId: user.id, counterparty: { not: "" } },
-      distinct: ["counterparty"],
-      select: { counterparty: true },
-      orderBy: { counterparty: "asc" },
-      take: 200,
-    }),
+    listarPersonas(user.id),
     prisma.budget.findMany({ where: { userId: user.id, archived: false }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
     cotizaciones(),
   ]);
@@ -30,7 +25,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         accounts={accounts}
         categories={categories}
         tags={tags}
-        counterparties={previos.map((p) => p.counterparty)}
+        counterparties={personas}
         budgets={budgets}
         quotes={quotes}
       />

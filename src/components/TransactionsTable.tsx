@@ -191,6 +191,7 @@ export default function TransactionsTable({
   tags,
   budgets = [],
   quotes = [],
+  counterparties = [],
 }: {
   rows: TxRow[];
   accounts: AccountOpt[];
@@ -198,6 +199,8 @@ export default function TransactionsTable({
   tags: TagOpt[];
   budgets?: BudgetOpt[];
   quotes?: QuoteOpt[];
+  /** Personas del maestro, para autocompletar "quién" al editar o clonar. */
+  counterparties?: string[];
 }) {
   const [sel, setSel] = useState<number[]>([]);
   const allShown = rows.length > 0 && sel.length === rows.length;
@@ -286,7 +289,7 @@ export default function TransactionsTable({
         <Attachments tx={t} />
       </Modal>
       <Modal title={`Editar #${t.id}`} triggerClassName="btn-icon" trigger={<Pencil size={15} />}>
-        <TransactionForm accounts={accounts} categories={categories} tags={tags} budgets={budgets} quotes={quotes} initial={{ ...t, tags: t.tags }} />
+        <TransactionForm accounts={accounts} categories={categories} tags={tags} counterparties={counterparties} budgets={budgets} quotes={quotes} initial={{ ...t, tags: t.tags }} />
       </Modal>
       {t.type !== "TRANSFER" && !t.planId && (
         <Modal title={`Dividir #${t.id}`} triggerClassName="btn-icon" trigger={<Split size={15} />}>
@@ -298,6 +301,7 @@ export default function TransactionsTable({
           accounts={accounts}
           categories={categories}
           tags={tags}
+          counterparties={counterparties}
           budgets={budgets}
           quotes={quotes}
           initial={{ ...t, id: undefined, date: new Date(), tags: t.tags }}
@@ -334,61 +338,6 @@ export default function TransactionsTable({
 
   return (
     <>
-      {sel.length > 0 && (
-        <div className="sticky top-16 z-20 mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-brand-400/40 bg-brand-500/10 px-3 py-2 md:top-2">
-          <span className="text-sm font-semibold">{sel.length} seleccionados</span>
-          <div className="ml-auto flex flex-wrap gap-2">
-            <button type="button" className="btn-ghost" onClick={() => setSel([])}>
-              Limpiar
-            </button>
-            <Modal title={`Editar ${sel.length} registros`} triggerClassName="btn-primary" trigger={<><Layers size={15} /> Editar en bloque</>}>
-              <ActionForm action={bulkUpdateTransactions} onDone={() => setSel([])} submitLabel="Aplicar cambios">
-                {sel.map((id) => (
-                  <input key={id} type="hidden" name="ids" value={id} />
-                ))}
-                <p className="text-sm text-muted">Solo se aplican los campos que completes. El resto queda como está.</p>
-                <div>
-                  <label className="label">Nueva categoría</label>
-                  <CategorySelect categories={categories} noneLabel="— No cambiar —" extra={{ value: "none", label: "Quitar la categoría" }} />
-                </div>
-                <div>
-                  <label className="label">Mover a la cuenta</label>
-                  <select name="accountId" className="input" defaultValue="">
-                    <option value="">— No cambiar —</option>
-                    {accounts.map((a) => (
-                      <option key={a.id} value={a.id}>
-                        {a.name} ({a.currency})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                {tags.length > 0 && (
-                  <div>
-                    <label className="label">Agregar etiquetas</label>
-                    <div className="flex flex-wrap gap-2">
-                      {tags.map((t) => (
-                        <label key={t.id} className="chip cursor-pointer border border-line px-2.5 py-1">
-                          <input type="checkbox" name="addTagIds" value={t.id} className="mr-1 h-3.5 w-3.5 accent-[var(--color-brand-500)]" />#{t.name}
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </ActionForm>
-            </Modal>
-            <ConfirmButton
-              action={async () => {
-                await bulkDeleteTransactions(sel);
-                setSel([]);
-              }}
-              message={`¿Eliminar ${sel.length} registros? No se puede deshacer.`}
-            >
-              <Trash2 size={15} /> Eliminar
-            </ConfirmButton>
-          </div>
-        </div>
-      )}
-
       <div className="card overflow-hidden p-0">
         {/* Total del período */}
         {rows.length > 0 && (
@@ -523,6 +472,61 @@ export default function TransactionsTable({
 
         {rows.length === 0 && <p className="py-10 text-center text-sm text-muted">No hay registros con estos filtros.</p>}
       </div>
+
+      {sel.length > 0 && (
+        <div className="sticky bottom-20 z-30 mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-brand-400/50 bg-card px-3 py-2 shadow-xl ring-1 ring-brand-500/20 md:bottom-4">
+          <span className="text-sm font-semibold">{sel.length} seleccionados</span>
+          <div className="ml-auto flex flex-wrap gap-2">
+            <button type="button" className="btn-ghost" onClick={() => setSel([])}>
+              Limpiar
+            </button>
+            <Modal title={`Editar ${sel.length} registros`} triggerClassName="btn-primary" trigger={<><Layers size={15} /> Editar en bloque</>}>
+              <ActionForm action={bulkUpdateTransactions} onDone={() => setSel([])} submitLabel="Aplicar cambios">
+                {sel.map((id) => (
+                  <input key={id} type="hidden" name="ids" value={id} />
+                ))}
+                <p className="text-sm text-muted">Solo se aplican los campos que completes. El resto queda como está.</p>
+                <div>
+                  <label className="label">Nueva categoría</label>
+                  <CategorySelect categories={categories} noneLabel="— No cambiar —" extra={{ value: "none", label: "Quitar la categoría" }} />
+                </div>
+                <div>
+                  <label className="label">Mover a la cuenta</label>
+                  <select name="accountId" className="input" defaultValue="">
+                    <option value="">— No cambiar —</option>
+                    {accounts.map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.name} ({a.currency})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                {tags.length > 0 && (
+                  <div>
+                    <label className="label">Agregar etiquetas</label>
+                    <div className="flex flex-wrap gap-2">
+                      {tags.map((t) => (
+                        <label key={t.id} className="chip cursor-pointer border border-line px-2.5 py-1">
+                          <input type="checkbox" name="addTagIds" value={t.id} className="mr-1 h-3.5 w-3.5 accent-[var(--color-brand-500)]" />#{t.name}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </ActionForm>
+            </Modal>
+            <ConfirmButton
+              action={async () => {
+                await bulkDeleteTransactions(sel);
+                setSel([]);
+              }}
+              message={`¿Eliminar ${sel.length} registros? No se puede deshacer.`}
+            >
+              <Trash2 size={15} /> Eliminar
+            </ConfirmButton>
+          </div>
+        </div>
+      )}
     </>
   );
 }

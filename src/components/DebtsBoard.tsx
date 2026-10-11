@@ -1,13 +1,15 @@
 "use client";
 
 import { useState } from "react";
-import { ArrowDownLeft, ArrowUpRight, HandCoins, Pencil, Plus, RotateCcw, Trash2 } from "lucide-react";
+import Link from "next/link";
+import { ArrowDownLeft, ArrowUpRight, CalendarClock, HandCoins, Pencil, Plus, RotateCcw, Trash2 } from "lucide-react";
 import ActionForm from "./ActionForm";
 import Modal from "./Modal";
 import ConfirmButton from "./ConfirmButton";
 import MoneyInput from "./MoneyInput";
 import { addDebtPayment, deleteDebt, deleteDebtPayment, saveDebt, setDebtStatus } from "@/lib/actions-deudas";
 import { CURRENCIES, fmtDate, money, toInputDate } from "@/lib/format";
+import { calcularCredito } from "@/lib/credito";
 import LinkTransaction from "./LinkTransaction";
 import CategorySelect, { type CategoryOpt } from "./CategorySelect";
 
@@ -30,6 +32,11 @@ export type DebtRow = {
   category: { name: string; color: string } | null;
   tags: { id: number; name: string; color: string }[];
   payments: { id: number; amount: number; date: Date; note: string }[];
+  isCredit: boolean;
+  principal: number | null;
+  installments: number | null;
+  installmentAmount: number | null;
+  interestRate: number | null;
 };
 
 function TagPicker({ tags, initial }: { tags: Etiqueta[]; initial: number[] }) {
@@ -60,6 +67,15 @@ function TagPicker({ tags, initial }: { tags: Etiqueta[]; initial: number[] }) {
 
 function Campos({ d, accounts, categories, tags, contrapartes }: { d?: DebtRow; accounts: Cuenta[]; categories: CategoryOpt[]; tags: Etiqueta[]; contrapartes: string[] }) {
   const [direction, setDirection] = useState(d?.direction ?? "I_LENT");
+  const [esCredito, setEsCredito] = useState(false);
+  const [monto, setMonto] = useState("");
+  const [cuotas, setCuotas] = useState(12);
+  const [modo, setModo] = useState<"cuota" | "tasa">("cuota");
+  const [cuota, setCuota] = useState("");
+  const [tasa, setTasa] = useState("");
+  const bloqueado = !!d?.isCredit; // un crédito ya cargado no se recalcula desde acá
+  const credito = !d && esCredito && direction === "I_OWE";
+  const calc = credito ? calcularCredito({ principal: Number(monto), cuotas, cuota: modo === "cuota" ? Number(cuota) : null, tasaMensualPct: modo === "tasa" ? Number(tasa) : null }) : null;
   return (
     <>
       {d && <input type="hidden" name="id" value={d.id} />}
@@ -95,46 +111,107 @@ function Campos({ d, accounts, categories, tags, contrapartes }: { d?: DebtRow; 
         <input name="description" className="input" defaultValue={d?.description} placeholder="Ej: entrada del recital" />
       </div>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <div>
-          <label className="label">Monto</label>
-          <MoneyInput name="amount" required defaultValue={d?.amount} />
+      {direction === "I_OWE" && !d && (
+        <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-dashed border-line p-3 text-sm font-medium">
+          <input type="checkbox" name="isCredit" checked={esCredito} onChange={(e) => setEsCredito(e.target.checked)} className="h-4 w-4 accent-[var(--color-brand-500)]" />
+          Es un crédito (con cuotas e interés)
+        </label>
+      )}
+
+      {bloqueado && d && (
+        <>
+          <input type="hidden" name="amount" value={d.amount} />
+          <input type="hidden" name="currency" value={d.currency} />
+          <input type="hidden" name="accountId" value={d.accountId ?? ""} />
+          <input type="hidden" name="dueDate" value={d.dueDate ? toInputDate(new Date(d.dueDate)) : ""} />
+          <p className="rounded-lg bg-subtle px-3 py-2 text-sm text-muted">
+            Crédito de <b className="text-fg">{money(d.principal ?? d.amount, d.currency)}</b> en {d.installments} cuotas de <b className="text-fg">{money(d.installmentAmount ?? 0, d.currency)}</b> (a devolver{" "}
+            <b className="text-fg">{money(d.amount, d.currency)}</b>). Los montos y las cuotas se manejan desde <b>Cuotas</b>; acá sólo se edita lo descriptivo.
+          </p>
+        </>
+      )}
+
+      {!bloqueado && (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div>
+            <label className="label">{credito ? "Monto prestado" : "Monto"}</label>
+            <MoneyInput name="amount" required defaultValue={d?.amount} onValueChange={setMonto} />
+          </div>
+          <div>
+            <label className="label">Moneda</label>
+            <select name="currency" className="input" defaultValue={d?.currency ?? "ARS"}>
+              {CURRENCIES.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
-        <div>
-          <label className="label">Moneda</label>
-          <select name="currency" className="input" defaultValue={d?.currency ?? "ARS"}>
-            {CURRENCIES.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </select>
+      )}
+
+      {credito && (
+        <div className="space-y-3 rounded-xl border border-line p-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div>
+              <label className="label">Cantidad de cuotas</label>
+              <input name="installments" type="number" min={1} max={360} required className="input" value={cuotas} onChange={(e) => setCuotas(Math.max(1, Number(e.target.value) || 1))} />
+            </div>
+            <div>
+              <label className="label">Calcular a partir de</label>
+              <select className="input" value={modo} onChange={(e) => setModo(e.target.value as "cuota" | "tasa")}>
+                <option value="cuota">El valor de cada cuota</option>
+                <option value="tasa">La tasa de interés mensual</option>
+              </select>
+            </div>
+          </div>
+          {modo === "cuota" ? (
+            <div>
+              <label className="label">Valor de cada cuota</label>
+              <MoneyInput key="cuota" name="installmentAmount" required onValueChange={setCuota} />
+            </div>
+          ) : (
+            <div>
+              <label className="label">Interés mensual (%)</label>
+              <input key="tasa" name="interestRate" type="number" step="0.01" min={0} max={100} required className="input" value={tasa} onChange={(e) => setTasa(e.target.value)} placeholder="Ej: 4" />
+            </div>
+          )}
+          {calc && (
+            <p className="rounded-lg bg-subtle px-3 py-2 text-sm text-muted">
+              {cuotas} cuotas de <b className="text-fg">{money(calc.cuota, "ARS")}</b> · a devolver <b className="text-fg">{money(calc.total, "ARS")}</b> · interés{" "}
+              <b className="text-fg">{money(calc.interes, "ARS")}</b> ({calc.interesPct.toLocaleString("es-AR")}% en total, {calc.tasaMensualPct.toLocaleString("es-AR")}% mensual)
+            </p>
+          )}
         </div>
-      </div>
+      )}
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div>
           <label className="label">Fecha</label>
           <input name="date" type="date" required className="input" defaultValue={toInputDate(d?.date ? new Date(d.date) : new Date())} />
         </div>
-        <div>
-          <label className="label">Vence el (opcional)</label>
-          <input name="dueDate" type="date" className="input" defaultValue={d?.dueDate ? toInputDate(new Date(d.dueDate)) : ""} />
-        </div>
+        {!bloqueado && (
+          <div>
+            <label className="label">{credito ? "Vence la 1ª cuota el" : "Vence el (opcional)"}</label>
+            <input name="dueDate" type="date" required={credito} className="input" defaultValue={d?.dueDate ? toInputDate(new Date(d.dueDate)) : ""} />
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <div>
-          <label className="label">{direction === "I_LENT" ? "De qué cuenta salió" : "A qué cuenta entró"}</label>
-          <select name="accountId" className="input" defaultValue={d?.accountId ?? ""}>
-            <option value="">Sin definir</option>
-            {accounts.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.name} ({a.currency})
-              </option>
-            ))}
-          </select>
-        </div>
+        {!bloqueado && (
+          <div>
+            <label className="label">{credito ? "Cuenta (entró la plata y se pagan las cuotas)" : direction === "I_LENT" ? "De qué cuenta salió" : "A qué cuenta entró"}</label>
+            <select name="accountId" required={credito} className="input" defaultValue={d?.accountId ?? ""}>
+              <option value="">{credito ? "Elegí una cuenta" : "Sin definir"}</option>
+              {accounts.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name} ({a.currency})
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
         <div>
           <label className="label">Categoría</label>
           <CategorySelect categories={categories} defaultValue={d?.categoryId} />
@@ -254,6 +331,12 @@ export default function DebtsBoard({
                 {d.description ? ` · ${d.description}` : ""}
                 {d.category ? ` · ${d.category.name}` : ""}
               </div>
+              {d.isCredit && d.installments && (
+                <div className="mt-0.5 truncate text-xs text-muted">
+                  Crédito · {d.installments} cuotas de {money(d.installmentAmount ?? 0, d.currency)} · prestado {money(d.principal ?? d.amount, d.currency)}
+                  {d.interestRate ? ` · ${d.interestRate.toLocaleString("es-AR")}% mensual` : ""}
+                </div>
+              )}
               {d.tags.length > 0 && (
                 <div className="mt-1 flex flex-wrap gap-1">
                   {d.tags.map((t) => (
@@ -266,10 +349,15 @@ export default function DebtsBoard({
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-0.5">
-            {d.status === "OPEN" && (
+            {d.status === "OPEN" && !d.isCredit && (
               <Modal title={`Deuda con ${d.counterparty}`} triggerClassName="btn-icon" trigger={<HandCoins size={16} />}>
                 <Devolver d={d} accounts={accounts} />
               </Modal>
+            )}
+            {d.isCredit && (
+              <Link href="/cuotas" className="btn-icon" title="Ver las cuotas de este crédito">
+                <CalendarClock size={16} />
+              </Link>
             )}
             {d.status === "CLOSED" && (
               <ConfirmButton action={async () => setDebtStatus(d.id, "OPEN")} className="btn-icon" message="¿Volver a abrir esta deuda?">
@@ -281,7 +369,7 @@ export default function DebtsBoard({
                 <Campos d={d} accounts={accounts} categories={categories} tags={tags} contrapartes={contrapartes} />
               </ActionForm>
             </Modal>
-            <ConfirmButton action={async () => deleteDebt(d.id)} className="btn-icon hover:text-red-500" message={`¿Eliminar la deuda con ${d.counterparty}?`}>
+            <ConfirmButton action={async () => deleteDebt(d.id)} className="btn-icon hover:text-red-500" message={d.isCredit ? `¿Eliminar el crédito con ${d.counterparty}? También se borran sus ${d.installments} cuotas de Cuotas y Transacciones.` : `¿Eliminar la deuda con ${d.counterparty}?`}>
               <Trash2 size={15} />
             </ConfirmButton>
           </div>

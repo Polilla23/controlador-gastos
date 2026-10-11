@@ -4,7 +4,9 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "./prisma";
 import { requireUserId } from "./auth";
-import { parseInput } from "./tz";
+import { addMonths, parseInput } from "./tz";
+import { statementMonthForDate } from "./tarjetas";
+import { calcularCredito } from "./credito";
 import { assertOwnedTransaction, readLinkMode } from "./linkTransaction";
 
 const refresh = () => revalidatePath("/", "layout");
@@ -21,6 +23,11 @@ const debtSchema = z.object({
   accountId: z.preprocess((v) => (v === "" || v == null ? null : Number(v)), z.number().int().nullable()),
   categoryId: z.preprocess((v) => (v === "" || v == null ? null : Number(v)), z.number().int().nullable()),
   notify: z.preprocess((v) => v === "on" || v === "true", z.boolean()).default(true),
+  // Sólo para "me prestaron" con cuotas: si es un crédito, `amount` es el monto PRESTADO y el total a devolver se calcula.
+  isCredit: z.preprocess((v) => v === "on" || v === "true", z.boolean()).default(false),
+  installments: z.preprocess((v) => (v === "" || v == null ? null : Number(v)), z.number().int().min(1).max(360).nullable()).default(null),
+  installmentAmount: z.preprocess((v) => (v === "" || v == null ? null : Number(v)), z.number().positive().nullable()).default(null),
+  interestRate: z.preprocess((v) => (v === "" || v == null ? null : Number(v)), z.number().min(0).max(100).nullable()).default(null),
 });
 
 /**
@@ -53,7 +60,82 @@ export async function saveDebt(fd: FormData) {
   };
 
   if (id) {
-    await prisma.debt.update({ where: { id, userId }, data: { ...data, tags: { set: tagIds.map((t) => ({ id: t })) } } });
+    const existente = await prisma.debt.findFirst({ where: { id, userId } });
+    if (!existente) throw new Error("La deuda no existe");
+    // Los números de un crédito (monto, cuotas, vencimiento, cuenta) viven en su plan de Cuotas: acá sólo se edita lo descriptivo.
+    const descriptivo = { counterparty: data.counterparty, description: data.description, date: data.date, categoryId: data.categoryId, notify: data.notify };
+    await prisma.debt.update({ where: { id, userId }, data: { ...(existente.isCredit ? descriptivo : data), tags: { set: tagIds.map((t) => ({ id: t })) } } });
+  } else if (d.isCredit && d.direction === "I_OWE") {
+    if (mode === "existing" && existingId) await assertOwnedTransaction(userId, existingId);
+    if (!d.accountId) throw new Error("Elegí la cuenta por la que entró la plata y se pagan las cuotas");
+    if (!d.dueDate) throw new Error("Poné el vencimiento de la primera cuota");
+    const n = d.installments ?? 0;
+    const calc = calcularCredito({ principal: d.amount, cuotas: n, cuota: d.installmentAmount, tasaMensualPct: d.interestRate });
+    if (!calc) throw new Error("Poné la cantidad de cuotas");
+    const account = await prisma.account.findUniqueOrThrow({ where: { id: d.accountId } });
+    const primera = parseInput(d.dueDate);
+    const nombre = `Préstamo de ${data.counterparty}${d.description ? ` · ${d.description}` : ""}`;
+
+    await prisma.$transaction(
+      async (tx) => {
+        const debt = await tx.debt.create({
+          data: {
+            ...data,
+            userId,
+            currency: account.currency,
+            amount: calc.total,
+            dueDate: primera,
+            isCredit: true,
+            principal: d.amount,
+            installments: n,
+            installmentAmount: calc.cuota,
+            interestRate: calc.tasaMensualPct,
+            tags: { connect: tagIds.map((t) => ({ id: t })) },
+          },
+        });
+        // El plan aparece en Cuotas igual que una compra en cuotas: un egreso por mes desde el primer vencimiento.
+        const plan = await tx.installmentPlan.create({
+          data: { userId, description: nombre, totalAmount: calc.total, installments: n, startDate: primera, accountId: account.id, categoryId: d.categoryId },
+        });
+        await tx.transaction.createMany({
+          data: Array.from({ length: n }, (_, i) => ({
+            userId,
+            type: "EXPENSE",
+            amount: calc.cuota,
+            currency: account.currency,
+            date: addMonths(primera, i),
+            description: `${nombre} (${i + 1}/${n})`,
+            counterparty: data.counterparty,
+            note: `Deuda #${debt.id}`,
+            accountId: account.id,
+            categoryId: d.categoryId,
+            planId: plan.id,
+            installmentNo: i + 1,
+            statementMonth: account.type === "CREDIT_CARD" ? statementMonthForDate(addMonths(primera, i), account) : null,
+          })),
+        });
+        let transactionId: number | null = mode === "existing" && existingId ? existingId : null;
+        if (mode === "new") {
+          const ingreso = await tx.transaction.create({
+            data: {
+              userId,
+              type: "INCOME",
+              amount: d.amount,
+              currency: account.currency,
+              date: data.date,
+              description: `Préstamo de ${data.counterparty}`,
+              counterparty: data.counterparty,
+              note: `Deuda #${debt.id}`,
+              accountId: account.id,
+              categoryId: d.categoryId,
+            },
+          });
+          transactionId = ingreso.id;
+        }
+        await tx.debt.update({ where: { id: debt.id }, data: { planId: plan.id, transactionId } });
+      },
+      { timeout: 30000 },
+    );
   } else if (mode === "existing" && existingId) {
     await assertOwnedTransaction(userId, existingId);
     await prisma.debt.create({ data: { ...data, userId, transactionId: existingId, tags: { connect: tagIds.map((t) => ({ id: t })) } } });
@@ -82,6 +164,9 @@ export async function saveDebt(fd: FormData) {
 
 export async function deleteDebt(id: number) {
   const userId = await requireUserId();
+  // Un crédito tiene su plan en Cuotas: se borra junto con la deuda (y con él, sus cuotas).
+  const debt = await prisma.debt.findFirst({ where: { id, userId }, select: { planId: true } });
+  if (debt?.planId) await prisma.installmentPlan.deleteMany({ where: { id: debt.planId, userId } });
   await prisma.debt.deleteMany({ where: { id, userId } });
   refresh();
 }

@@ -14,7 +14,7 @@ async function itemsParaCalendario(userId: string, start: Date, end: Date): Prom
   const [items, cards, debts] = await Promise.all([
     prisma.planned.findMany({ where: { userId, done: false, includeInCalendar: true, type: "EXPENSE", dueDate: { gte: start, lt: end } } }),
     prisma.account.findMany({ where: { userId, type: "CREDIT_CARD", archived: false, dueDay: { not: null } } }),
-    prisma.debt.findMany({ where: { userId, status: "OPEN", direction: "I_OWE", dueDate: { gte: start, lt: end } }, include: { payments: true } }),
+    prisma.debt.findMany({ where: { userId, isCredit: false, status: "OPEN", direction: "I_OWE", dueDate: { gte: start, lt: end } }, include: { payments: true } }),
   ]);
 
   const out: { dateKey: string; nombre: string }[] = [];

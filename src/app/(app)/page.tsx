@@ -5,6 +5,7 @@ import { loadDashboard } from "@/lib/stats";
 import { readPrefs } from "@/lib/cards";
 import { resolveRange } from "@/lib/format";
 import { cotizaciones } from "@/lib/cotizaciones";
+import { listarPersonas } from "@/lib/personas";
 import PageHeader from "@/components/PageHeader";
 import RangePicker from "@/components/RangePicker";
 import DashboardCards from "@/components/DashboardCards";
@@ -30,12 +31,13 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   const cuentaIds = asList(sp.cuenta).map(Number).filter((n) => !Number.isNaN(n));
   const accountIds = cuentaIds.length ? cuentaIds : prefs.accountIds;
 
-  const [data, categories, tags, filtros, budgets, { lista: quotes }] = await Promise.all([
+  const [data, categories, tags, filtros, budgets, personas, { lista: quotes }] = await Promise.all([
     loadDashboard(user.id, range, accountIds, tagId, trendRange, compareMonths),
     prisma.category.findMany({ where: { userId: user.id }, orderBy: { name: "asc" } }),
     prisma.tag.findMany({ where: { userId: user.id }, orderBy: { name: "asc" } }),
     prisma.savedFilter.findMany({ where: { userId: user.id, scope: "DASHBOARD" }, orderBy: { name: "asc" } }),
     prisma.budget.findMany({ where: { userId: user.id, archived: false }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
+    listarPersonas(user.id),
     cotizaciones(),
   ]);
 
@@ -72,7 +74,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
             accounts={data.accounts.map((a) => ({ id: a.id, name: a.name, currency: a.currency, color: a.color, selected: prefs.accountIds.includes(a.id) }))}
           />
           <Modal title="Nuevo registro" triggerClassName="btn-primary hidden md:inline-flex" trigger={<><Plus size={16} /> Nuevo registro</>}>
-            <TransactionForm accounts={data.accounts} categories={categories} tags={tags} budgets={budgets} quotes={quotes} />
+            <TransactionForm accounts={data.accounts} categories={categories} tags={tags} counterparties={personas} budgets={budgets} quotes={quotes} />
           </Modal>
         </div>
       </PageHeader>

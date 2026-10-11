@@ -17,6 +17,7 @@ const ruleSchema = z.object({
   setDescription: z.string().default(""),
   setNote: z.string().default(""),
   setCounterparty: z.string().default(""),
+  scheduleDays: optInt,
 });
 
 export async function saveRule(fd: FormData) {
@@ -38,6 +39,7 @@ export async function saveRule(fd: FormData) {
   const cuentaIds = [...matchAccountIds, ...matchToAccountIds];
   if (cuentaIds.length && (await prisma.account.count({ where: { id: { in: cuentaIds }, userId } })) !== new Set(cuentaIds).size) throw new Error("Cuenta inválida");
 
+  if (d.scheduleDays != null && (d.scheduleDays < 1 || d.scheduleDays > 365)) throw new Error("La periodicidad tiene que ser de 1 a 365 días");
   const base = { ...d, keywords: d.keywords.trim(), matchCounterparties };
   if (id) {
     await prisma.rule.update({

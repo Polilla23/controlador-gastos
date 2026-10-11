@@ -6,9 +6,10 @@ import { icono } from "@/lib/iconos";
 
 export default async function CategoriasPage() {
   const userId = await requireUserId();
-  const [categoriesRaw, counts] = await Promise.all([
+  const [categoriesRaw, counts, tags] = await Promise.all([
     prisma.category.findMany({ where: { userId }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }] }),
     prisma.transaction.groupBy({ by: ["categoryId"], where: { userId }, _count: { _all: true } }),
+    prisma.tag.findMany({ where: { userId }, orderBy: { name: "asc" }, select: { id: true, name: true, color: true } }),
   ]);
   // Primera vez que se usa el orden manual: arrancamos de A a Z.
   let categories = categoriesRaw;
@@ -24,10 +25,10 @@ export default async function CategoriasPage() {
     <>
       <PageHeader title="Categorías" subtitle="Agrupá tus movimientos. Cada categoría puede tener subcategorías." />
       <div className="grid gap-4 lg:grid-cols-2">
-        <CategoriesBoard categories={rows} kind="EXPENSE" title="Egresos" />
+        <CategoriesBoard categories={rows} tags={tags} kind="EXPENSE" title="Egresos" />
         <div className="min-w-0 space-y-4">
-          <CategoriesBoard categories={rows} kind="INCOME" title="Ingresos" />
-          <CategoriesBoard categories={rows} kind="OTHER" title="Otros" />
+          <CategoriesBoard categories={rows} tags={tags} kind="INCOME" title="Ingresos" />
+          <CategoriesBoard categories={rows} tags={tags} kind="OTHER" title="Otros" />
         </div>
       </div>
     </>
