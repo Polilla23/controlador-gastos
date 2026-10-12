@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { Pencil, RotateCcw } from "lucide-react";
-import { guardarCiclo, listarCiclos, previsualizarCiclo, restablecerCiclo, type FilaCiclo } from "@/lib/actions-ciclos";
+import { desajustesDeTarjeta, guardarCiclo, listarCiclos, previsualizarCiclo, reasignarResumenes, restablecerCiclo, type FilaCiclo } from "@/lib/actions-ciclos";
 import { fmtDate } from "@/lib/format";
 import { parseInput } from "@/lib/tz";
 import { statementLabel } from "@/lib/tarjetas";
@@ -30,6 +30,7 @@ export default function CiclosTarjeta({ accountId }: { accountId: number }) {
   const [cierre, setCierre] = useState("");
   const [venc, setVenc] = useState("");
   const [impacto, setImpacto] = useState<string | null>(null);
+  const [desajuste, setDesajuste] = useState<string | null>(null);
   const [pending, start] = useTransition();
 
   const cargar = () =>
@@ -40,6 +41,25 @@ export default function CiclosTarjeta({ accountId }: { accountId: number }) {
         setError(null);
         setFilas(r);
       }
+      const d = await desajustesDeTarjeta(accountId);
+      setDesajuste(
+        "error" in d || d.total === 0
+          ? null
+          : `Hay ${d.total} registro${d.total > 1 ? "s" : ""} que no están en el resumen que les corresponde según estas fechas: ` +
+              d.movimientos
+                .slice(0, 4)
+                .map((m) => `${m.cantidad} de ${m.desde ? statementLabel(m.desde) : "sin resumen"} a ${statementLabel(m.hasta)}`)
+                .join(", ") +
+              (d.movimientos.length > 4 ? "…" : "."),
+      );
+    });
+
+  const reasignar = () =>
+    start(async () => {
+      const r = await reasignarResumenes(accountId);
+      if ("error" in r) return setError(r.error);
+      setAviso(`Listo: se reasignaron ${r.movidos} registros.`);
+      cargar();
     });
 
   useEffect(() => {
@@ -105,6 +125,14 @@ export default function CiclosTarjeta({ accountId }: { accountId: number }) {
         pasaron más recientes (ACTUAL), el anterior y el siguiente.
       </p>
       {aviso && <p className="rounded-lg bg-brand-500/10 px-3 py-2 text-xs font-medium text-brand-600">{aviso}</p>}
+      {desajuste && (
+        <div className="space-y-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-muted">
+          <p>{desajuste}</p>
+          <button type="button" className="btn-ghost" disabled={pending} onClick={reasignar}>
+            Reasignarlos ahora
+          </button>
+        </div>
+      )}
       <ul className="max-h-80 divide-y divide-line overflow-y-auto rounded-xl border border-line text-sm">
         {filas.map((f) =>
           editando === f.month ? (

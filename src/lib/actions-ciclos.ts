@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "./prisma";
 import { requireUserId } from "./auth";
 import { armarCiclos, estados, mesDeFecha, sumarMesesA, ventanaDeMeses, type CicloBase, type EstadoCiclo } from "./ciclos";
-import { recalcularResumenes, simularMovimientos, sincronizarFechasTarjeta, type Movimiento } from "./ciclos-server";
+import { aplicarCorreccion, impactoDeCorreccion, recalcularResumenes, simularMovimientos, sincronizarFechasTarjeta, type Movimiento } from "./ciclos-server";
 import { isoDay, parseInput } from "./tz";
 
 const refresh = () => revalidatePath("/", "layout");
@@ -84,9 +84,9 @@ export async function previsualizarCiclo(accountId: number, month: string, close
     const cuenta = await tarjetaDe(userId, accountId);
     const v = validar(month, close, due);
     if ("error" in v) return v;
-    const manuales = await prisma.cardCycle.findMany({ where: { accountId, month: { not: month } }, select: { month: true, closeDate: true, dueDate: true } });
-    const simulados: CicloBase[] = [...manuales, { month, closeDate: v.closeDate, dueDate: v.dueDate }];
-    const movimientos = await simularMovimientos(userId, cuenta, simulados);
+    const actuales = await prisma.cardCycle.findMany({ where: { accountId }, select: { month: true, closeDate: true, dueDate: true } });
+    const nuevos: CicloBase[] = [...actuales.filter((c) => c.month !== month), { month, closeDate: v.closeDate, dueDate: v.dueDate }];
+    const movimientos = await impactoDeCorreccion(userId, cuenta, actuales, nuevos);
     return { movimientos, total: movimientos.reduce((s, m) => s + m.cantidad, 0) };
   } catch (e) {
     return { error: e instanceof Error ? e.message : "No se pudo calcular el impacto" };
@@ -102,18 +102,47 @@ export async function guardarCiclo(accountId: number, month: string, close: stri
     if ("error" in v) return v;
     let movidos = 0;
     for (const c of await conHermanas(userId, cuenta)) {
+      const actuales = await prisma.cardCycle.findMany({ where: { accountId: c.id }, select: { month: true, closeDate: true, dueDate: true } });
+      const nuevos: CicloBase[] = [...actuales.filter((x) => x.month !== month), { month, closeDate: v.closeDate, dueDate: v.dueDate }];
       await prisma.cardCycle.upsert({
         where: { accountId_month: { accountId: c.id, month } },
         create: { accountId: c.id, month, closeDate: v.closeDate, dueDate: v.dueDate },
         update: { closeDate: v.closeDate, dueDate: v.dueDate },
       });
-      movidos += await recalcularResumenes(userId, c);
+      movidos += await aplicarCorreccion(userId, c, actuales, nuevos);
       await sincronizarFechasTarjeta(c);
     }
     refresh();
     return { movidos };
   } catch (e) {
     return { error: e instanceof Error ? e.message : "No se pudo guardar" };
+  }
+}
+
+/** Cuántos registros de la tarjeta NO están en el resumen que les corresponde según sus ciclos actuales (por ejemplo, débitos automáticos que quedaron sin resumen). No escribe nada. */
+export async function desajustesDeTarjeta(accountId: number): Promise<{ movimientos: Movimiento[]; total: number } | { error: string }> {
+  const userId = await requireUserId();
+  try {
+    const cuenta = await tarjetaDe(userId, accountId);
+    const manuales = await prisma.cardCycle.findMany({ where: { accountId }, select: { month: true, closeDate: true, dueDate: true } });
+    const movimientos = await simularMovimientos(userId, cuenta, manuales);
+    return { movimientos, total: movimientos.reduce((s, m) => s + m.cantidad, 0) };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "No se pudo calcular" };
+  }
+}
+
+/** Reasigna al resumen que les corresponde todos los registros desajustados de la tarjeta (y de su hermana en otra moneda). */
+export async function reasignarResumenes(accountId: number): Promise<{ movidos: number } | { error: string }> {
+  const userId = await requireUserId();
+  try {
+    const cuenta = await tarjetaDe(userId, accountId);
+    let movidos = 0;
+    for (const c of await conHermanas(userId, cuenta)) movidos += await recalcularResumenes(userId, c);
+    refresh();
+    return { movidos };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "No se pudo reasignar" };
   }
 }
 
@@ -124,8 +153,9 @@ export async function restablecerCiclo(accountId: number, month: string): Promis
     const cuenta = await tarjetaDe(userId, accountId);
     let movidos = 0;
     for (const c of await conHermanas(userId, cuenta)) {
+      const actuales = await prisma.cardCycle.findMany({ where: { accountId: c.id }, select: { month: true, closeDate: true, dueDate: true } });
       await prisma.cardCycle.deleteMany({ where: { accountId: c.id, month } });
-      movidos += await recalcularResumenes(userId, c);
+      movidos += await aplicarCorreccion(userId, c, actuales, actuales.filter((x) => x.month !== month));
       await sincronizarFechasTarjeta(c);
     }
     refresh();
