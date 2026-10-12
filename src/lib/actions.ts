@@ -240,6 +240,8 @@ const txSchema = z.object({
   counterparty: z.string().default(""),
   warrantyMonths: optInt,
   installments: z.coerce.number().int().min(1).max(120).default(1),
+  // "YYYY-MM" del resumen de tarjeta elegido a mano; vacío = automático según el cierre.
+  resumenManual: z.string().default(""),
 });
 
 /** Per-installment amounts; the last one absorbs the rounding remainder. */
@@ -300,6 +302,9 @@ async function guardarRegistro(userId: string, fd: FormData): Promise<number> {
   // Resumen de tarjeta según el maestro de cierres (con las correcciones manuales), no sólo el día del mes.
   const ciclos = account.type === "CREDIT_CARD" ? await ciclosParaFechas(account, [date, addMonths(date, Math.max(0, d.installments - 1))]) : [];
 
+  // Resumen elegido a mano ("fijo"): sólo para un registro suelto de una tarjeta; los recálculos por cambios de cierre no lo mueven.
+  const manual = account.type === "CREDIT_CARD" && d.installments === 1 && /^\d{4}-(0[1-9]|1[0-2])$/.test(d.resumenManual) ? d.resumenManual : null;
+
   const budgetId = d.type === "EXPENSE" ? d.budgetId : null;
   if (budgetId && !(await prisma.budget.findFirst({ where: { id: budgetId, userId } }))) throw new Error("Ese presupuesto no es tuyo");
 
@@ -311,7 +316,8 @@ async function guardarRegistro(userId: string, fd: FormData): Promise<number> {
     note: d.note,
     counterparty: d.counterparty.trim(),
     warrantyMonths: d.type === "EXPENSE" ? d.warrantyMonths : null,
-    statementMonth: account.type === "CREDIT_CARD" ? statementMonthForDate(date, account, ciclos) : null,
+    statementMonth: manual ?? (account.type === "CREDIT_CARD" ? statementMonthForDate(date, account, ciclos) : null),
+    statementLocked: manual != null,
     dueDate: d.type === "EXPENSE" ? d.dueDate : null,
     paid: d.type === "EXPENSE" ? d.paid : true,
     accountId: d.accountId,

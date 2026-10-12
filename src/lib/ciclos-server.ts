@@ -31,7 +31,7 @@ export async function sincronizarFechasTarjeta(cuenta: CuentaCiclos) {
  */
 export async function recalcularResumenes(userId: string, cuenta: CuentaCiclos): Promise<number> {
   if (!cuenta.closingDay) return 0;
-  const txs = await prisma.transaction.findMany({ where: { userId, accountId: cuenta.id }, select: { id: true, date: true, statementMonth: true } });
+  const txs = await prisma.transaction.findMany({ where: { userId, accountId: cuenta.id, statementLocked: false }, select: { id: true, date: true, statementMonth: true } });
   if (!txs.length) return 0;
   const ciclos = await ciclosParaFechas(cuenta, txs.map((t) => t.date));
   const porMes = new Map<string, number[]>();
@@ -53,7 +53,7 @@ export type Movimiento = { desde: string | null; hasta: string; cantidad: number
  */
 export async function aplicarCorreccion(userId: string, cuenta: CuentaCiclos, actuales: CicloBase[], nuevos: CicloBase[]): Promise<number> {
   if (!cuenta.closingDay) return 0;
-  const txs = await prisma.transaction.findMany({ where: { userId, accountId: cuenta.id }, select: { id: true, date: true } });
+  const txs = await prisma.transaction.findMany({ where: { userId, accountId: cuenta.id, statementLocked: false }, select: { id: true, date: true } });
   if (!txs.length) return 0;
   const { desde, hasta } = ventanaDeMeses(txs.map((t) => t.date));
   const antes = armarCiclos(cuenta, actuales, desde, hasta);
@@ -73,7 +73,7 @@ export async function aplicarCorreccion(userId: string, cuenta: CuentaCiclos, ac
 /** Cuántos registros cambian de resumen POR esta corrección puntual: se compara el resumen que tendrían con los ciclos actuales contra el que tendrían con los nuevos (no cuenta desajustes que ya había). */
 export async function impactoDeCorreccion(userId: string, cuenta: CuentaCiclos, actuales: CicloBase[], nuevos: CicloBase[]): Promise<Movimiento[]> {
   if (!cuenta.closingDay) return [];
-  const txs = await prisma.transaction.findMany({ where: { userId, accountId: cuenta.id }, select: { date: true } });
+  const txs = await prisma.transaction.findMany({ where: { userId, accountId: cuenta.id, statementLocked: false }, select: { date: true } });
   if (!txs.length) return [];
   const { desde, hasta } = ventanaDeMeses(txs.map((t) => t.date));
   const antes = armarCiclos(cuenta, actuales, desde, hasta);
@@ -94,7 +94,7 @@ export async function impactoDeCorreccion(userId: string, cuenta: CuentaCiclos, 
 /** Cuántos registros cambiarían de resumen si los ciclos corregidos a mano fueran `manuales` (vista previa, no escribe nada). */
 export async function simularMovimientos(userId: string, cuenta: CuentaCiclos, manuales: CicloBase[]): Promise<Movimiento[]> {
   if (!cuenta.closingDay) return [];
-  const txs = await prisma.transaction.findMany({ where: { userId, accountId: cuenta.id }, select: { date: true, statementMonth: true } });
+  const txs = await prisma.transaction.findMany({ where: { userId, accountId: cuenta.id, statementLocked: false }, select: { date: true, statementMonth: true } });
   if (!txs.length) return [];
   const { desde, hasta } = ventanaDeMeses(txs.map((t) => t.date));
   const ciclos = armarCiclos(cuenta, manuales, desde, hasta);

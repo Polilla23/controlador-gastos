@@ -7,10 +7,12 @@ import CategorySelect, { type CategoryOpt } from "./CategorySelect";
 import MoneyInput from "./MoneyInput";
 import AttachmentDrop from "./AttachmentDrop";
 import { confirmPlannedComplete, saveTransaction } from "@/lib/actions";
+import { listarCiclos, type FilaCiclo } from "@/lib/actions-ciclos";
+import { statementLabel } from "@/lib/tarjetas";
 import { toInputDateTime, toInputDate, money } from "@/lib/format";
 import { parseInput } from "@/lib/tz";
 
-export type AccountOpt = { id: number; name: string; currency: string; color: string };
+export type AccountOpt = { id: number; name: string; currency: string; color: string; type?: string };
 export type TagOpt = { id: number; name: string; color: string };
 
 export type TxInitial = {
@@ -30,6 +32,8 @@ export type TxInitial = {
   toAmount: number | null;
   categoryId: number | null;
   budgetId?: number | null;
+  statementMonth?: string | null;
+  statementLocked?: boolean;
   tags: { id: number }[];
 };
 
@@ -151,6 +155,20 @@ export default function TransactionForm({
   const [noteEdited, setNoteEdited] = useState(!!initial && initial.note !== initial.description);
 
   const account = accounts.find((a) => a.id === accountId);
+
+  // Tarjeta de crédito: se puede elegir a mano en qué resumen cae el registro (queda "fijo": un cambio de
+  // cierre no lo mueve). Los resúmenes disponibles salen del maestro de cierres de esa tarjeta.
+  const esTarjeta = account?.type === "CREDIT_CARD";
+  const [resumenManual, setResumenManual] = useState(initial?.statementLocked && initial.statementMonth ? initial.statementMonth : "");
+  const [resumenes, setResumenes] = useState<FilaCiclo[]>([]);
+  useEffect(() => {
+    if (!esTarjeta) return;
+    let vigente = true;
+    listarCiclos(accountId).then((r) => vigente && setResumenes(Array.isArray(r) ? [...r].sort((a, b) => (a.month < b.month ? 1 : -1)) : []));
+    return () => {
+      vigente = false;
+    };
+  }, [esTarjeta, accountId]);
   const toAccount = accounts.find((a) => a.id === toAccountId);
   const crossCurrency = type === "TRANSFER" && account && toAccount && account.currency !== toAccount.currency;
   const per = Number(amount) > 0 && installments > 1 ? Number(amount) / installments : null;
@@ -338,6 +356,22 @@ export default function TransactionForm({
             <span className="text-sm text-muted">meses</span>
           </div>
           <p className="mt-2 text-xs text-muted">Cargá los meses de garantía del producto y adjuntá la factura desde el clip del registro.</p>
+        </div>
+      )}
+
+      {esTarjeta && installments === 1 && (
+        <div>
+          <label className="label">Resumen de la tarjeta</label>
+          <select name="resumenManual" className="input" value={resumenManual} onChange={(e) => setResumenManual(e.target.value)}>
+            <option value="">Automático (según la fecha y el cierre)</option>
+            {resumenes.map((r) => (
+              <option key={r.month} value={r.month}>
+                {statementLabel(r.month)} (cierra el {r.closeDate.split("-").reverse().join("/")})
+              </option>
+            ))}
+            {resumenManual && !resumenes.some((r) => r.month === resumenManual) && <option value={resumenManual}>{statementLabel(resumenManual)}</option>}
+          </select>
+          {resumenManual && <p className="mt-1 text-xs text-muted">Queda fijo en ese resumen: si después cambian las fechas de cierre, este registro no se mueve.</p>}
         </div>
       )}
 

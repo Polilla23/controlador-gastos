@@ -45,6 +45,7 @@ model User {
   holdings             Holding[]
   investMoves          InvestMove[]
   sharedGroupLinks     ShareCollaborator[]
+  pendingAttachments   PendingAttachment[]
   statementImports     StatementImport[]
 }
 
@@ -155,39 +156,41 @@ model Tag {
 }
 
 model Transaction {
-  id             Int              @id @default(autoincrement())
-  userId         String
-  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  type           String // INCOME | EXPENSE | TRANSFER
-  amount         Float
-  currency       String
-  date           DateTime // includes time of day
-  dueDate        DateTime? // optional payment deadline (e.g. a bill)
-  paid           Boolean          @default(true)
-  description    String           @default("")
-  note           String           @default("")
-  counterparty   String           @default("") // quién me pagó o a quién le pagué
-  warrantyMonths Int? // garantía del producto, en meses
-  splitGroup     String? // agrupa los registros nacidos de dividir uno solo
-  fxRate         Float? // cotización usada para convertir a la moneda principal
-  statementMonth String? // "YYYY-MM": resumen de tarjeta en el que cae el consumo
-  accountId      Int
-  account        Account          @relation("AccountTx", fields: [accountId], references: [id], onDelete: Cascade)
-  toAccountId    Int?
-  toAccount      Account?         @relation("ToAccountTx", fields: [toAccountId], references: [id], onDelete: Cascade)
-  toAmount       Float? // amount received in destination currency (transfers)
-  categoryId     Int?
-  category       Category?        @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  tags           Tag[]
-  planId         Int?
-  plan           InstallmentPlan? @relation(fields: [planId], references: [id], onDelete: Cascade)
-  installmentNo  Int?
+  id              Int              @id @default(autoincrement())
+  userId          String
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type            String // INCOME | EXPENSE | TRANSFER
+  amount          Float
+  currency        String
+  date            DateTime // includes time of day
+  dueDate         DateTime? // optional payment deadline (e.g. a bill)
+  paid            Boolean          @default(true)
+  description     String           @default("")
+  note            String           @default("")
+  counterparty    String           @default("") // quién me pagó o a quién le pagué
+  warrantyMonths  Int? // garantía del producto, en meses
+  splitGroup      String? // agrupa los registros nacidos de dividir uno solo
+  fxRate          Float? // cotización usada para convertir a la moneda principal
+  statementMonth  String? // "YYYY-MM": resumen de tarjeta en el que cae el consumo
+  /// Resumen elegido a mano: los recálculos por cambios de cierre no lo mueven.
+  statementLocked Boolean          @default(false)
+  accountId       Int
+  account         Account          @relation("AccountTx", fields: [accountId], references: [id], onDelete: Cascade)
+  toAccountId     Int?
+  toAccount       Account?         @relation("ToAccountTx", fields: [toAccountId], references: [id], onDelete: Cascade)
+  toAmount        Float? // amount received in destination currency (transfers)
+  categoryId      Int?
+  category        Category?        @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  tags            Tag[]
+  planId          Int?
+  plan            InstallmentPlan? @relation(fields: [planId], references: [id], onDelete: Cascade)
+  installmentNo   Int?
   /// Presupuesto al que se asignó a mano este movimiento (opcional, además de los que ya cuentan
   /// solos por coincidir con las categorías/cuentas/etiquetas del presupuesto).
-  budgetId       Int?
-  budget         Budget?          @relation(fields: [budgetId], references: [id], onDelete: SetNull)
-  attachments    Attachment[]
-  createdAt      DateTime         @default(now())
+  budgetId        Int?
+  budget          Budget?          @relation(fields: [budgetId], references: [id], onDelete: SetNull)
+  attachments     Attachment[]
+  createdAt       DateTime         @default(now())
 
   @@index([userId, date])
   @@index([accountId])
@@ -660,4 +663,23 @@ model StatementImportItem {
   transactionId            Int? // el movimiento creado, una vez confirmado
 
   @@index([importId])
+}
+
+/// Comprobante que llegó suelto (pegado en la bandeja, compartido desde el celular o mandado al bot sin número)
+/// y todavía no está asociado a ningún registro.
+model PendingAttachment {
+  id           Int      @id @default(autoincrement())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  storagePath  String
+  mimeType     String
+  source       String // WEB | TELEGRAM | SHARE
+  originalName String   @default("")
+  /// Telegram: file_id, para no duplicarlo si después se adjunta respondiendo con el número.
+  tgFileId     String?
+  /// Montos y fechas leídos del PDF (no se puede leer una imagen sin OCR): { amounts: number[], dates: string[] }
+  hints        Json?
+  createdAt    DateTime @default(now())
+
+  @@index([userId, createdAt])
 }

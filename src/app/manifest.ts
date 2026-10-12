@@ -19,6 +19,14 @@ export default function manifest(): MetadataRoute.Manifest {
       { src: "/icons/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
       { src: "/icons/icon-maskable-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
     ],
+    // "Compartir con Mis Finanzas" desde el celular (Chrome en Android, con la app instalada): las imágenes
+    // y PDF compartidos caen en la bandeja de comprobantes sin asociar.
+    share_target: {
+      action: "/compartir",
+      method: "POST",
+      enctype: "multipart/form-data",
+      params: { files: [{ name: "files", accept: ["image/jpeg", "image/png", "image/webp", "application/pdf"] }] },
+    },
     shortcuts: [
       { name: "Nuevo registro", url: "/transacciones", icons: [{ src: "/icons/icon-192.png", sizes: "192x192" }] },
       { name: "Planificados", url: "/planificados", icons: [{ src: "/icons/icon-192.png", sizes: "192x192" }] },

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Paperclip, Pencil, Trash2, Layers, AlarmClock, ExternalLink, FileText, Copy, Split, ShieldCheck, ChevronUp, ChevronDown } from "lucide-react";
 import ActionForm from "./ActionForm";
@@ -19,6 +19,7 @@ import {
 } from "@/lib/actions";
 import { accountLabel, fmtDate, fmtDateTime, fmtDayMonth, money } from "@/lib/format";
 import { statementLabel } from "@/lib/tarjetas";
+import { adjuntarARegistro, subirSueltos } from "@/lib/actions-comprobantes";
 
 export type TxRow = {
   id: number;
@@ -34,6 +35,7 @@ export type TxRow = {
   warrantyMonths: number | null;
   splitGroup: string | null;
   statementMonth: string | null;
+  statementLocked?: boolean;
   accountId: number;
   toAccountId: number | null;
   toAmount: number | null;
@@ -201,7 +203,9 @@ export default function TransactionsTable({
   /** Personas del maestro, para autocompletar "quién" al editar o clonar. */
   counterparties?: string[];
 }) {
+  const router = useRouter();
   const [sel, setSel] = useState<number[]>([]);
+  const [avisoPegado, setAvisoPegado] = useState<{ ok: boolean; texto: string } | null>(null);
   const allShown = rows.length > 0 && sel.length === rows.length;
   const toggle = (id: number) => setSel((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
 
@@ -212,11 +216,45 @@ export default function TransactionsTable({
     return full ? accountLabel(full) : t.account.name;
   };
 
+  /* Ctrl+V con una imagen/PDF en el portapapeles, sin abrir ningún registro: con UNA fila seleccionada
+     se adjunta a ese registro; sin selección va a la bandeja de comprobantes sin asociar. (Con un
+     formulario abierto, el pegado lo maneja el propio formulario.) */
+  const selRef = useRef(sel);
+  useEffect(() => {
+    selRef.current = sel;
+  }, [sel]);
+  useEffect(() => {
+    const onPaste = async (e: ClipboardEvent) => {
+      const pegados = [...(e.clipboardData?.files ?? [])];
+      if (!pegados.length || document.querySelector("[data-modal]")) return;
+      e.preventDefault();
+      const elegidas = selRef.current;
+      if (elegidas.length > 1) return setAvisoPegado({ ok: false, texto: "Seleccioná un solo registro para pegarle el comprobante (o ninguno, y va a la bandeja)." });
+      const fd = new FormData();
+      pegados.forEach((f) => fd.append("files", f));
+      setAvisoPegado({ ok: true, texto: "Subiendo…" });
+      if (elegidas.length === 1) {
+        const r = await adjuntarARegistro(elegidas[0], fd);
+        setAvisoPegado("error" in r ? { ok: false, texto: r.error } : { ok: true, texto: `Adjunté ${r.cantidad} comprobante${r.cantidad > 1 ? "s" : ""} al registro #${elegidas[0]}.` });
+      } else {
+        const r = await subirSueltos(fd);
+        setAvisoPegado(r && "error" in r ? { ok: false, texto: r.error } : { ok: true, texto: "Quedó en la bandeja de comprobantes sin asociar (seleccioná un registro antes de pegar para adjuntarlo directo)." });
+      }
+      router.refresh();
+    };
+    document.addEventListener("paste", onPaste);
+    return () => document.removeEventListener("paste", onPaste);
+  }, [router]);
+  useEffect(() => {
+    if (!avisoPegado) return;
+    const t = setTimeout(() => setAvisoPegado(null), 8000);
+    return () => clearTimeout(t);
+  }, [avisoPegado]);
+
   /* Ordenar por columna (clickeando el título): "fecha desc" es el orden en que ya vienen las
      filas del servidor y mantiene el agrupado por día con el acumulado; cualquier otro orden
      rompe esa agrupación (no tendría sentido mezclarla con, por ejemplo, ordenar por categoría)
      y se muestra como una sola lista plana. */
-  const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const orden = searchParams.get("orden") ?? "fecha";
@@ -303,7 +341,7 @@ export default function TransactionsTable({
           counterparties={counterparties}
           budgets={budgets}
           quotes={quotes}
-          initial={{ ...t, id: undefined, date: new Date(), tags: t.tags }}
+          initial={{ ...t, id: undefined, date: new Date(), statementLocked: false, tags: t.tags }}
         />
       </Modal>
       <ConfirmButton action={async () => deleteTransaction(t.id)} className="btn-icon hover:text-red-500" message="¿Eliminar este registro?">
@@ -316,7 +354,12 @@ export default function TransactionsTable({
     <div className="flex flex-wrap items-center gap-1">
       {t.planId && <span className="chip bg-subtle text-muted">cuotas</span>}
       {t.splitGroup && <span className="chip bg-subtle text-muted">dividido</span>}
-      {t.statementMonth && <span className="chip bg-blue-500/15 text-blue-500">paga {statementLabel(t.statementMonth)}</span>}
+      {t.statementMonth && (
+        <span className="chip bg-blue-500/15 text-blue-500" title={t.statementLocked ? "Resumen elegido a mano: un cambio de cierre no lo mueve" : undefined}>
+          paga {statementLabel(t.statementMonth)}
+          {t.statementLocked ? " · fijo" : ""}
+        </span>
+      )}
       {t.warrantyMonths ? (
         <span className="chip bg-emerald-500/15 text-emerald-600">
           <ShieldCheck size={11} /> {t.warrantyMonths} meses
@@ -337,6 +380,11 @@ export default function TransactionsTable({
 
   return (
     <>
+      {avisoPegado && (
+        <p className={`mb-3 rounded-xl px-3 py-2 text-sm font-medium ${avisoPegado.ok ? "bg-brand-500/10 text-brand-600" : "bg-red-500/10 text-red-500"}`}>
+          {avisoPegado.texto} {avisoPegado.ok && avisoPegado.texto.includes("bandeja") && <a href="/comprobantes" className="underline">Abrir la bandeja</a>}
+        </p>
+      )}
       <div className="card overflow-hidden p-0">
         {/* Total del período */}
         {rows.length > 0 && (

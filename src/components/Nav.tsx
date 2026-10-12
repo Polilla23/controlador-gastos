@@ -24,6 +24,7 @@ import {
   Filter,
   UserRound,
   Upload,
+  Paperclip,
   X,
 } from "lucide-react";
 import clsx from "clsx";
@@ -44,6 +45,7 @@ const ITEMS = [
   { href: "/deudas", label: "Deudas", shortLabel: "Deudas", icon: HandCoins },
   { href: "/cuotas", label: "Cuotas", shortLabel: "Cuotas", icon: CalendarClock },
   { href: "/importar", label: "Importar resumen", shortLabel: "Importar", icon: Upload },
+  { href: "/comprobantes", label: "Comprobantes sin asociar", shortLabel: "Comprob.", icon: Paperclip },
   { href: "/categorias", label: "Categorías", shortLabel: "Categ.", icon: Shapes },
   { href: "/etiquetas", label: "Etiquetas", shortLabel: "Etiq.", icon: Tags },
   { href: "/personas", label: "Personas", shortLabel: "Personas", icon: UserRound },

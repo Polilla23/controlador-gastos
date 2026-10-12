@@ -1,5 +1,6 @@
 import { prisma } from "./prisma";
 import { adjuntarComprobante } from "./storage";
+import { guardarSuelto, limpiarSueltoDeTelegram, sugerirRegistros, vincularSuelto, type Hints } from "./comprobantes-sueltos";
 import { money, fmtDate, fmtDayMonth } from "./format";
 import { APP_TZ, addDays, civil as civilOf, fromCivil, monthKey, startOfDay } from "./tz";
 import { cargarPresupuestos } from "./presupuestos";
@@ -262,6 +263,23 @@ async function handleCallback(cq: NonNullable<TgUpdate["callback_query"]>) {
     return editText(chatId, messageId, res.ok ? `✅ Importé ${res.creados} gasto${res.creados === 1 ? "" : "s"}.` : `⚠️ ${res.motivo}`);
   }
 
+  const mAdj = data.match(/^adj:(\d+):(\d+)$/);
+  if (mAdj) {
+    await answerCallback(cq.id);
+    try {
+      const tx = await vincularSuelto(user.id, Number(mAdj[1]), Number(mAdj[2]));
+      return editText(chatId, messageId, `✅ Adjunté el comprobante al registro <b>#${tx.id}</b> (${tx.description || "sin descripción"} · ${money(tx.amount, tx.currency)}).`);
+    } catch (e) {
+      return editText(chatId, messageId, `⚠️ ${e instanceof Error ? e.message : "No pude vincularlo"}`);
+    }
+  }
+
+  const mAdjNo = data.match(/^adj_no:(\d+)$/);
+  if (mAdjNo) {
+    await answerCallback(cq.id);
+    return editText(chatId, messageId, "📥 Quedó en la bandeja de <b>comprobantes sin asociar</b> de la app: lo vinculás desde ahí cuando quieras.");
+  }
+
   const mNo = data.match(/^simp_no:(\d+)$/);
   if (mNo) {
     await descartarImportacion(user.id, Number(mNo[1]));
@@ -270,6 +288,26 @@ async function handleCallback(cq: NonNullable<TgUpdate["callback_query"]>) {
   }
 
   return answerCallback(cq.id);
+}
+
+/**
+ * Un comprobante mandado sin el número del registro: se guarda en la bandeja y se proponen los
+ * registros más probables con botones (de un PDF se leen montos y fechas; de una imagen no se
+ * puede, así que quedan los recientes sin comprobante).
+ */
+async function recibirSuelto(chatId: string, userId: string, fileId: string, nombre = "") {
+  let pendiente;
+  try {
+    pendiente = await guardarSuelto(userId, await downloadFile(fileId), "TELEGRAM", nombre, fileId);
+  } catch (e) {
+    return sendText(chatId, `⚠️ ${e instanceof Error ? e.message : "No pude guardar el archivo"}`);
+  }
+  const hints = (pendiente.hints as Hints | null) ?? null;
+  const sugeridos = await sugerirRegistros(userId, hints, 5);
+  const filas = sugeridos.map((s) => [{ text: `#${s.id} ${(s.description || s.counterparty || "sin descripción").slice(0, 24)} · ${money(s.amount, s.currency)}`, data: `adj:${pendiente.id}:${s.id}` }]);
+  filas.push([{ text: "📥 Dejar en la bandeja", data: `adj_no:${pendiente.id}` }]);
+  const base = hints && (hints.amounts.length || hints.dates.length) ? "Leí el PDF y puse primero los que coinciden." : "No puedo leer el monto de una imagen: te muestro los registros recientes que todavía no tienen comprobante.";
+  return sendButtons(chatId, `📎 Guardé el comprobante. ¿A qué registro corresponde?\n<i>${base}</i>\n\nTambién podés responder a ese archivo con el número, por ejemplo <code>#123</code>.`, filas);
 }
 
 export async function handleUpdate(update: TgUpdate) {
@@ -346,6 +384,7 @@ export async function handleUpdate(update: TgUpdate) {
     const fileId = repliedPhoto?.file_id ?? repliedDoc!.file_id;
     try {
       await adjuntarComprobante(user.id, tx.id, await downloadFile(fileId), "TELEGRAM");
+      await limpiarSueltoDeTelegram(user.id, fileId); // si había quedado en la bandeja, ya no hace falta
     } catch (e) {
       return reply(`⚠️ ${e instanceof Error ? e.message : "No pude guardar el archivo"}`);
     }
@@ -357,7 +396,8 @@ export async function handleUpdate(update: TgUpdate) {
   if (doc?.mime_type === "application/pdf" && id == null) {
     const data = await downloadFile(doc.file_id);
     const res = await iniciarCarga({ userId: user.id, source: "TELEGRAM", buffer: data });
-    if (!res.ok) return reply(`No pude leer este PDF como resumen de tarjeta: ${res.motivo}`);
+    // Si no es un resumen de tarjeta, es un comprobante suelto: va a la bandeja con sugerencias.
+    if (!res.ok) return recibirSuelto(chatId, user.id, doc.file_id, doc.file_name ?? "");
 
     const cuentas = await tarjetasDisponibles(user.id);
     if (!cuentas.length) return reply("No tenés ninguna tarjeta de crédito cargada todavía. Creála en la app y volvé a mandar el resumen.");
@@ -382,7 +422,8 @@ export async function handleUpdate(update: TgUpdate) {
     );
   }
 
-  if (id == null) return reply('Falta el número del registro. Mandá la foto con el texto <code>#123</code>, o si preferís, mandala así nomás y después respondé a esa foto con el número.');
+  // Sin número: no se pierde, queda en la bandeja y se proponen candidatos con botones.
+  if (id == null) return recibirSuelto(chatId, user.id, photo?.file_id ?? doc!.file_id, doc?.file_name ?? "");
   const tx = await prisma.transaction.findFirst({ where: { id, userId: user.id } });
   if (!tx) return reply(`No encontré el registro <b>#${id}</b> en tu cuenta. Revisá el ID en la app.`);
 
