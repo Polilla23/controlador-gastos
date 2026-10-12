@@ -18,7 +18,9 @@ import CierresVencimientos from "./CierresVencimientos";
 import TrendRangeControl from "./TrendRangeControl";
 
 const ResizableGrid = WidthProvider(GridLayout);
-const GRID_COLS = 3;
+// 12 columnas (en vez de 3) para poder estirar el ancho de una card con la misma libertad que el alto. `span` del catálogo está pensado en tercios: 1 tercio = 4 columnas.
+const GRID_COLS = 12;
+const COLS_PER_SPAN = GRID_COLS / 3;
 const ROW_H = 28;
 
 /**
@@ -42,7 +44,7 @@ function buildLayout(ids: string[], defs: Map<string, CardDef>, saved: Record<st
     }
     const w = Math.min(s.w, cols);
     const x = Math.min(s.x, Math.max(0, cols - w));
-    out.push({ i: id, x, y: s.y, w, h: s.h, minW: 1, minH: 5 });
+    out.push({ i: id, x, y: s.y, w, h: s.h, minW: cols > 1 ? 2 : 1, minH: 5 });
     maxY = Math.max(maxY, s.y + s.h);
   }
   let x = 0;
@@ -50,14 +52,14 @@ function buildLayout(ids: string[], defs: Map<string, CardDef>, saved: Record<st
   let rowH = 0;
   for (const id of sinGuardar) {
     const def = defs.get(id)!;
-    const w = Math.min(def.span, cols);
+    const w = Math.min(cols > 1 ? def.span * COLS_PER_SPAN : def.span, cols);
     const h = 11;
     if (x + w > cols) {
       x = 0;
       y += rowH;
       rowH = 0;
     }
-    out.push({ i: id, x, y, w, h, minW: 1, minH: 5 });
+    out.push({ i: id, x, y, w, h, minW: cols > 1 ? 2 : 1, minH: 5 });
     x += w;
     rowH = Math.max(rowH, h);
   }

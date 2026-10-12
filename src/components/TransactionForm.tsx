@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import clsx from "clsx";
 import ActionForm from "./ActionForm";
 import CategorySelect, { type CategoryOpt } from "./CategorySelect";
 import MoneyInput from "./MoneyInput";
-import { saveTransaction } from "@/lib/actions";
+import AttachmentDrop from "./AttachmentDrop";
+import { confirmPlannedComplete, saveTransaction } from "@/lib/actions";
 import { toInputDateTime, toInputDate, money } from "@/lib/format";
 import { parseInput } from "@/lib/tz";
 
@@ -77,6 +78,8 @@ export default function TransactionForm({
   quotes = [],
   budgets = [],
   lockedBudgetId,
+  plannedId,
+  submitLabel,
 }: {
   accounts: AccountOpt[];
   categories: CategoryOpt[];
@@ -91,6 +94,9 @@ export default function TransactionForm({
   budgets?: BudgetOpt[];
   /** Si se abre desde el detalle de un presupuesto puntual: ya viene fijo a ese, sin selector. */
   lockedBudgetId?: number;
+  /** Si se abre para confirmar un planificado: al guardar crea el registro y avanza ese planificado. */
+  plannedId?: number;
+  submitLabel?: string;
 }) {
   const [type, setType] = useState(initial?.type ?? "EXPENSE");
   const [accountId, setAccountId] = useState(initial?.accountId ?? accounts[0]?.id ?? 0);
@@ -107,12 +113,39 @@ export default function TransactionForm({
   const [categoryId, setCategoryId] = useState(initial?.categoryId != null ? String(initial.categoryId) : "");
   const [tagIds, setTagIds] = useState<number[]>(initial?.tags.map((t) => t.id) ?? []);
 
-  // Al elegir una categoría se tilda sola su etiqueta predeterminada (o la de su categoría madre).
+  // Etiqueta predeterminada de la categoría (o la de su categoría madre). Se aplica recién cuando la
+  // categoría "quedó" elegida (al salir del campo, o tras una pausa al tipear con el teclado), no por
+  // cada letra por la que se va pasando; y si se cambia de categoría se saca la que había puesto sola
+  // la anterior, sin tocar las etiquetas cargadas a mano.
+  const tagIdsRef = useRef(tagIds);
+  useEffect(() => {
+    tagIdsRef.current = tagIds;
+  }, [tagIds]);
+  const autoTagRef = useRef<number | null>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(timerRef.current), []);
+  const applyCategoryTag = (v: string) => {
+    const cat = categories.find((c) => String(c.id) === v);
+    const found = cat?.defaultTagId ?? categories.find((c) => c.id === cat?.parentId)?.defaultTagId ?? null;
+    const next = found && tags.some((t) => t.id === found) ? found : null;
+    const prev = autoTagRef.current;
+    if (prev === next) return;
+    let out = prev != null ? tagIdsRef.current.filter((x) => x !== prev) : tagIdsRef.current;
+    autoTagRef.current = null;
+    if (next != null && !out.includes(next)) {
+      out = [...out, next];
+      autoTagRef.current = next;
+    }
+    setTagIds(out);
+  };
   const pickCategory = (v: string) => {
     setCategoryId(v);
-    const cat = categories.find((c) => String(c.id) === v);
-    const tagId = cat?.defaultTagId ?? categories.find((c) => c.id === cat?.parentId)?.defaultTagId ?? null;
-    if (tagId && tags.some((t) => t.id === tagId)) setTagIds((s) => (s.includes(tagId) ? s : [...s, tagId]));
+    clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => applyCategoryTag(v), 800);
+  };
+  const commitCategory = (v: string) => {
+    clearTimeout(timerRef.current);
+    applyCategoryTag(v);
   };
   // Si ya tenía una nota distinta de la descripción, respetamos esa decisión y no la volvemos a pisar.
   const [noteEdited, setNoteEdited] = useState(!!initial && initial.note !== initial.description);
@@ -134,8 +167,9 @@ export default function TransactionForm({
   };
 
   return (
-    <ActionForm action={saveTransaction} onDone={onDone}>
+    <ActionForm action={plannedId != null ? confirmPlannedComplete : saveTransaction} onDone={onDone} submitLabel={submitLabel}>
       {initial?.id != null && <input type="hidden" name="id" value={initial.id} />}
+      {plannedId != null && <input type="hidden" name="plannedId" value={plannedId} />}
       <input type="hidden" name="type" value={type} />
 
       {!initial && (
@@ -229,7 +263,7 @@ export default function TransactionForm({
           <label className="label">Categoría</label>
           {/* Una transferencia no es ingreso ni egreso, así que no tiene sentido filtrar por "kind"
               como en los otros dos tipos -- se puede elegir cualquier categoría (ej. "Ahorro"). */}
-          <CategorySelect categories={categories} kind={type === "TRANSFER" ? undefined : type} value={categoryId} onChange={pickCategory} />
+          <CategorySelect categories={categories} kind={type === "TRANSFER" ? undefined : type} value={categoryId} onChange={pickCategory} onBlur={commitCategory} />
         </div>
       </div>
 
@@ -377,6 +411,8 @@ export default function TransactionForm({
           placeholder="Por defecto, igual a la descripción"
         />
       </div>
+
+      <AttachmentDrop />
     </ActionForm>
   );
 }

@@ -85,8 +85,23 @@ model Account {
   ruleMatches         Rule[]             @relation("RuleMatchAccounts")
   ruleMatchesTo       Rule[]             @relation("RuleMatchToAccounts")
   statementImports    StatementImport[]
+  cycles              CardCycle[]
 
   @@index([userId])
+}
+
+/// Cierre y vencimiento CORREGIDOS A MANO de un resumen de tarjeta (los demás se calculan del día del mes).
+/// `month` ("YYYY-MM") es el mes en que se paga el resumen: el mismo valor que Transaction.statementMonth.
+model CardCycle {
+  id        Int      @id @default(autoincrement())
+  accountId Int
+  account   Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  month     String
+  closeDate DateTime
+  dueDate   DateTime
+  updatedAt DateTime @updatedAt
+
+  @@unique([accountId, month])
 }
 
 model Category {

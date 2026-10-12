@@ -1,19 +1,20 @@
 import { BUCKET, supabaseAdmin } from "./supabase";
+import { prisma } from "./prisma";
+import { extensionDe, validarComprobante } from "./archivos";
 
-const EXT: Record<string, string> = {
-  "image/jpeg": ".jpg",
-  "image/png": ".png",
-  "image/webp": ".webp",
-  "application/pdf": ".pdf",
-};
-
-/** Stores a file under <userId>/<transactionId>-<timestamp>.<ext> and returns its storage path. */
-export async function storeAttachment(userId: string, transactionId: number, data: Buffer | ArrayBuffer, mimeType: string) {
-  const ext = EXT[mimeType] ?? ".bin";
-  const path = `${userId}/${transactionId}-${Date.now()}${ext}`;
-  const { error } = await supabaseAdmin().storage.from(BUCKET).upload(path, data, { contentType: mimeType });
+/**
+ * Guarda un comprobante de un registro (web o Telegram): valida por la firma real del archivo
+ * (sólo JPG, PNG, WebP o PDF, hasta 10 MB -- el tipo que declare quien lo manda no cuenta),
+ * lo sube a <userId>/<registro>-<timestamp>.<ext> y crea su fila de Attachment.
+ */
+export async function adjuntarComprobante(userId: string, transactionId: number, data: Buffer | Uint8Array, source: "WEB" | "TELEGRAM", nombre?: string) {
+  const bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
+  const mimeType = validarComprobante(bytes, nombre ? `"${nombre}"` : "El archivo");
+  // Sufijo aleatorio: dos comprobantes subidos en el mismo milisegundo (pegar varios a la vez) no se pisan.
+  const path = `${userId}/${transactionId}-${Date.now()}${Math.random().toString(36).slice(2, 6)}${extensionDe(mimeType)}`;
+  const { error } = await supabaseAdmin().storage.from(BUCKET).upload(path, bytes, { contentType: mimeType });
   if (error) throw new Error(`No se pudo guardar el archivo: ${error.message}`);
-  return path;
+  return prisma.attachment.create({ data: { transactionId, storagePath: path, mimeType, source } });
 }
 
 /** Stores the original PDF of a card statement under <userId>/resumen-<importId>-<timestamp>.pdf. */

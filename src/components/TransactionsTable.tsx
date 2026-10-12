@@ -108,16 +108,15 @@ function Attachments({ tx }: { tx: TxRow }) {
         )}
       </div>
 
-      <form action={uploadAttachment} className="space-y-3 border-t border-line pt-4">
-        <input type="hidden" name="transactionId" value={tx.id} />
-        <div>
-          <label className="label">Subir otro (imagen o PDF, hasta 10 MB)</label>
-          <input type="file" name="file" accept="image/*,application/pdf" required className="input file:mr-3 file:rounded-lg file:border-0 file:bg-subtle file:px-3 file:py-1 file:text-sm" />
-        </div>
-        <button type="submit" className="btn-primary">
-          Subir
-        </button>
-      </form>
+      <div className="border-t border-line pt-4">
+        <ActionForm action={uploadAttachment} submitLabel="Subir">
+          <input type="hidden" name="transactionId" value={tx.id} />
+          <div>
+            <label className="label">Subir otro (JPG, PNG, WebP o PDF, hasta 10 MB)</label>
+            <input type="file" name="file" accept="image/jpeg,image/png,image/webp,application/pdf" required className="input file:mr-3 file:rounded-lg file:border-0 file:bg-subtle file:px-3 file:py-1 file:text-sm" />
+          </div>
+        </ActionForm>
+      </div>
     </div>
   );
 }

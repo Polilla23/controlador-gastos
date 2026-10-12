@@ -10,6 +10,7 @@ export default function CategorySelect({
   defaultValue,
   value,
   onChange,
+  onBlur,
   allowNone = true,
   noneLabel = "Sin categoría",
   extra,
@@ -22,6 +23,8 @@ export default function CategorySelect({
   defaultValue?: number | string | null;
   value?: number | string;
   onChange?: (v: string) => void;
+  /** Al salir del campo (con el valor ya elegido). */
+  onBlur?: (v: string) => void;
   allowNone?: boolean;
   noneLabel?: string;
   /** Extra leading option, e.g. an explicit "clear the category" choice in bulk edit. */
@@ -43,6 +46,7 @@ export default function CategorySelect({
       defaultValue={value === undefined ? (defaultValue ?? "") : undefined}
       value={value}
       onChange={onChange ? (e) => onChange(e.target.value) : undefined}
+      onBlur={onBlur ? (e) => onBlur(e.target.value) : undefined}
     >
       {allowNone && <option value="">{noneLabel}</option>}
       {extra && <option value={extra.value}>{extra.label}</option>}

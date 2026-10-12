@@ -9,7 +9,8 @@ import CategorySelect, { type CategoryOpt } from "./CategorySelect";
 import MultiSelectFilter from "./MultiSelectFilter";
 import { Sortable } from "./ui";
 import { aplicarReglasA, deleteRule, previsualizarReglas, reorderRules, saveRule, toggleRule, type PreviewFila } from "@/lib/actions-reglas";
-import { fmtDate, TX_TYPES } from "@/lib/format";
+import { fmtDate, fmtDateTime, TX_TYPES } from "@/lib/format";
+import { proximaEjecucion } from "@/lib/reglas-horario";
 
 type Cuenta = { id: number; name: string; currency: string };
 type Etiqueta = { id: number; name: string; color: string };
@@ -162,7 +163,7 @@ function Campos({ r, accounts, categories, tags, personas }: { r?: RuleRow; acco
           ))}
           {r?.scheduleDays != null && !PERIODICIDADES.some(([v]) => v === String(r.scheduleDays)) && <option value={String(r.scheduleDays)}>Cada {r.scheduleDays} días</option>}
         </select>
-        <p className="mt-1 text-xs text-muted">Con periodicidad, la regla se aplica sola a los registros cargados desde la última vez que corrió. Igual la podés aplicar a mano cuando quieras desde &quot;Aplicar a los registros existentes&quot;.</p>
+        <p className="mt-1 text-xs text-muted">Con periodicidad, la regla se aplica sola a los registros cargados desde la última vez que corrió. Corre junto con el aviso diario (todos los días alrededor de las 09:00). Igual la podés aplicar a mano cuando quieras desde &quot;Aplicar a los registros existentes&quot;.</p>
       </div>
     </>
   );
@@ -300,8 +301,14 @@ export default function RulesBoard({
                 <h2 className="truncate font-bold">{r.name}</h2>
                 <p className="text-xs text-muted">
                   {r.active ? "Activa" : "Pausada"}
-                  {r.scheduleDays != null ? ` · se ejecuta ${r.scheduleDays === 1 ? "todos los días" : `cada ${r.scheduleDays} días`}${r.lastRunAt ? ` (última: ${fmtDate(r.lastRunAt)})` : ""}` : " · sólo manual"}
+                  {r.scheduleDays != null ? ` · se ejecuta ${r.scheduleDays === 1 ? "todos los días" : `cada ${r.scheduleDays} días`}` : " · sólo manual"}
                 </p>
+                {r.scheduleDays != null && (
+                  <p className="text-xs text-muted">
+                    Última: {r.lastRunAt ? fmtDateTime(r.lastRunAt) : "todavía no corrió"}
+                    {r.active ? ` · Próxima: ${fmtDateTime(proximaEjecucion(r.lastRunAt ? new Date(r.lastRunAt) : null, r.scheduleDays, new Date()))}` : ""}
+                  </p>
+                )}
               </div>
               <div className="flex shrink-0 items-center gap-0.5">
                 <ConfirmButton

@@ -1,5 +1,6 @@
 import { prisma } from "./prisma";
 import { forEachIsolated } from "./cron-safe";
+import { leToca } from "./reglas-horario";
 
 /**
  * Reglas de automatización: cuando un registro coincide con los criterios de una
@@ -102,9 +103,6 @@ export async function aplicarAlCrear(userId: string, transactionId: number, t: C
   return efecto;
 }
 
-const HORA = 3600 * 1000;
-const DIA = 24 * HORA;
-
 /**
  * Paso del cron diario: las reglas con periodicidad ("cada N días") que ya les toca se aplican
  * solas a los registros cargados desde su última ejecución (o desde que se creó la regla, la
@@ -122,8 +120,7 @@ export async function ejecutarReglasProgramadas(ahora = new Date()) {
   // Una regla que falla no frena a las demás (ni a las de otros usuarios).
   const { failed } = await forEachIsolated(reglas, (r) => `la regla programada #${r.id}`, async (r) => {
     const cada = r.scheduleDays!;
-    // Margen de 3 hs: el cron no corre exactamente a la misma hora todos los días.
-    if (r.lastRunAt && ahora.getTime() - r.lastRunAt.getTime() < cada * DIA - 3 * HORA) return;
+    if (!leToca(r.lastRunAt, cada, ahora)) return;
 
     const desde = r.lastRunAt ?? r.createdAt;
     const registros = await prisma.transaction.findMany({

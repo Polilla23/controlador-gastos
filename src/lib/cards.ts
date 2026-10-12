@@ -161,6 +161,8 @@ export const DEFAULT_CARDS = [
 
 /** Posición y tamaño exactos de una card en la grilla (los 4 campos que ya usa react-grid-layout), para poder reproducir el layout guardado tal cual quedó, sin tener que volver a calcularlo. */
 export type CardLayout = { x: number; y: number; w: number; h: number };
+/** Cantidad de columnas de la grilla de escritorio. Antes eran 3: lo guardado sin `sizesCols` se convierte (x4) al leerlo. */
+export const DESKTOP_COLS = 12;
 export type DashboardPrefs = { cards: string[]; cardsMobile: string[]; accountIds: number[]; sizes: Record<string, CardLayout>; sizesMobile: Record<string, CardLayout> };
 
 // x/y/w/h inválidos (negativos, o un tamaño en 0 que dejaría la card invisible para siempre
@@ -178,6 +180,12 @@ function readSizes(v: unknown): Record<string, CardLayout> {
   return out;
 }
 
+function escalarDesdeTres(sizes: Record<string, CardLayout>, sizesCols: unknown): Record<string, CardLayout> {
+  if (sizesCols === DESKTOP_COLS) return sizes;
+  const k = DESKTOP_COLS / 3;
+  return Object.fromEntries(Object.entries(sizes).map(([id, l]) => [id, { ...l, x: l.x * k, w: l.w * k }]));
+}
+
 export function readPrefs(raw: unknown): DashboardPrefs {
   const v = (raw ?? {}) as Partial<DashboardPrefs>;
   const known = new Set(CARDS.map((c) => c.id));
@@ -188,7 +196,7 @@ export function readPrefs(raw: unknown): DashboardPrefs {
     cards: resolvedCards,
     cardsMobile: cardsMobile.length ? cardsMobile : resolvedCards,
     accountIds: Array.isArray(v.accountIds) ? v.accountIds.map(Number) : [],
-    sizes: readSizes(v.sizes),
+    sizes: escalarDesdeTres(readSizes(v.sizes), (v as { sizesCols?: unknown }).sizesCols),
     sizesMobile: readSizes((v as { sizesMobile?: unknown }).sizesMobile),
   };
 }

@@ -7,9 +7,11 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "./prisma";
 import { requireUserId } from "./auth";
 import { supabaseServer } from "./supabase";
-import { storeAttachment, removeStored } from "./storage";
+import { adjuntarComprobante, removeStored } from "./storage";
+import { validarComprobante } from "./archivos";
 import { addDays, addMonths, civil, fromCivil, parseInput, startOfDay } from "./tz";
-import { statementMonthForDate, type CardDates } from "./tarjetas";
+import { statementMonthForDate } from "./tarjetas";
+import { ciclosParaFechas, recalcularResumenes, sincronizarFechasTarjeta } from "./ciclos-server";
 import { aplicarAlCrear, efectoParaCrear } from "./reglas";
 import { syncGoogleCalendarForUser } from "./google-calendar-sync";
 import { plannedAccessFilter, resolveMyMemberInGroup, shareGroupAccessFilter } from "./share-access";
@@ -74,9 +76,11 @@ export async function saveAccount(fd: FormData) {
   const userId = await requireUserId();
   const id = fd.get("id") ? Number(fd.get("id")) : null;
   const d = accountSchema.parse(Object.fromEntries(fd));
+  // Las fechas concretas de cierre/vencimiento ya no se cargan en este formulario: viven en el
+  // maestro de la tarjeta (ciclos.ts) y las seis de la cuenta se recalculan de ahí.
   const data =
     d.type === "CREDIT_CARD"
-      ? deriveCardDates(d)
+      ? { ...d, cierreAnterior: null, cierreActual: null, cierreProximo: null, vencimientoAnterior: null, vencimientoActual: null, vencimientoProximo: null }
       : {
           ...d,
           creditLimit: null,
@@ -91,33 +95,24 @@ export async function saveAccount(fd: FormData) {
         };
   if (id) {
     await prisma.account.update({ where: { id, userId }, data });
-    // Si se corrigió el cierre/vencimiento de una tarjeta, los registros que ya estaban cargados
-    // pueden haber quedado en el resumen equivocado: se recalculan todos con las fechas nuevas.
+    // Si se cambió el día de cierre/vencimiento de una tarjeta, los registros que ya estaban cargados
+    // pueden haber quedado en el resumen equivocado: se recalculan todos.
     if (data.type === "CREDIT_CARD" && data.closingDay) {
-      await recomputeStatementMonths(userId, id, data);
-
       // Misma tarjeta física en otra moneda (ej. "Tarjeta VISA" en ARS y en USD, mismo nombre
       // exacto): es un solo cierre/vencimiento real, así que se unifica también en la cuenta
       // hermana en vez de tener que cargarlo dos veces.
       const hermanas = await prisma.account.findMany({ where: { userId, type: "CREDIT_CARD", name: d.name, id: { not: id } }, select: { id: true } });
-      if (hermanas.length) {
-        const fechas: CardDates = {
-          closingDay: data.closingDay,
-          dueDay: data.dueDay,
-          cierreAnterior: data.cierreAnterior,
-          cierreActual: data.cierreActual,
-          cierreProximo: data.cierreProximo,
-          vencimientoAnterior: data.vencimientoAnterior,
-          vencimientoActual: data.vencimientoActual,
-          vencimientoProximo: data.vencimientoProximo,
-        };
-        await prisma.account.updateMany({ where: { id: { in: hermanas.map((h) => h.id) } }, data: fechas });
-        for (const h of hermanas) await recomputeStatementMonths(userId, h.id, fechas);
+      if (hermanas.length) await prisma.account.updateMany({ where: { id: { in: hermanas.map((h) => h.id) } }, data: { closingDay: data.closingDay, dueDay: data.dueDay } });
+      for (const c of [{ id }, ...hermanas]) {
+        const tarjeta = { id: c.id, closingDay: data.closingDay, dueDay: data.dueDay };
+        await recalcularResumenes(userId, tarjeta);
+        await sincronizarFechasTarjeta(tarjeta);
       }
     }
   } else {
     const last = await prisma.account.aggregate({ where: { userId }, _max: { sortOrder: true } });
-    await prisma.account.create({ data: { ...data, userId, sortOrder: (last._max.sortOrder ?? 0) + 1 } });
+    const creada = await prisma.account.create({ data: { ...data, userId, sortOrder: (last._max.sortOrder ?? 0) + 1 } });
+    if (creada.type === "CREDIT_CARD") await sincronizarFechasTarjeta(creada);
   }
   refresh();
 }
@@ -246,37 +241,6 @@ const txSchema = z.object({
   installments: z.coerce.number().int().min(1).max(120).default(1),
 });
 
-/** Recalcula el statementMonth de todas las transacciones de una tarjeta con las fechas ya guardadas (después de editarlas, propio o de una cuenta hermana). */
-async function recomputeStatementMonths(userId: string, accountId: number, cardDates: CardDates) {
-  const txs = await prisma.transaction.findMany({ where: { userId, accountId }, select: { id: true, date: true } });
-  const porMes = new Map<string, number[]>();
-  for (const t of txs) {
-    const sm = statementMonthForDate(t.date, cardDates);
-    if (!sm) continue;
-    if (!porMes.has(sm)) porMes.set(sm, []);
-    porMes.get(sm)!.push(t.id);
-  }
-  if (porMes.size) {
-    await prisma.$transaction([...porMes].map(([sm, ids]) => prisma.transaction.updateMany({ where: { id: { in: ids } }, data: { statementMonth: sm } })));
-  }
-}
-
-/**
- * A partir del cierre/vencimiento "actual" (los únicos dos campos que el usuario corrige a
- * mano) y el día del mes configurado, deriva el anterior y el próximo automáticamente -- así
- * no hace falta mantener las seis fechas al día, sólo esas dos.
- */
-function deriveCardDates<T extends { closingDay: number | null; dueDay: number | null; cierreActual: Date | null; vencimientoActual: Date | null }>(d: T) {
-  const paso = (actual: Date | null, day: number | null) => {
-    if (!actual || !day) return { anterior: null as Date | null, proximo: null as Date | null };
-    const c = civil(actual);
-    return { anterior: fromCivil(c.y, c.m - 1, day, 12), proximo: fromCivil(c.y, c.m + 1, day, 12) };
-  };
-  const cierre = paso(d.cierreActual, d.closingDay);
-  const vencimiento = paso(d.vencimientoActual, d.dueDay);
-  return { ...d, cierreAnterior: cierre.anterior, cierreProximo: cierre.proximo, vencimientoAnterior: vencimiento.anterior, vencimientoProximo: vencimiento.proximo };
-}
-
 /** Per-installment amounts; the last one absorbs the rounding remainder. */
 function splitAmount(total: number, n: number) {
   const each = Math.round((total / n) * 100) / 100;
@@ -301,14 +265,39 @@ async function assertOwned(userId: string, d: { accountId: number; toAccountId?:
   return { account, toAccount: accounts.find((a) => a.id === d.toAccountId) };
 }
 
-export async function saveTransaction(fd: FormData) {
-  const userId = await requireUserId();
+/** Un mensaje que se pueda mostrar tal cual: en producción un throw llega al navegador sin su texto. */
+function mensajeDe(e: unknown): string {
+  if (e instanceof z.ZodError) return "Revisá los datos del formulario: hay un campo vacío o inválido.";
+  return e instanceof Error && e.message ? e.message : "No se pudo guardar. Probá de nuevo.";
+}
+
+/** Comprobantes que vienen en el formulario (campo "files", por pegado, arrastre o selector): se validan ANTES de crear nada. */
+async function leerComprobantes(fd: FormData) {
+  const archivos = fd.getAll("files").filter((f): f is File => f instanceof File && f.size > 0);
+  const out: { data: Uint8Array; nombre: string }[] = [];
+  for (const f of archivos) {
+    const data = new Uint8Array(await f.arrayBuffer());
+    validarComprobante(data, `"${f.name}"`);
+    out.push({ data, nombre: f.name });
+  }
+  return out;
+}
+
+async function subirComprobantes(userId: string, transactionId: number, archivos: { data: Uint8Array; nombre: string }[]) {
+  for (const a of archivos) await adjuntarComprobante(userId, transactionId, a.data, "WEB", a.nombre);
+}
+
+/** Alta o edición de un registro (con cuotas, si corresponde). Devuelve el id del registro (el de la primera cuota). */
+async function guardarRegistro(userId: string, fd: FormData): Promise<number> {
   const id = fd.get("id") ? Number(fd.get("id")) : null;
   const d = txSchema.parse(Object.fromEntries(fd));
   const tagIds = fd.getAll("tagIds").map(Number).filter(Boolean);
   const { account, toAccount } = await assertOwned(userId, d, tagIds);
   const date = new Date(d.date);
   if (Number.isNaN(date.getTime())) throw new Error("Fecha inválida");
+
+  // Resumen de tarjeta según el maestro de cierres (con las correcciones manuales), no sólo el día del mes.
+  const ciclos = account.type === "CREDIT_CARD" ? await ciclosParaFechas(account, [date, addMonths(date, Math.max(0, d.installments - 1))]) : [];
 
   const budgetId = d.type === "EXPENSE" ? d.budgetId : null;
   if (budgetId && !(await prisma.budget.findFirst({ where: { id: budgetId, userId } }))) throw new Error("Ese presupuesto no es tuyo");
@@ -321,7 +310,7 @@ export async function saveTransaction(fd: FormData) {
     note: d.note,
     counterparty: d.counterparty.trim(),
     warrantyMonths: d.type === "EXPENSE" ? d.warrantyMonths : null,
-    statementMonth: account.type === "CREDIT_CARD" ? statementMonthForDate(date, account) : null,
+    statementMonth: account.type === "CREDIT_CARD" ? statementMonthForDate(date, account, ciclos) : null,
     dueDate: d.type === "EXPENSE" ? d.dueDate : null,
     paid: d.type === "EXPENSE" ? d.paid : true,
     accountId: d.accountId,
@@ -345,6 +334,7 @@ export async function saveTransaction(fd: FormData) {
       where: { id, userId },
       data: { ...base, amount: d.amount, date, tags: { set: tagIds.map((t) => ({ id: t })) } },
     });
+    return id;
   } else if (d.type === "EXPENSE" && d.installments > 1) {
     // Las reglas se evalúan una sola vez, antes de crear, y valen para todas las cuotas: así cada
     // cuota conserva su "(n/total)" aunque la regla le cambie el nombre. (Antes las cuotas eran el
@@ -373,7 +363,7 @@ export async function saveTransaction(fd: FormData) {
       },
     });
     const parts = splitAmount(d.amount, d.installments);
-    await prisma.$transaction(
+    const creadas = await prisma.$transaction(
       parts.map((amount, i) =>
         prisma.transaction.create({
           data: {
@@ -381,7 +371,7 @@ export async function saveTransaction(fd: FormData) {
             amount,
             date: addMonths(date, i),
             // Cada cuota recalcula a qué resumen corresponde según su propia fecha, no la de la cuota 1.
-            statementMonth: account.type === "CREDIT_CARD" ? statementMonthForDate(addMonths(date, i), account) : null,
+            statementMonth: account.type === "CREDIT_CARD" ? statementMonthForDate(addMonths(date, i), account, ciclos) : null,
             description: `${descripcion} (${i + 1}/${d.installments})`,
             note: efecto.note ?? base.note,
             counterparty: efecto.counterparty ?? base.counterparty,
@@ -393,6 +383,7 @@ export async function saveTransaction(fd: FormData) {
         }),
       ),
     );
+    return creadas[0].id;
   } else {
     const creado = await prisma.transaction.create({ data: { ...base, amount: d.amount, date, tags: { connect: tagIds.map((t) => ({ id: t })) } } });
     // Las reglas de automatización corren sobre lo recién creado.
@@ -404,8 +395,26 @@ export async function saveTransaction(fd: FormData) {
       accountId: d.accountId,
       toAccountId: base.toAccountId,
     });
+    return creado.id;
+  }
+}
+
+export async function saveTransaction(fd: FormData): Promise<void | { error: string }> {
+  const userId = await requireUserId();
+  let id: number;
+  let comprobantes: Awaited<ReturnType<typeof leerComprobantes>>;
+  try {
+    comprobantes = await leerComprobantes(fd);
+    id = await guardarRegistro(userId, fd);
+  } catch (e) {
+    return { error: mensajeDe(e) };
   }
   refresh();
+  try {
+    await subirComprobantes(userId, id, comprobantes);
+  } catch (e) {
+    return { error: `El registro se guardó, pero no se pudo subir el comprobante: ${mensajeDe(e)} Cerrá esta ventana y subilo desde el clip del registro.` };
+  }
 }
 
 export async function deleteTransaction(id: number) {
@@ -626,13 +635,20 @@ export async function applyPlannedConfirmation(
   const categoryId = efecto.categoryId !== undefined ? efecto.categoryId : overrides?.categoryId !== undefined ? overrides.categoryId : p.categoryId;
   const tagIds = [...new Set([...p.tags.map((t) => t.id), ...efecto.tagIds])];
 
+  // Un débito automático en una tarjeta también cae en el resumen que corresponde a su fecha.
+  const cuenta = await prisma.account.findUnique({ where: { id: accountId } });
+  const fechaRegistro = overrides?.date ?? new Date();
+  const statementMonth =
+    cuenta?.type === "CREDIT_CARD" ? statementMonthForDate(fechaRegistro, cuenta, await ciclosParaFechas(cuenta, [fechaRegistro])) : null;
+
   await prisma.transaction.create({
     data: {
       userId: p.userId,
       type: p.type,
       amount,
       currency: p.currency,
-      date: overrides?.date ?? new Date(),
+      date: fechaRegistro,
+      statementMonth,
       description: efecto.description ?? p.description,
       counterparty: efecto.counterparty ?? p.counterparty,
       note: efecto.note ?? note,
@@ -642,6 +658,11 @@ export async function applyPlannedConfirmation(
     },
   });
 
+  await avanzarPlanificado(p);
+}
+
+/** Después de confirmar un planificado: si no se repite queda hecho; si se repite, pasa al próximo vencimiento. */
+async function avanzarPlanificado(p: { id: number; recurrence: string; dueDate: Date }) {
   if (p.recurrence === "NONE") {
     await prisma.planned.update({ where: { id: p.id }, data: { done: true } });
   } else {
@@ -656,33 +677,38 @@ export async function applyPlannedConfirmation(
   }
 }
 
+/**
+ * Confirmar un planificado con el formulario COMPLETO de registro (todos los campos, comprobantes
+ * pegados o arrastrados): crea el registro con lo que se cargó y recién ahí avanza el planificado.
+ * El registro queda a nombre de quien confirma (con sus propias cuentas), aunque el planificado
+ * lo haya cargado otra persona de un grupo compartido.
+ */
+export async function confirmPlannedComplete(fd: FormData): Promise<void | { error: string }> {
+  const userId = await requireUserId();
+  const p = await prisma.planned.findFirst({ where: { id: Number(fd.get("plannedId")), ...plannedAccessFilter(userId) } });
+  if (!p) return { error: "El planificado ya no existe" };
+  let id: number;
+  let comprobantes: Awaited<ReturnType<typeof leerComprobantes>>;
+  try {
+    comprobantes = await leerComprobantes(fd);
+    id = await guardarRegistro(userId, fd);
+  } catch (e) {
+    return { error: mensajeDe(e) };
+  }
+  await avanzarPlanificado(p);
+  refresh();
+  try {
+    await subirComprobantes(userId, id, comprobantes);
+  } catch (e) {
+    return { error: `El registro se guardó, pero no se pudo subir el comprobante: ${mensajeDe(e)} Cerrá esta ventana y subilo desde el clip del registro.` };
+  }
+}
+
 export async function confirmPlanned(id: number) {
   const userId = await requireUserId();
   const p = await prisma.planned.findFirst({ where: { id, ...plannedAccessFilter(userId) }, include: { tags: true } });
   if (!p) throw new Error("No existe");
   await applyPlannedConfirmation(p);
-  refresh();
-}
-
-/** Confirma un planificado dejando ajustar fecha, monto, cuenta, categoría y nota antes de crear el registro. */
-export async function confirmPlannedWithEdits(fd: FormData) {
-  const userId = await requireUserId();
-  const id = Number(fd.get("id"));
-  const p = await prisma.planned.findFirst({ where: { id, ...plannedAccessFilter(userId) }, include: { tags: true } });
-  if (!p) throw new Error("No existe");
-
-  const dateStr = String(fd.get("date") ?? "");
-  const amountStr = fd.get("amount");
-  const accountIdStr = fd.get("accountId");
-  const categoryIdStr = fd.get("categoryId");
-
-  await applyPlannedConfirmation(p, {
-    date: dateStr ? parseInput(dateStr) : undefined,
-    amount: amountStr ? Number(amountStr) : undefined,
-    accountId: accountIdStr ? Number(accountIdStr) : null,
-    categoryId: categoryIdStr ? Number(categoryIdStr) : null,
-    note: fd.get("note") != null ? String(fd.get("note")) : undefined,
-  });
   refresh();
 }
 
@@ -706,67 +732,29 @@ export async function autoConfirmPlanned() {
 }
 
 /**
- * Cron: cuando el cierre/vencimiento "actual" guardado de una tarjeta ya pasó, lo corre un
- * lugar (anterior←actual, actual←próximo) y estima el próximo por el día del mes, para que el
- * usuario nunca tenga que tocar más que "actual" a mano (si el banco corrió la fecha ese mes,
- * la corrige ahí y listo). Si el próximo nunca se llegó a calcular (no debería pasar si se guardó
- * desde el formulario, que ya lo deriva solo), se estima en el momento para no quedar trabado
- * repitiendo la misma fecha. Si no hay "actual" cargado, no hay nada que rotar (se sigue
- * calculando en vivo desde el día del mes).
+ * Cron diario: vuelve a calcular, para cada tarjeta, las seis fechas anterior/actual/próximo de
+ * cierre y vencimiento a partir de su maestro de cierres (días del mes + correcciones manuales), así
+ * "actual" y "próximo" se corren solos cuando pasa la fecha, sin que el usuario toque nada. Cada
+ * tarjeta va aislada: una que falla no frena a las demás.
  */
 export async function rollCardDates() {
-  const hoy = new Date();
-  const cards = await prisma.account.findMany({
-    where: { type: "CREDIT_CARD", archived: false, OR: [{ cierreActual: { lt: hoy } }, { vencimientoActual: { lt: hoy } }] },
-  });
-  for (const c of cards) {
-    const data: {
-      cierreAnterior?: Date;
-      cierreActual?: Date;
-      cierreProximo?: Date;
-      vencimientoAnterior?: Date;
-      vencimientoActual?: Date;
-      vencimientoProximo?: Date;
-    } = {};
-    if (c.cierreActual && c.cierreActual < hoy) {
-      const ac = civil(c.cierreActual);
-      const nuevoActual = c.cierreProximo ?? (c.closingDay ? fromCivil(ac.y, ac.m + 1, c.closingDay, 12) : null);
-      if (nuevoActual) {
-        data.cierreAnterior = c.cierreActual;
-        data.cierreActual = nuevoActual;
-        if (c.closingDay) {
-          const cc = civil(nuevoActual);
-          data.cierreProximo = fromCivil(cc.y, cc.m + 1, c.closingDay, 12);
-        }
-      }
-    }
-    if (c.vencimientoActual && c.vencimientoActual < hoy) {
-      const ac = civil(c.vencimientoActual);
-      const nuevoActual = c.vencimientoProximo ?? (c.dueDay ? fromCivil(ac.y, ac.m + 1, c.dueDay, 12) : null);
-      if (nuevoActual) {
-        data.vencimientoAnterior = c.vencimientoActual;
-        data.vencimientoActual = nuevoActual;
-        if (c.dueDay) {
-          const vc = civil(nuevoActual);
-          data.vencimientoProximo = fromCivil(vc.y, vc.m + 1, c.dueDay, 12);
-        }
-      }
-    }
-    if (Object.keys(data).length) await prisma.account.update({ where: { id: c.id }, data });
-  }
+  const cards = await prisma.account.findMany({ where: { type: "CREDIT_CARD", archived: false, closingDay: { not: null } }, select: { id: true, closingDay: true, dueDay: true } });
+  await forEachIsolated(cards, (c) => `sincronizar las fechas de la tarjeta #${c.id}`, (c) => sincronizarFechasTarjeta(c));
   return cards.length;
 }
 
 /* ---------- Attachments ---------- */
-export async function uploadAttachment(fd: FormData) {
+export async function uploadAttachment(fd: FormData): Promise<void | { error: string }> {
   const userId = await requireUserId();
   const transactionId = Number(fd.get("transactionId"));
   const file = fd.get("file") as File | null;
   if (!file || file.size === 0) return;
-  if (file.size > 10 * 1024 * 1024) throw new Error("El archivo supera los 10 MB");
-  if (!(await prisma.transaction.findFirst({ where: { id: transactionId, userId } }))) throw new Error("Registro inválido");
-  const storagePath = await storeAttachment(userId, transactionId, await file.arrayBuffer(), file.type);
-  await prisma.attachment.create({ data: { transactionId, storagePath, mimeType: file.type, source: "WEB" } });
+  if (!(await prisma.transaction.findFirst({ where: { id: transactionId, userId } }))) return { error: "Registro inválido" };
+  try {
+    await adjuntarComprobante(userId, transactionId, new Uint8Array(await file.arrayBuffer()), "WEB", file.name);
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "No se pudo subir el archivo" };
+  }
   refresh();
 }
 
@@ -889,7 +877,7 @@ export async function saveDashboardLayout(mobile: boolean, cards: string[], layo
   const clean = Object.fromEntries(
     Object.entries(layout).map(([id, l]) => [id, { x: Math.max(0, Math.round(l.x)), y: Math.max(0, Math.round(l.y)), w: Math.max(1, Math.round(l.w)), h: Math.max(5, Math.round(l.h)) }]),
   );
-  const patch = mobile ? { cardsMobile: cards, sizesMobile: clean } : { cards, sizes: clean };
+  const patch = mobile ? { cardsMobile: cards, sizesMobile: clean } : { cards, sizes: clean, sizesCols: 12 };
   await prisma.user.update({ where: { id: userId }, data: { dashboard: { ...current, ...patch } } });
 }
 

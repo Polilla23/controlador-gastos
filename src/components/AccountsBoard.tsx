@@ -11,8 +11,8 @@ import MoneyInput from "./MoneyInput";
 import IconPicker from "./IconPicker";
 import Icono from "./Icono";
 import { deleteAccount, reorderAccounts, saveAccount, toggleAccountStats } from "@/lib/actions";
-import { ACCOUNT_TYPES, CURRENCIES, money, toInputDate } from "@/lib/format";
-import { proximosCierres } from "@/lib/tarjetas";
+import { ACCOUNT_TYPES, CURRENCIES, money } from "@/lib/format";
+import CiclosTarjeta from "./CiclosTarjeta";
 
 export type AccountRow = {
   id: number;
@@ -38,8 +38,6 @@ export type AccountRow = {
 
 function AccountFields({ account }: { account?: AccountRow }) {
   const [type, setType] = useState(account?.type ?? "CASH");
-  // Si nunca se corrigieron a mano, mostramos lo que se calcularía en vivo, para que editarlas sea partir de un valor sensato.
-  const fechas = account ? proximosCierres(account) : null;
   return (
     <>
       {account && <input type="hidden" name="id" value={account.id} />}
@@ -95,24 +93,10 @@ function AccountFields({ account }: { account?: AccountRow }) {
           </div>
           <p className="text-xs text-muted">Si cargás el día de vencimiento, el bot de Telegram te avisa antes de cada vencimiento.</p>
 
-          {fechas && (
-            <>
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted">Fechas concretas (opcional, corrige lo calculado del día del mes)</p>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <div>
-                  <label className="label">Cierre actual</label>
-                  <input name="cierreActual" type="date" className="input" defaultValue={fechas.cierreActual ? toInputDate(fechas.cierreActual) : ""} />
-                </div>
-                <div>
-                  <label className="label">Vencimiento actual</label>
-                  <input name="vencimientoActual" type="date" className="input" defaultValue={fechas.vencimientoActual ? toInputDate(fechas.vencimientoActual) : ""} />
-                </div>
-              </div>
-              <p className="text-xs text-muted">
-                Con esto alcanza: el anterior y el próximo cierre/vencimiento se calculan solos a partir de éstos y del día del mes de arriba, y se van corriendo
-                automáticamente un mes cuando el actual vence. Sólo corregí &quot;actual&quot; el mes que el banco te corra la fecha.
-              </p>
-            </>
+          {account ? (
+            <CiclosTarjeta accountId={account.id} />
+          ) : (
+            <p className="text-xs text-muted">Después de crear la tarjeta vas a poder ver y corregir su historial de cierres y vencimientos desde acá.</p>
           )}
         </div>
       )}

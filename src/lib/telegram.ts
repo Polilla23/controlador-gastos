@@ -1,5 +1,5 @@
 import { prisma } from "./prisma";
-import { storeAttachment } from "./storage";
+import { adjuntarComprobante } from "./storage";
 import { money, fmtDate, fmtDayMonth } from "./format";
 import { APP_TZ, addDays, civil as civilOf, fromCivil, monthKey, startOfDay } from "./tz";
 import { cargarPresupuestos } from "./presupuestos";
@@ -344,10 +344,11 @@ export async function handleUpdate(update: TgUpdate) {
     if (!tx) return reply(`No encontré el registro <b>#${id}</b> en tu cuenta. Revisá el ID en la app.`);
 
     const fileId = repliedPhoto?.file_id ?? repliedDoc!.file_id;
-    const mimeType = repliedPhoto ? "image/jpeg" : (repliedDoc!.mime_type ?? "application/octet-stream");
-    const data = await downloadFile(fileId);
-    const storagePath = await storeAttachment(user.id, tx.id, data, mimeType);
-    await prisma.attachment.create({ data: { transactionId: tx.id, storagePath, mimeType, source: "TELEGRAM" } });
+    try {
+      await adjuntarComprobante(user.id, tx.id, await downloadFile(fileId), "TELEGRAM");
+    } catch (e) {
+      return reply(`⚠️ ${e instanceof Error ? e.message : "No pude guardar el archivo"}`);
+    }
     return reply(`✅ Adjunté el archivo al registro <b>#${tx.id}</b> (${tx.description || "sin descripción"} · ${money(tx.amount, tx.currency)}).`);
   }
 
@@ -386,10 +387,11 @@ export async function handleUpdate(update: TgUpdate) {
   if (!tx) return reply(`No encontré el registro <b>#${id}</b> en tu cuenta. Revisá el ID en la app.`);
 
   const fileId = photo?.file_id ?? doc!.file_id;
-  const mimeType = photo ? "image/jpeg" : (doc!.mime_type ?? "application/octet-stream");
-  const data = await downloadFile(fileId);
-  const storagePath = await storeAttachment(user.id, tx.id, data, mimeType);
-  await prisma.attachment.create({ data: { transactionId: tx.id, storagePath, mimeType, source: "TELEGRAM" } });
+  try {
+    await adjuntarComprobante(user.id, tx.id, await downloadFile(fileId), "TELEGRAM");
+  } catch (e) {
+    return reply(`⚠️ ${e instanceof Error ? e.message : "No pude guardar el archivo"}`);
+  }
   return reply(`✅ Adjunté el archivo al registro <b>#${tx.id}</b> (${tx.description || "sin descripción"} · ${money(tx.amount, tx.currency)}).`);
 }
 

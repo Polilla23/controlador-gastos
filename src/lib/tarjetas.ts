@@ -1,4 +1,5 @@
 import { civil, fromCivil } from "./tz";
+import { resumenEnCiclos, type Ciclo } from "./ciclos";
 
 /**
  * En qué resumen de tarjeta cae un consumo, calculado sólo desde el día del mes
@@ -111,8 +112,13 @@ export function proximosCierres(account: CardDates, today: Date = new Date()) {
  * guardados (por ejemplo, la cuota número 8 de un plan de 12), recurre al
  * cálculo por día del mes para esa cuota puntual.
  */
-export function statementMonthForDate(date: Date, account: CardDates): string | null {
+export function statementMonthForDate(date: Date, account: CardDates, ciclos?: Ciclo[]): string | null {
   if (!account.closingDay) return null;
+  // Con el maestro de cierres de la tarjeta (ver ciclos.ts) manda ése, incluidas las correcciones manuales.
+  if (ciclos?.length) {
+    const deCiclos = resumenEnCiclos(date, ciclos);
+    if (deCiclos) return deCiclos;
+  }
   const pares = [
     { cierre: account.cierreAnterior, vencimiento: account.vencimientoAnterior },
     { cierre: account.cierreActual, vencimiento: account.vencimientoActual },

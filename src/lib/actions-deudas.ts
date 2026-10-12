@@ -6,6 +6,7 @@ import { prisma } from "./prisma";
 import { requireUserId } from "./auth";
 import { addMonths, parseInput } from "./tz";
 import { statementMonthForDate } from "./tarjetas";
+import { ciclosParaFechas } from "./ciclos-server";
 import { calcularCredito } from "./credito";
 import { assertOwnedTransaction, readLinkMode } from "./linkTransaction";
 
@@ -74,6 +75,7 @@ export async function saveDebt(fd: FormData) {
     if (!calc) throw new Error("Poné la cantidad de cuotas");
     const account = await prisma.account.findUniqueOrThrow({ where: { id: d.accountId } });
     const primera = parseInput(d.dueDate);
+    const ciclos = account.type === "CREDIT_CARD" ? await ciclosParaFechas(account, [primera, addMonths(primera, n - 1)]) : [];
     const nombre = `Préstamo de ${data.counterparty}${d.description ? ` · ${d.description}` : ""}`;
 
     await prisma.$transaction(
@@ -111,7 +113,7 @@ export async function saveDebt(fd: FormData) {
             categoryId: d.categoryId,
             planId: plan.id,
             installmentNo: i + 1,
-            statementMonth: account.type === "CREDIT_CARD" ? statementMonthForDate(addMonths(primera, i), account) : null,
+            statementMonth: account.type === "CREDIT_CARD" ? statementMonthForDate(addMonths(primera, i), account, ciclos) : null,
           })),
         });
         let transactionId: number | null = mode === "existing" && existingId ? existingId : null;

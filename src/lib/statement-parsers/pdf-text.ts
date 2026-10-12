@@ -1,4 +1,11 @@
 import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
+// @ts-expect-error -- el worker no trae tipos
+import { WorkerMessageHandler } from "pdfjs-dist/legacy/build/pdf.worker.mjs";
+
+// En serverless (Vercel) pdfjs busca pdf.worker.mjs con un import dinámico que el empaquetado no
+// incluye ("Setting up fake worker failed: Cannot find module ... pdf.worker.mjs"). Con un import
+// estático el archivo viaja en el deploy, y dejándolo en globalThis pdfjs ya no lo busca por ruta.
+(globalThis as { pdfjsWorker?: unknown }).pdfjsWorker = { WorkerMessageHandler };
 
 export type TextItem = { page: number; x: number; y: number; str: string };
 

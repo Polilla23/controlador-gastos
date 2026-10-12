@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import Link from "next/link";
-import { ArrowLeft, Check, Copy, HandCoins, Link2, LogOut, Mail, Pencil, Plus, Trash2, UserPlus, Users, X } from "lucide-react";
+import { Archive, ArchiveRestore, ArrowLeft, Check, Copy, HandCoins, Link2, LogOut, Mail, Pencil, Plus, Trash2, UserPlus, Users, X } from "lucide-react";
 import ActionForm from "./ActionForm";
 import Modal from "./Modal";
 import ConfirmButton from "./ConfirmButton";
@@ -12,6 +12,7 @@ import Tabs from "./Tabs";
 import LinkTransaction from "./LinkTransaction";
 import {
   addMember,
+  archiveGroup,
   deleteGroup,
   deleteGroupExpense,
   deleteMember,
@@ -59,6 +60,7 @@ export type GrupoDetalle = {
   name: string;
   currency: string;
   note: string;
+  archived: boolean;
   members: Miembro[];
   expenses: Gasto[];
   saldos: Saldo[];
@@ -606,6 +608,13 @@ export default function GroupDetail({ g, categories, accounts, tags }: { g: Grup
               <Modal title="Editar grupo" triggerClassName="btn-icon" trigger={<Pencil size={15} />}>
                 <GroupForm g={g} />
               </Modal>
+              <ConfirmButton
+                action={async () => archiveGroup(g.id, !g.archived)}
+                className="btn-ghost"
+                message={g.archived ? `¿Volver a activar el grupo "${g.name}"?` : `¿Archivar el grupo "${g.name}"? Deja de aparecer en la lista (lo ves en "Ver archivados") y lo podés reactivar cuando quieras.`}
+              >
+                {g.archived ? <ArchiveRestore size={15} /> : <Archive size={15} />} {g.archived ? "Reactivar" : "Archivar"}
+              </ConfirmButton>
               <ConfirmButton action={async () => deleteGroup(g.id)} className="btn-icon hover:text-red-500" message={`¿Eliminar el grupo "${g.name}" y todos sus gastos?`}>
                 <Trash2 size={15} />
               </ConfirmButton>
@@ -627,6 +636,10 @@ export default function GroupDetail({ g, categories, accounts, tags }: { g: Grup
         <div className={`kpi-value ${g.miSaldo > 0.01 ? "text-brand-500" : g.miSaldo < -0.01 ? "text-red-500" : ""}`}>
           {g.miSaldo > 0.01 ? `Te deben ${money(g.miSaldo, g.currency)}` : g.miSaldo < -0.01 ? `Debés ${money(-g.miSaldo, g.currency)}` : "Estás a mano"}
         </div>
+        {g.archived && <p className="mt-1 text-xs font-medium text-amber-600">Este grupo está archivado.</p>}
+        {!g.archived && g.isOwner && g.expenses.length > 0 && g.saldos.every((s) => Math.abs(s.saldo) < 0.01) && (
+          <p className="mt-1 text-xs text-muted">Está todo saldado: si fue un gasto puntual (una cena, la veterinaria), podés archivarlo para dejar de verlo.</p>
+        )}
       </div>
 
       <Tabs

@@ -2,7 +2,8 @@ import { prisma } from "./prisma";
 import { parseStatementPdf } from "./statement-parsers";
 import { nombreBanco } from "./statement-parsers/types";
 import { reglasDe, efectoDe, type Candidato } from "./reglas";
-import { statementMonthFor } from "./tarjetas";
+import { statementMonthForDate } from "./tarjetas";
+import { ciclosParaFechas } from "./ciclos-server";
 import { storeStatementPdf, downloadStored } from "./storage";
 
 /**
@@ -215,6 +216,8 @@ export async function confirmarImportacion(userId: string, importId: number): Pr
 
   const aCrear = importado.items.filter((i) => i.status === "PENDING");
 
+  // El resumen de cada consumo sale del maestro de cierres de la tarjeta (con sus correcciones manuales).
+  const ciclos = await ciclosParaFechas(account, aCrear.map((i) => i.date));
   await prisma.$transaction(async (tx) => {
     for (const item of aCrear) {
       const creado = await tx.transaction.create({
@@ -225,7 +228,7 @@ export async function confirmarImportacion(userId: string, importId: number): Pr
           currency: item.currency,
           date: item.date,
           description: item.resolvedDescription ?? item.rawDescription,
-          statementMonth: statementMonthFor(item.date, account.closingDay, account.dueDay),
+          statementMonth: statementMonthForDate(item.date, account, ciclos),
           accountId: account.id,
           categoryId: item.categoryId,
           tags: { connect: item.tags.map((t) => ({ id: t.id })) },

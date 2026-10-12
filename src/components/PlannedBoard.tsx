@@ -7,9 +7,9 @@ import Modal from "./Modal";
 import ConfirmButton from "./ConfirmButton";
 import CategorySelect, { type CategoryOpt } from "./CategorySelect";
 import MoneyInput from "./MoneyInput";
-import { confirmPlannedWithEdits, deletePlanned, savePlanned } from "@/lib/actions";
-import { CURRENCIES, RECURRENCES, fmtDate, money, toInputDate, toInputDateTime } from "@/lib/format";
-import type { AccountOpt, TagOpt } from "./TransactionForm";
+import { deletePlanned, savePlanned } from "@/lib/actions";
+import { CURRENCIES, RECURRENCES, fmtDate, money, toInputDate } from "@/lib/format";
+import TransactionForm, { type AccountOpt, type TagOpt, type TxInitial } from "./TransactionForm";
 import Icono from "./Icono";
 
 export type PlannedRow = {
@@ -275,58 +275,69 @@ function Fields({
   );
 }
 
-/** Antes de crear el registro definitivo, deja ajustar fecha, monto, cuenta, categoría y nota -- por si el pago se hizo antes del vencimiento, no justo hoy. */
-function ConfirmarForm({ item, accounts, categories, groups }: { item: PlannedRow; accounts: AccountOpt[]; categories: CategoryOpt[]; groups: ShareGroupOpt[] }) {
+/**
+ * Confirmar un pago o ingreso planificado abre el formulario COMPLETO de registro (el mismo que al
+ * editar una transacción, con todos los campos y los comprobantes), ya cargado con los datos del
+ * planificado. Al guardar se crea el registro y el planificado avanza (queda hecho, o pasa al
+ * próximo vencimiento si se repite).
+ */
+function ConfirmarForm({
+  item,
+  accounts,
+  categories,
+  tags,
+  personas,
+  groups,
+}: {
+  item: PlannedRow;
+  accounts: AccountOpt[];
+  categories: CategoryOpt[];
+  tags: TagOpt[];
+  personas: string[];
+  groups: ShareGroupOpt[];
+}) {
   // Si es un gasto compartido con % preseteado, el monto que se propone confirmar es sólo mi
   // parte, no el total -- el usuario puede seguir pisándolo a mano si hace falta.
   const grupo = item.shareGroupId ? groups.find((g) => g.id === item.shareGroupId) : undefined;
   const miPorcentaje = grupo?.members.find((m) => m.id === grupo.myMemberId)?.defaultPercent;
   const conParte = grupo && miPorcentaje != null ? Math.round(item.amount * (miPorcentaje / 100) * 100) / 100 : null;
   const compartidoCon = grupo?.members.find((m) => m.id === item.shareMemberId)?.name;
+  const initial: TxInitial = {
+    type: item.type,
+    amount: conParte ?? item.amount,
+    date: new Date(),
+    dueDate: null,
+    paid: true,
+    description: item.description,
+    note: item.note,
+    counterparty: item.counterparty,
+    warrantyMonths: null,
+    accountId: item.accountId ?? accounts[0]?.id ?? 0,
+    toAccountId: null,
+    toAmount: null,
+    categoryId: item.categoryId,
+    tags: item.tags.map((t) => ({ id: t.id })),
+  };
   return (
-    <ActionForm action={confirmPlannedWithEdits} submitLabel={item.type === "INCOME" ? "Registrar ingreso" : "Registrar pago"}>
-      <input type="hidden" name="id" value={item.id} />
+    <div className="space-y-4">
       <p className="rounded-lg bg-subtle px-3 py-2 text-sm text-muted">
         Se crea el registro de <b className="text-fg">{item.description}</b>. Si lo pagaste/cobraste otro día, o por otro monto o cuenta, ajustalo antes de confirmar.
       </p>
       {conParte != null && (
         <p className="rounded-lg bg-brand-500/10 px-3 py-2 text-sm text-brand-500">
-          Gasto compartido{compartidoCon ? ` con ${compartidoCon}` : ""} · total {money(item.amount, item.currency)} · tu parte ({miPorcentaje}%):{" "}
-          <b>{money(conParte, item.currency)}</b>
+          Gasto compartido{compartidoCon ? ` con ${compartidoCon}` : ""} · total {money(item.amount, item.currency)} · tu parte ({miPorcentaje}%): <b>{money(conParte, item.currency)}</b>
         </p>
       )}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <div>
-          <label className="label">Fecha y hora</label>
-          <input name="date" type="datetime-local" required className="input" defaultValue={toInputDateTime(new Date())} />
-        </div>
-        <div>
-          <label className="label">Monto{conParte != null ? " (tu parte)" : ""}</label>
-          <MoneyInput name="amount" required defaultValue={conParte ?? item.amount} />
-        </div>
-      </div>
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <div>
-          <label className="label">Cuenta</label>
-          <select name="accountId" className="input" defaultValue={item.accountId ?? ""}>
-            <option value="">Sin definir</option>
-            {accounts.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.name} ({a.currency})
-              </option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label className="label">Categoría</label>
-          <CategorySelect categories={categories} kind={item.type} defaultValue={item.categoryId} />
-        </div>
-      </div>
-      <div>
-        <label className="label">Nota</label>
-        <textarea name="note" className="input" rows={2} defaultValue={item.note} />
-      </div>
-    </ActionForm>
+      <TransactionForm
+        accounts={accounts}
+        categories={categories}
+        tags={tags}
+        counterparties={personas}
+        initial={initial}
+        plannedId={item.id}
+        submitLabel={item.type === "INCOME" ? "Registrar ingreso" : "Registrar pago"}
+      />
+    </div>
   );
 }
 
@@ -391,7 +402,7 @@ export default function PlannedBoard({
             triggerClassName="btn-icon hover:text-brand-500"
             trigger={<Check size={16} />}
           >
-            <ConfirmarForm item={p} accounts={accounts} categories={categories} groups={groups} />
+            <ConfirmarForm item={p} accounts={accounts} categories={categories} tags={tags} personas={personas} groups={groups} />
           </Modal>
           <Modal title={`Editar ${p.description}`} triggerClassName="btn-icon" trigger={<Pencil size={15} />}>
             <ActionForm action={savePlanned}>
