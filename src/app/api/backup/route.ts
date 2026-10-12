@@ -1,15 +1,24 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireUserId } from "@/lib/auth";
+import { userIdDelPedido } from "@/lib/backup-auth";
+import { extensionDe, type TipoPermitido } from "@/lib/archivos";
 import { shareGroupAccessFilter } from "@/lib/share-access";
 
+const pad = (n: number, w = 6) => String(n).padStart(w, "0");
+
 /**
- * Backup local: descarga todos los datos del usuario en un único JSON. No incluye los archivos
- * adjuntos en sí (viven en Supabase Storage, no en la base) ni credenciales/tokens -- sólo
- * `storagePath`/metadata, para que se sepa qué faltaría si se restaura a mano.
+ * Datos del backup: todo lo del usuario en un JSON, más el índice de comprobantes (`comprobantes`) con el
+ * nombre con el que cada archivo se guarda en el ZIP (TRX-000123_1.jpg = comprobante 1 del registro #123).
+ * Los archivos en sí viven en Supabase Storage: se bajan uno por uno desde /api/adjuntos/<id>?bytes=1.
+ * Sin credenciales ni tokens. Se pide con la sesión del navegador o con el token del script local.
+ *
+ * Por defecto NO marca el backup como hecho (el ZIP completo lo marca recién cuando termina, en
+ * /api/backup/listo); con ?descargar=1 baja sólo el JSON y sí lo marca.
  */
-export async function GET() {
-  const userId = await requireUserId();
+export async function GET(req: Request) {
+  const userId = await userIdDelPedido(req);
+  if (!userId) return new NextResponse("Unauthorized", { status: 401 });
+  const descargar = new URL(req.url).searchParams.get("descargar") === "1";
 
   const [
     user,
@@ -48,9 +57,21 @@ export async function GET() {
     prisma.investMove.findMany({ where: { userId } }),
   ]);
 
+  // Índice de comprobantes: nombre estable por registro (TRX-<id>_<n>.<ext>), en el orden en que se subieron.
+  const comprobantes = transactions
+    .flatMap((t) => [...t.attachments].sort((a, b) => a.id - b.id).map((a, i) => ({ a, t, n: i + 1 })))
+    .map(({ a, t, n }) => ({
+      id: a.id,
+      transactionId: t.id,
+      archivo: `TRX-${pad(t.id)}_${n}${extensionDe(a.mimeType as TipoPermitido) ?? ""}`,
+      mimeType: a.mimeType,
+      source: a.source,
+      createdAt: a.createdAt,
+    }));
+
   const backup = {
     app: "Mis Finanzas",
-    version: 1,
+    version: 2,
     exportedAt: new Date().toISOString(),
     user,
     accounts,
@@ -67,15 +88,17 @@ export async function GET() {
     shareGroups,
     holdings,
     investMoves,
+    comprobantes,
   };
 
-  await prisma.user.update({ where: { id: userId }, data: { lastBackupAt: new Date() } });
+  if (descargar) await prisma.user.update({ where: { id: userId }, data: { lastBackupAt: new Date() } });
 
   const fecha = new Date().toISOString().slice(0, 10);
   return new NextResponse(JSON.stringify(backup, null, 2), {
     headers: {
       "Content-Type": "application/json",
-      "Content-Disposition": `attachment; filename="mis-finanzas-backup-${fecha}.json"`,
+      ...(descargar ? { "Content-Disposition": `attachment; filename="mis-finanzas-backup-${fecha}.json"` } : {}),
+      "Cache-Control": "no-store",
     },
   });
 }

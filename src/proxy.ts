@@ -24,7 +24,9 @@ export async function proxy(request: NextRequest) {
   const { data } = await supabase.auth.getClaims();
   const signedIn = !!data?.claims?.sub;
   const { pathname } = request.nextUrl;
-  const isPublic = pathname.startsWith("/login") || pathname.startsWith("/api/telegram") || pathname.startsWith("/api/cron") || pathname.startsWith("/api/health") || pathname === "/offline";
+  // El script de backup local no tiene sesión de navegador: manda un token (mfb_...) y la propia ruta lo valida.
+  const conTokenDeBackup = (pathname.startsWith("/api/backup") || pathname.startsWith("/api/adjuntos")) && /^Bearer mfb_/.test(request.headers.get("authorization") ?? "");
+  const isPublic = conTokenDeBackup || pathname.startsWith("/login") || pathname.startsWith("/api/telegram") || pathname.startsWith("/api/cron") || pathname.startsWith("/api/health") || pathname === "/offline";
 
   if (!signedIn && !isPublic) return NextResponse.redirect(new URL("/login", request.url));
   if (signedIn && pathname.startsWith("/login")) return NextResponse.redirect(new URL("/", request.url));

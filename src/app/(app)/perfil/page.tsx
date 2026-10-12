@@ -13,6 +13,8 @@ import ActionForm from "@/components/ActionForm";
 import InstallApp from "@/components/InstallApp";
 import DangerZone from "@/components/DangerZone";
 import SyncCalendarButton from "@/components/SyncCalendarButton";
+import BackupZip from "@/components/BackupZip";
+import BackupAutomatico from "@/components/BackupAutomatico";
 
 export default async function PerfilPage() {
   // requireUser() puede redirigir a /login (tira una excepción especial de Next para eso): tiene
@@ -294,19 +296,24 @@ async function renderPerfil(user: Awaited<ReturnType<typeof requireUser>>) {
             <HardDriveDownload size={18} className="text-brand-500" /> Backup local
           </h2>
           <p className="mb-3 text-sm text-muted">
-            Descargá un archivo JSON con todos tus datos (cuentas, registros, categorías, planificados, presupuestos, metas, deudas, reglas, gastos compartidos e inversiones). No incluye los
-            archivos adjuntos en sí, sólo a qué registro pertenecen.
+            El backup completo es un ZIP con todos tus datos (cuentas, registros, categorías, planificados, presupuestos, metas, deudas, reglas, gastos compartidos e inversiones) y tus
+            comprobantes, cada uno con el nombre del registro al que pertenece (TRX-000123_1.jpg), un manifest con el SHA-256 de cada archivo y el checksum del ZIP.
           </p>
-          <div className="flex flex-wrap items-center gap-3">
-            <a href="/api/backup" className="btn-primary">
-              <Download size={14} /> Descargar backup
+          <div className="flex flex-wrap items-start gap-3">
+            <BackupZip />
+            <a href="/api/backup?descargar=1" className="btn-ghost">
+              <Download size={14} /> Sólo los datos (JSON)
             </a>
-            <span className="text-xs text-muted">{user.lastBackupAt ? `Último backup: ${fmtDate(user.lastBackupAt)}` : "Todavía no descargaste ninguno."}</span>
+          </div>
+          <p className="mt-2 text-xs text-muted">{user.lastBackupAt ? `Último backup: ${fmtDate(user.lastBackupAt)}` : "Todavía no hiciste ninguno."}</p>
+          <div className="mt-4 border-t border-line pt-4">
+            <h3 className="mb-2 text-sm font-bold">Backup automático en tu PC</h3>
+            <BackupAutomatico tieneToken={!!user.backupTokenHash} />
           </div>
           <div className="mt-4 border-t border-line pt-4">
             <ActionForm action={saveBackupPrefs} submitLabel="Guardar">
               <div>
-                <label className="label">Recordame por Telegram cada</label>
+                <label className="label">Avisarme por Telegram si pasan este tiempo sin ningún backup</label>
                 <select name="backupFrequencyDays" className="input w-48" defaultValue={user.backupFrequencyDays ?? ""}>
                   <option value="">Nunca</option>
                   <option value="7">7 días</option>

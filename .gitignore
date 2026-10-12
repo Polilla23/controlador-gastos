@@ -43,3 +43,6 @@ next-env.d.ts
 
 # local data
 
+
+# token del backup automático (scripts/backup-local.mjs)
+scripts/backup.config.json

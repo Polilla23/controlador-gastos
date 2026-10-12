@@ -18,6 +18,8 @@ model User {
   telegramCode         String?             @unique // one-time code used to link the chat
   notifyDays           Int                 @default(3) // days before a due date to warn
   notifyHour           Int                 @default(9) // local hour for the daily digest
+  /// SHA-256 del token que usa el script de backup local (nunca se guarda el token en sí).
+  backupTokenHash      String?             @unique
   backupFrequencyDays  Int? // null = sin recordatorio de backup; si no, cada cuántos días avisar
   lastBackupAt         DateTime? // se actualiza solo al descargar un backup (manual o desde el aviso)
   lastBackupReminderOn DateTime? // dedupe diario del aviso de Telegram, mismo patrón que lastNotifiedOn

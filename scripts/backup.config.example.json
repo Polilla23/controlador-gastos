@@ -1,0 +1,13 @@
+{
+  "_como_usarlo": [
+    "1) Copiá este archivo como scripts/backup.config.json (ese archivo NO se sube a Git: tiene tu token).",
+    "2) En la app: Configuraciones > Backup local > Generar token, y pegalo en 'token'.",
+    "3) Probalo a mano: node scripts/backup-local.mjs   (deja una línea en <destino>/backup.log)",
+    "4) Programalo en Windows (cada N días a la hora que quieras): powershell -ExecutionPolicy Bypass -File scripts/programar-backup.ps1 -Hora 03:00 -CadaDias 1",
+    "   Para sacar la tarea: powershell -ExecutionPolicy Bypass -File scripts/programar-backup.ps1 -Quitar"
+  ],
+  "url": "https://controlador-gastos-sage.vercel.app",
+  "token": "mfb_PEGA_ACA_EL_TOKEN",
+  "destino": "D:\\Backups\\MisFinanzas",
+  "conservar": 14
+}
