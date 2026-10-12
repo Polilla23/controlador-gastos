@@ -69,7 +69,8 @@ const DIA = 86400000;
  */
 export async function candidatosSinComprobante(userId: string) {
   return prisma.transaction.findMany({
-    where: { userId, attachments: { none: {} }, date: { gte: new Date(Date.now() - 150 * DIA) } },
+    // Sólo lo que ya pasó (hasta mañana): las cuotas futuras de un plan o un crédito todavía no tienen comprobante que adjuntar.
+    where: { userId, attachments: { none: {} }, date: { gte: new Date(Date.now() - 150 * DIA), lte: new Date(Date.now() + DIA) } },
     orderBy: { date: "desc" },
     take: 80,
     include: { account: { select: { name: true } } },
