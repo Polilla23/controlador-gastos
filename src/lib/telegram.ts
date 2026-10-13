@@ -305,7 +305,11 @@ async function handleCallback(cq: NonNullable<TgUpdate["callback_query"]>) {
   if (mOk) {
     const res = await confirmarImportacion(user.id, Number(mOk[1]));
     await answerCallback(cq.id);
-    return editText(chatId, messageId, res.ok ? `✅ Importé ${res.creados} gasto${res.creados === 1 ? "" : "s"}.` : `⚠️ ${res.motivo}`);
+    return editText(
+      chatId,
+      messageId,
+      res.ok ? `✅ Importé ${res.creados} gasto${res.creados === 1 ? "" : "s"}.${res.abiertos ? `\nQuedan ${res.abiertos} renglón${res.abiertos === 1 ? "" : "es"} sin importar (posibles duplicados u otra moneda): revisalos en la app, en Importar.` : ""}` : `⚠️ ${res.motivo}`,
+    );
   }
 
   const mAdj = data.match(/^adj:(\d+):(\d+)$/);

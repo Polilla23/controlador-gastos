@@ -8,7 +8,8 @@ import MoneyInput from "./MoneyInput";
 import AttachmentDrop from "./AttachmentDrop";
 import AdjuntosExistentes from "./AdjuntosExistentes";
 import TagCombobox from "./TagCombobox";
-import { confirmPlannedComplete, saveTransaction } from "@/lib/actions";
+import { confirmPlannedComplete, importarRenglon, saveTransaction } from "@/lib/actions";
+import { editarItemImportacion } from "@/lib/actions-importaciones";
 import { listarCiclos, type FilaCiclo } from "@/lib/actions-ciclos";
 import { statementLabel } from "@/lib/tarjetas";
 import { toInputDateTime, toInputDate, money } from "@/lib/format";
@@ -60,6 +61,7 @@ export default function TransactionForm({
   budgets = [],
   lockedBudgetId,
   plannedId,
+  importItemId,
   submitLabel,
 }: {
   accounts: AccountOpt[];
@@ -77,6 +79,8 @@ export default function TransactionForm({
   lockedBudgetId?: number;
   /** Si se abre para confirmar un planificado: al guardar crea el registro y avanza ese planificado. */
   plannedId?: number;
+  /** Si se abre para editar un renglón de un resumen importado: al guardar lo importa como registro real; "Guardar sin importar" sólo deja sus cambios. */
+  importItemId?: number;
   submitLabel?: string;
 }) {
   const [type, setType] = useState(initial?.type ?? "EXPENSE");
@@ -162,9 +166,20 @@ export default function TransactionForm({
   };
 
   return (
-    <ActionForm action={plannedId != null ? confirmPlannedComplete : saveTransaction} onDone={onDone} submitLabel={submitLabel}>
+    <ActionForm
+      action={importItemId != null ? importarRenglon : plannedId != null ? confirmPlannedComplete : saveTransaction}
+      onDone={onDone}
+      submitLabel={submitLabel}
+      secondary={importItemId != null ? { label: "Guardar sin importar", action: editarItemImportacion } : undefined}
+    >
       {initial?.id != null && <input type="hidden" name="id" value={initial.id} />}
       {plannedId != null && <input type="hidden" name="plannedId" value={plannedId} />}
+      {importItemId != null && (
+        <>
+          <input type="hidden" name="importItemId" value={importItemId} />
+          <input type="hidden" name="itemId" value={importItemId} />
+        </>
+      )}
       <input type="hidden" name="type" value={type} />
 
       {!initial && (

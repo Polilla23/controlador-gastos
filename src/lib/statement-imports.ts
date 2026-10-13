@@ -5,7 +5,8 @@ import { reglasDe, efectoDe, type Candidato } from "./reglas";
 import { statementMonthForDate } from "./tarjetas";
 import { ciclosParaFechas } from "./ciclos-server";
 import { normalizarBusqueda } from "./busqueda";
-import { storeStatementPdf, downloadStored } from "./storage";
+import { storeStatementPdf, downloadStored, removeStored } from "./storage";
+import { MOTIVO_OMITIDO, esAbierto, recalcularEstadoImportacion, sincronizarImportaciones } from "./import-estado";
 
 /**
  * Flujo de importación de resúmenes de tarjeta: un PDF nunca crea gastos
@@ -236,6 +237,8 @@ export async function elegirCuenta(userId: string, importId: number, accountId: 
 }
 
 export async function obtenerImportacion(userId: string, importId: number) {
+  // Si se borró alguna transacción que vino de este resumen, ese renglón vuelve a quedar pendiente.
+  await sincronizarImportaciones(userId, [importId]);
   return prisma.statementImport.findFirst({
     where: { id: importId, userId },
     include: {
@@ -245,16 +248,33 @@ export async function obtenerImportacion(userId: string, importId: number) {
   });
 }
 
-export async function importacionesRecientes(userId: string, take = 10) {
-  return prisma.statementImport.findMany({
-    where: { userId },
-    include: { account: true, _count: { select: { items: true } } },
+/** Importaciones con su avance (renglones importados / total). `archivadas` elige cuál de las dos listas. */
+export async function importacionesRecientes(userId: string, opts: { archivadas?: boolean; take?: number } = {}) {
+  const base = await prisma.statementImport.findMany({
+    where: { userId, archivedAt: opts.archivadas ? { not: null } : null },
+    select: { id: true },
     orderBy: { createdAt: "desc" },
-    take,
+    take: opts.take ?? 30,
   });
+  await sincronizarImportaciones(userId, base.map((i) => i.id));
+  const lista = await prisma.statementImport.findMany({
+    where: { id: { in: base.map((i) => i.id) } },
+    include: { account: true, items: { select: { status: true, skipReason: true } } },
+    orderBy: { createdAt: "desc" },
+  });
+  return lista.map(({ items, ...imp }) => ({
+    ...imp,
+    total: items.length,
+    importados: items.filter((i) => i.status === "CONFIRMED").length,
+    abiertos: items.filter(esAbierto).length,
+  }));
 }
 
-export type ConfirmarImportacionResultado = { ok: true; creados: number } | { ok: false; motivo: string };
+export async function cantidadArchivadas(userId: string) {
+  return prisma.statementImport.count({ where: { userId, archivedAt: { not: null } } });
+}
+
+export type ConfirmarImportacionResultado = { ok: true; creados: number; abiertos: number } | { ok: false; motivo: string };
 
 /** `ids`: los renglones elegidos para importar; sin ids (Telegram) se importan los que están listos (PENDING). */
 export async function confirmarImportacion(userId: string, importId: number, ids?: number[]): Promise<ConfirmarImportacionResultado> {
@@ -263,7 +283,7 @@ export async function confirmarImportacion(userId: string, importId: number, ids
     include: { items: { include: { tags: true } }, account: true },
   });
   if (!importado) return { ok: false, motivo: "Importación inválida" };
-  if (importado.status !== "PENDING" || !importado.account) return { ok: false, motivo: "Esta importación ya fue confirmada o descartada" };
+  if (importado.status !== "PENDING" || !importado.account) return { ok: false, motivo: "Esta importación ya está completa o fue descartada" };
   const account = importado.account;
 
   // Se puede importar lo que está listo, lo marcado como posible duplicado y lo ya detectado como duplicado
@@ -296,16 +316,60 @@ export async function confirmarImportacion(userId: string, importId: number, ids
       });
       await tx.statementImportItem.update({ where: { id: item.id }, data: { status: "CONFIRMED", transactionId: creado.id } });
     }
-    // Lo que no se eligió queda como omitido (no se pierde el registro de que estaba en el resumen).
-    const elegidos = new Set(aCrear.map((i) => i.id));
-    await tx.statementImportItem.updateMany({
-      where: { importId, id: { notIn: [...elegidos] }, status: { in: ["PENDING", "POSSIBLE_DUP", "DUPLICATE"] } },
-      data: { status: "SKIPPED", skipReason: "No se eligió importar" },
-    });
-    await tx.statementImport.update({ where: { id: importId }, data: { status: "CONFIRMED", confirmedAt: new Date() } });
   });
 
-  return { ok: true, creados: aCrear.length };
+  // Importación parcial: lo que no se eligió sigue pendiente y se puede importar después. El resumen
+  // queda en curso hasta que no quede ningún renglón abierto.
+  await recalcularEstadoImportacion(importId);
+  const restantes = await prisma.statementImportItem.findMany({ where: { importId }, select: { status: true, skipReason: true } });
+  return { ok: true, creados: aCrear.length, abiertos: restantes.filter(esAbierto).length };
+}
+
+/** Deja renglones afuera a propósito (no se importan y ya no cuentan como pendientes). */
+export async function omitirRenglones(userId: string, ids: number[]) {
+  await prisma.statementImportItem.updateMany({
+    where: { id: { in: ids }, status: { in: ["PENDING", "POSSIBLE_DUP", "DUPLICATE", "SKIPPED"] }, import: { userId, status: { in: ["PENDING", "CONFIRMED"] } } },
+    data: { status: "SKIPPED", skipReason: MOTIVO_OMITIDO },
+  });
+  const afectadas = await prisma.statementImportItem.findMany({ where: { id: { in: ids } }, select: { importId: true }, distinct: ["importId"] });
+  for (const a of afectadas) await recalcularEstadoImportacion(a.importId);
+}
+
+/** Un renglón omitido a mano vuelve a quedar pendiente (y el resumen se reabre si estaba completo). */
+export async function restaurarRenglon(userId: string, itemId: number): Promise<string | null> {
+  const item = await prisma.statementImportItem.findFirst({ where: { id: itemId, status: "SKIPPED", import: { userId } }, include: { import: { include: { account: true } } } });
+  if (!item) return "Ese renglón no se puede restaurar";
+  const cuenta = item.import.account;
+  if (cuenta && item.currency !== cuenta.currency) return `El renglón está en ${item.currency} y la cuenta en ${cuenta.currency}: corregí la moneda primero`;
+  await prisma.statementImportItem.update({ where: { id: itemId }, data: { status: "PENDING", skipReason: null } });
+  await recalcularEstadoImportacion(item.importId);
+  return null;
+}
+
+/** Motivo con el que la versión anterior dejaba afuera lo que no se tildó al confirmar (ahora eso queda simplemente pendiente). */
+export const MOTIVO_NO_ELEGIDO = "No se eligió importar";
+
+/** Los renglones que la versión anterior marcó "no se eligió importar" vuelven a quedar pendientes (y el resumen se reabre). */
+export async function reabrirNoElegidos(userId: string, importId: number): Promise<number> {
+  const r = await prisma.statementImportItem.updateMany({
+    where: { importId, status: "SKIPPED", skipReason: MOTIVO_NO_ELEGIDO, import: { userId } },
+    data: { status: "PENDING", skipReason: null },
+  });
+  await recalcularEstadoImportacion(importId);
+  return r.count;
+}
+
+export async function archivarImportacion(userId: string, importId: number, archivar: boolean) {
+  await prisma.statementImport.updateMany({ where: { id: importId, userId }, data: { archivedAt: archivar ? new Date() : null } });
+}
+
+/** Borra sólo el registro de la importación (y el PDF guardado): las transacciones ya creadas NO se tocan. */
+export async function eliminarImportacion(userId: string, importId: number): Promise<boolean> {
+  const imp = await prisma.statementImport.findFirst({ where: { id: importId, userId }, select: { attachmentPath: true } });
+  if (!imp) return false;
+  await prisma.statementImport.delete({ where: { id: importId } });
+  if (imp.attachmentPath) await removeStored(imp.attachmentPath).catch(() => {});
+  return true;
 }
 
 export async function descartarImportacion(userId: string, importId: number): Promise<boolean> {

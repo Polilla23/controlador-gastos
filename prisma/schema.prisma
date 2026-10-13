@@ -628,7 +628,8 @@ model StatementImport {
   account          Account?              @relation(fields: [accountId], references: [id], onDelete: Cascade)
   bank             String // SANTANDER | ICBC_VISA | ICBC_MASTERCARD
   source           String                @default("TELEGRAM") // TELEGRAM | WEB
-  status           String                @default("AWAITING_ACCOUNT") // AWAITING_ACCOUNT | PENDING | CONFIRMED | DISCARDED
+  status           String                @default("AWAITING_ACCOUNT") // AWAITING_ACCOUNT | PENDING (en curso: quedan renglones abiertos) | CONFIRMED (completo) | DISCARDED
+  archivedAt       DateTime? // archivada: no sale en la lista principal (se puede reactivar)
   cardLastFour     String?
   periodEnd        DateTime? // cierre actual declarado por el resumen
   dueDate          DateTime? // vencimiento actual declarado por el resumen

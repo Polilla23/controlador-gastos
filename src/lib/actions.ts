@@ -17,6 +17,7 @@ import { aplicarAlCrear, efectoParaCrear } from "./reglas";
 import { syncGoogleCalendarForUser } from "./google-calendar-sync";
 import { plannedAccessFilter, resolveMyMemberInGroup, shareGroupAccessFilter } from "./share-access";
 import { forEachIsolated } from "./cron-safe";
+import { marcarRenglonImportado } from "./import-estado";
 
 const num = z.coerce.number();
 
@@ -428,6 +429,33 @@ export async function saveTransaction(fd: FormData): Promise<void | { error: str
     await subirComprobantes(userId, id, comprobantes);
   } catch (e) {
     return { error: `El registro se guardó, pero no se pudo subir el comprobante: ${mensajeDe(e)} Cerrá esta ventana y subilo desde el clip del registro.` };
+  }
+}
+
+/**
+ * Importa UN renglón de un resumen con el mismo formulario que el alta de Transacciones: crea el registro
+ * con todo lo que se completó (cuenta, presupuesto, resumen de la tarjeta, comprobantes…) y marca el
+ * renglón como importado; el resto del resumen sigue pendiente.
+ */
+export async function importarRenglon(fd: FormData): Promise<void | { error: string }> {
+  const userId = await requireUserId();
+  const itemId = Number(fd.get("importItemId"));
+  let id: number;
+  let comprobantes: Awaited<ReturnType<typeof leerComprobantes>>;
+  try {
+    const item = await prisma.statementImportItem.findFirst({ where: { id: itemId, import: { userId, status: "PENDING" } }, select: { status: true } });
+    if (!item || item.status === "CONFIRMED") return { error: "Este renglón ya se importó o el resumen ya no está en curso" };
+    comprobantes = await leerComprobantes(fd);
+    id = await guardarRegistro(userId, fd);
+    await marcarRenglonImportado(itemId, id);
+  } catch (e) {
+    return { error: mensajeDe(e) };
+  }
+  refresh();
+  try {
+    await subirComprobantes(userId, id, comprobantes);
+  } catch (e) {
+    return { error: `El gasto se importó, pero no se pudo subir el comprobante: ${mensajeDe(e)} Subilo desde el registro en Transacciones.` };
   }
 }
 

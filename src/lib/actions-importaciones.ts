@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { requireUserId } from "./auth";
 import { prisma } from "./prisma";
 import { parseInput } from "./tz";
-import { iniciarCarga, elegirCuenta, confirmarImportacion, descartarImportacion } from "./statement-imports";
+import { iniciarCarga, elegirCuenta, confirmarImportacion, descartarImportacion, omitirRenglones, restaurarRenglon, archivarImportacion, eliminarImportacion, reabrirNoElegidos } from "./statement-imports";
 
 const refresh = () => revalidatePath("/", "layout");
 
@@ -165,6 +165,45 @@ export async function editarItemsImportacionEnBloque(fd: FormData): Promise<void
   } catch (e) {
     return { error: e instanceof Error ? e.message : "No se pudo guardar" };
   }
+}
+
+/** Deja renglones afuera a propósito: no se importan y dejan de contar como pendientes. */
+export async function omitirRenglonesAction(ids: number[]): Promise<void | { error: string }> {
+  const userId = await requireUserId();
+  if (!ids.length) return { error: "No hay renglones elegidos" };
+  await omitirRenglones(userId, ids);
+  refresh();
+}
+
+/** Un renglón omitido a mano vuelve a quedar pendiente. */
+export async function restaurarRenglonAction(itemId: number): Promise<void | { error: string }> {
+  const userId = await requireUserId();
+  const motivo = await restaurarRenglon(userId, itemId);
+  if (motivo) return { error: motivo };
+  refresh();
+}
+
+/** Deja pendientes los renglones que la versión anterior descartó al confirmar «no se eligió importar». */
+export async function reabrirNoElegidosAction(importId: number) {
+  const userId = await requireUserId();
+  await reabrirNoElegidos(userId, importId);
+  refresh();
+}
+
+/** Archiva (sale de la lista principal) o reactiva una importación. */
+export async function archivarImportacionAction(importId: number, archivar: boolean) {
+  const userId = await requireUserId();
+  await archivarImportacion(userId, importId, archivar);
+  refresh();
+  if (archivar) redirect("/importar");
+}
+
+/** Elimina el registro de la importación; las transacciones que ya se crearon con ella NO se borran. */
+export async function eliminarImportacionAction(importId: number) {
+  const userId = await requireUserId();
+  await eliminarImportacion(userId, importId);
+  refresh();
+  redirect("/importar");
 }
 
 export async function descartarImportacionAction(importId: number) {
