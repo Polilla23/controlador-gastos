@@ -32,7 +32,43 @@ import Icono from "./Icono";
 
 const GRID = "var(--grid)";
 
-export function Sparkline({ data, currency }: { data: { label: string; value: number }[]; currency: string }) {
+type PuntoSaldo = { label: string; full?: string; value: number };
+
+/**
+ * Tooltip del saldo: el mes de cada punto (no el índice 0, 1, 2…), el saldo en ese momento y la
+ * variación contra el punto anterior (en plata y en %).
+ */
+function SaldoTooltip({ active, payload, currency, data }: { active?: boolean; payload?: { payload?: PuntoSaldo }[]; currency: string; data: PuntoSaldo[] }) {
+  const punto = payload?.[0]?.payload;
+  if (!active || !punto) return null;
+  const i = data.findIndex((d) => d === punto || (d.label === punto.label && d.value === punto.value));
+  const previo = i > 0 ? data[i - 1] : null;
+  const dif = previo ? punto.value - previo.value : null;
+  const pct = previo && previo.value !== 0 && dif != null ? (dif / Math.abs(previo.value)) * 100 : null;
+  return (
+    <div className="rounded-xl border border-line bg-card px-3 py-2 text-xs shadow-lg">
+      <div className="mb-1 font-semibold text-fg">{punto.full ?? punto.label}</div>
+      <div className="flex items-center justify-between gap-4 text-muted">
+        <span>Saldo</span>
+        <b className="text-fg">{money(punto.value, currency)}</b>
+      </div>
+      {dif != null ? (
+        <div className="flex items-center justify-between gap-4 text-muted">
+          <span>vs. {previo?.full ?? previo?.label}</span>
+          <b className={dif >= 0 ? "text-brand-500" : "text-red-500"}>
+            {dif >= 0 ? "+" : "-"}
+            {money(Math.abs(dif), currency)}
+            {pct != null ? ` (${dif >= 0 ? "+" : "-"}${Math.abs(pct).toFixed(1)}%)` : ""}
+          </b>
+        </div>
+      ) : (
+        <div className="text-muted">Primer punto del período</div>
+      )}
+    </div>
+  );
+}
+
+export function Sparkline({ data, currency }: { data: PuntoSaldo[]; currency: string }) {
   return (
     <div className="h-16">
       <ResponsiveContainer>
@@ -44,14 +80,14 @@ export function Sparkline({ data, currency }: { data: { label: string; value: nu
             </linearGradient>
           </defs>
           <Area type="monotone" dataKey="value" stroke="#1A9D76" strokeWidth={2} fill="url(#g-nw)" />
-          <Tooltip content={<ChartTooltip currency={currency} />} />
+          <Tooltip content={<SaldoTooltip currency={currency} data={data} />} />
         </AreaChart>
       </ResponsiveContainer>
     </div>
   );
 }
 
-export function BalanceTrend({ data, currency }: { data: { label: string; value: number }[]; currency: string }) {
+export function BalanceTrend({ data, currency }: { data: PuntoSaldo[]; currency: string }) {
   return (
     <div className="mt-2 h-56">
       <ResponsiveContainer>
@@ -65,7 +101,7 @@ export function BalanceTrend({ data, currency }: { data: { label: string; value:
           <CartesianGrid vertical={false} stroke={GRID} />
           <XAxis dataKey="label" tickLine={false} axisLine={false} fontSize={11} />
           <YAxis tickLine={false} axisLine={false} fontSize={11} width={52} tickFormatter={axisNumber} />
-          <Tooltip content={<ChartTooltip currency={currency} />} />
+          <Tooltip content={<SaldoTooltip currency={currency} data={data} />} />
           <Area type="monotone" dataKey="value" name="Saldo" stroke="#3B82F6" strokeWidth={2} fill="url(#g-bal)" />
         </AreaChart>
       </ResponsiveContainer>
@@ -277,10 +313,10 @@ export function RatioDonut({ ratio }: { ratio: number }) {
     { name: "Disponible", value: 100 - capped, color: "var(--subtle)" },
   ];
   return (
-    <div className="relative h-32 w-32 shrink-0">
+    <div className="relative h-40 w-40 shrink-0">
       <ResponsiveContainer>
         <PieChart>
-          <Pie data={data} dataKey="value" innerRadius={44} outerRadius={60} startAngle={90} endAngle={-270} stroke="none">
+          <Pie data={data} dataKey="value" innerRadius={46} outerRadius={72} startAngle={90} endAngle={-270} stroke="none">
             {data.map((s) => (
               <Cell key={s.name} fill={s.color} />
             ))}

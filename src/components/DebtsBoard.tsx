@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import TagCombobox from "./TagCombobox";
+import TagChip from "./TagChip";
 import Link from "next/link";
 import { ArrowDownLeft, ArrowUpRight, CalendarClock, HandCoins, Pencil, Plus, RotateCcw, Trash2 } from "lucide-react";
 import ActionForm from "./ActionForm";
@@ -40,29 +42,7 @@ export type DebtRow = {
 };
 
 function TagPicker({ tags, initial }: { tags: Etiqueta[]; initial: number[] }) {
-  const [sel, setSel] = useState<number[]>(initial);
-  return (
-    <div className="flex flex-wrap gap-2">
-      {sel.map((id) => (
-        <input key={id} type="hidden" name="tagIds" value={id} />
-      ))}
-      {tags.map((t) => {
-        const on = sel.includes(t.id);
-        return (
-          <button
-            key={t.id}
-            type="button"
-            onClick={() => setSel((s) => (on ? s.filter((x) => x !== t.id) : [...s, t.id]))}
-            className={`chip border transition ${on ? "border-transparent text-white" : "border-line text-muted"}`}
-            style={on ? { background: t.color } : undefined}
-          >
-            #{t.name}
-          </button>
-        );
-      })}
-      {tags.length === 0 && <p className="text-xs text-muted">No tenés etiquetas creadas.</p>}
-    </div>
-  );
+  return <TagCombobox tags={tags} initial={initial} name="tagIds" />;
 }
 
 function Campos({ d, accounts, categories, tags, contrapartes }: { d?: DebtRow; accounts: Cuenta[]; categories: CategoryOpt[]; tags: Etiqueta[]; contrapartes: string[] }) {
@@ -340,9 +320,7 @@ export default function DebtsBoard({
               {d.tags.length > 0 && (
                 <div className="mt-1 flex flex-wrap gap-1">
                   {d.tags.map((t) => (
-                    <span key={t.id} className="chip text-white" style={{ background: t.color }}>
-                      #{t.name}
-                    </span>
+                    <TagChip key={t.id} name={t.name} color={t.color} />
                   ))}
                 </div>
               )}

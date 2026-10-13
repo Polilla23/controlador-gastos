@@ -1,6 +1,6 @@
 "use client";
 
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
 import { CornerDownRight, Pencil, Plus, Trash2 } from "lucide-react";
 import ActionForm from "./ActionForm";
 import Modal from "./Modal";
@@ -10,6 +10,7 @@ import IconPicker from "./IconPicker";
 import Icono from "./Icono";
 import { deleteCategory, reorderCategories, saveCategory } from "@/lib/actions";
 import { NATURES } from "@/lib/format";
+import { colorDeHija } from "@/lib/colores";
 
 export type CategoryRow = {
   id: number;
@@ -29,6 +30,10 @@ type TagOpt = { id: number; name: string; color: string };
 
 function Fields({ category, parents, kind, parentId, tags }: { category?: CategoryRow; parents: CategoryRow[]; kind?: string; parentId?: number; tags: TagOpt[] }) {
   const fixedKind = category?.kind ?? kind ?? "EXPENSE";
+  // Una subcategoría nueva arranca con una variante del color de su madre (distinta de sus hermanas).
+  const [parentSel, setParentSel] = useState(String(category?.parentId ?? parentId ?? ""));
+  const padre = parents.find((p) => String(p.id) === parentSel);
+  const colorSugerido = !category && padre ? colorDeHija(padre.color, parents.filter((p) => p.parentId === padre.id).length) : (category?.color ?? "#6B7280");
   return (
     <>
       {category && <input type="hidden" name="id" value={category.id} />}
@@ -39,7 +44,7 @@ function Fields({ category, parents, kind, parentId, tags }: { category?: Catego
       </div>
       <div>
         <label className="label">Depende de</label>
-        <select name="parentId" className="input" defaultValue={category?.parentId ?? parentId ?? ""}>
+        <select name="parentId" className="input" value={parentSel} onChange={(e) => setParentSel(e.target.value)}>
           <option value="">Es una categoría principal</option>
           {parents
             .filter((p) => p.kind === fixedKind && !p.parentId && p.id !== category?.id)
@@ -70,7 +75,7 @@ function Fields({ category, parents, kind, parentId, tags }: { category?: Catego
             <option value="">Ninguna</option>
             {tags.map((t) => (
               <option key={t.id} value={t.id}>
-                #{t.name}
+                {t.name}
               </option>
             ))}
           </select>
@@ -80,7 +85,7 @@ function Fields({ category, parents, kind, parentId, tags }: { category?: Catego
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div>
           <label className="label">Color</label>
-          <ColorPicker name="color" defaultValue={category?.color ?? "#6B7280"} />
+          <ColorPicker key={colorSugerido} name="color" defaultValue={colorSugerido} />
         </div>
         <div>
           <label className="label">Ícono</label>

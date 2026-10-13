@@ -2,6 +2,8 @@ import { prisma } from "./prisma";
 import { monthKey, monthLabel, previousRange, type Range } from "./format";
 import { addDays, addMonths, fromCivil, civil, startOfDay, startOfMonth } from "./tz";
 import { icono } from "./iconos";
+import { ciclosParaFechas } from "./ciclos-server";
+import { isoDay } from "./tz";
 import { efectoEnCajaTransaccion, portfolioByInstrument, portfolioValueByAccount } from "./inversiones";
 
 export type Slice = { id: string; name: string; value: number; color: string; iconBody: string | null; children: Slice[] };
@@ -147,7 +149,7 @@ export async function loadDashboard(
   });
   const balanceTrend = months.map((m) => {
     const bal = balanceAt(new Date(m.end.getTime() - 1));
-    return { label: m.label, value: [...mainIds].reduce((s, id) => s + (bal.get(id) ?? 0), 0) };
+    return { label: m.label, full: monthLabel(m.key), value: [...mainIds].reduce((s, id) => s + (bal.get(id) ?? 0), 0) };
   });
 
   /* ---------- By category (parent rollup + subcategory drill-down), para gastos e ingresos por igual ---------- */
@@ -207,6 +209,37 @@ export async function loadDashboard(
       const used = Math.max(0, -a.balance);
       return { id: a.id, name: a.name, currency: a.currency, used, limit: a.creditLimit ?? 0, pct: a.creditLimit ? Math.round((used / a.creditLimit) * 100) : 0, dueDay: a.dueDay, color: a.color };
     });
+
+  /* ---------- Próximo resumen de cada tarjeta ---------- */
+  // Respecto del FIN del período que se está mirando: el resumen que cierra a partir de esa fecha,
+  // con su período (desde el día siguiente al cierre anterior hasta su cierre), su vencimiento y lo
+  // que se debe en cada moneda (consumos del resumen menos devoluciones; las transferencias no).
+  const finPeriodo = new Date(range.end.getTime() - 1);
+  const porNombre = new Map<string, typeof allAccounts>();
+  for (const a of allAccounts) if (a.type === "CREDIT_CARD" && a.closingDay) porNombre.set(a.name, [...(porNombre.get(a.name) ?? []), a]);
+  const proximosRaw: { name: string; ids: number[]; mes: string; desde: Date; hasta: Date; vence: Date }[] = [];
+  for (const [name, cuentas] of porNombre) {
+    const ciclos = await ciclosParaFechas(cuentas[0], [finPeriodo]);
+    const idx = ciclos.findIndex((c) => isoDay(c.closeDate) >= isoDay(finPeriodo));
+    if (idx < 0) continue;
+    const c = ciclos[idx];
+    const anterior = idx > 0 ? ciclos[idx - 1] : null;
+    proximosRaw.push({ name, ids: cuentas.map((a) => a.id), mes: c.month, desde: anterior ? addDays(anterior.closeDate, 1) : addMonths(c.closeDate, -1), hasta: c.closeDate, vence: c.dueDate });
+  }
+  const consumosResumen = proximosRaw.length
+    ? await prisma.transaction.findMany({
+        where: { userId, type: { in: ["EXPENSE", "INCOME"] }, accountId: { in: proximosRaw.flatMap((p) => p.ids) }, statementMonth: { in: proximosRaw.map((p) => p.mes) } },
+        select: { accountId: true, statementMonth: true, type: true, amount: true, currency: true },
+      })
+    : [];
+  const proximosResumenes = proximosRaw.map((p) => {
+    const porMoneda = new Map<string, number>();
+    for (const t of consumosResumen) {
+      if (!p.ids.includes(t.accountId) || t.statementMonth !== p.mes) continue;
+      porMoneda.set(t.currency, (porMoneda.get(t.currency) ?? 0) + (t.type === "EXPENSE" ? t.amount : -t.amount));
+    }
+    return { name: p.name, desde: p.desde, hasta: p.hasta, vence: p.vence, importes: [...porMoneda].map(([currency, monto]) => ({ currency, monto: redondear(monto) })).sort((a, b) => a.currency.localeCompare(b.currency)) };
+  });
 
   /* ---------- Planned money & forecast ---------- */
   const in30 = addDays(startOfDay(now), 30);
@@ -304,6 +337,7 @@ export async function loadDashboard(
     natureTotals,
     topExpenses,
     cards,
+    proximosResumenes,
     planned: upcoming.map((p) => ({
       id: p.id,
       type: p.type,

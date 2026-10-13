@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import TagChip from "./TagChip";
 import { Archive, ArchiveRestore, ChartPie, Link2, Pencil, Plus, Trash2, TriangleAlert, X } from "lucide-react";
 import ActionForm from "./ActionForm";
 import Modal from "./Modal";
@@ -119,7 +120,7 @@ function Campos({ b, categories, accounts, tags }: { b?: BudgetRow; categories: 
         label="Etiquetas que cuenta"
         allLabel="Sin filtrar por etiqueta"
         initial={b?.tags.map((t) => t.id) ?? []}
-        options={tags.map((t) => ({ id: t.id, label: `#${t.name}` }))}
+        options={tags.map((t) => ({ id: t.id, label: t.name, color: t.color }))}
       />
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -341,9 +342,7 @@ export default function BudgetsBoard({
               </span>
             ))}
             {b.tags.map((t) => (
-              <span key={t.id} className="chip text-white" style={{ background: t.color }}>
-                #{t.name}
-              </span>
+              <TagChip key={t.id} name={t.name} color={t.color} />
             ))}
           </div>
         )}

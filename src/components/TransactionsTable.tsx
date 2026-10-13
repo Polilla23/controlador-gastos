@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import TagChip from "./TagChip";
+import TagCombobox from "./TagCombobox";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Paperclip, Pencil, Trash2, Layers, AlarmClock, ExternalLink, FileText, Copy, Split, ShieldCheck, ChevronUp, ChevronDown } from "lucide-react";
 import ActionForm from "./ActionForm";
@@ -371,9 +373,7 @@ export default function TransactionsTable({
         </span>
       )}
       {t.tags.map((g) => (
-        <span key={g.id} className="chip text-white" style={{ background: g.color }}>
-          #{g.name}
-        </span>
+        <TagChip key={g.id} name={g.name} color={g.color} />
       ))}
     </div>
   );
@@ -551,13 +551,7 @@ export default function TransactionsTable({
                 {tags.length > 0 && (
                   <div>
                     <label className="label">Agregar etiquetas</label>
-                    <div className="flex flex-wrap gap-2">
-                      {tags.map((t) => (
-                        <label key={t.id} className="chip cursor-pointer border border-line px-2.5 py-1">
-                          <input type="checkbox" name="addTagIds" value={t.id} className="mr-1 h-3.5 w-3.5 accent-[var(--color-brand-500)]" />#{t.name}
-                        </label>
-                      ))}
-                    </div>
+                    <TagCombobox tags={tags} name="addTagIds" />
                   </div>
                 )}
               </ActionForm>

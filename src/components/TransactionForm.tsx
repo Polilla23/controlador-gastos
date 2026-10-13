@@ -6,6 +6,7 @@ import ActionForm from "./ActionForm";
 import CategorySelect, { type CategoryOpt } from "./CategorySelect";
 import MoneyInput from "./MoneyInput";
 import AttachmentDrop from "./AttachmentDrop";
+import TagCombobox from "./TagCombobox";
 import { confirmPlannedComplete, saveTransaction } from "@/lib/actions";
 import { listarCiclos, type FilaCiclo } from "@/lib/actions-ciclos";
 import { statementLabel } from "@/lib/tarjetas";
@@ -44,31 +45,6 @@ const TYPES = [
   { key: "INCOME", label: "Ingreso", cls: "bg-brand-500" },
   { key: "TRANSFER", label: "Transferencia", cls: "bg-blue-500" },
 ];
-
-function TagPicker({ tags, sel, onToggle }: { tags: TagOpt[]; sel: number[]; onToggle: (id: number) => void }) {
-  const toggle = onToggle;
-  return (
-    <div className="flex flex-wrap gap-2">
-      {sel.map((id) => (
-        <input key={id} type="hidden" name="tagIds" value={id} />
-      ))}
-      {tags.map((t) => {
-        const on = sel.includes(t.id);
-        return (
-          <button
-            key={t.id}
-            type="button"
-            onClick={() => toggle(t.id)}
-            className={clsx("chip border transition", on ? "border-transparent text-white" : "border-line text-muted")}
-            style={on ? { background: t.color } : undefined}
-          >
-            #{t.name}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
 
 export type QuoteOpt = { code: string; name: string; sell: number | null };
 
@@ -427,7 +403,7 @@ export default function TransactionForm({
       {tags.length > 0 && (
         <div>
           <label className="label">Etiquetas</label>
-          <TagPicker tags={tags} sel={tagIds} onToggle={(id) => setTagIds((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]))} />
+          <TagCombobox tags={tags} value={tagIds} onChange={setTagIds} name="tagIds" />
         </div>
       )}
 

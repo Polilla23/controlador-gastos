@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import TagCombobox from "./TagCombobox";
 import { Check, Pencil, Plus, Repeat, Trash2 } from "lucide-react";
 import ActionForm from "./ActionForm";
 import Modal from "./Modal";
@@ -45,28 +46,7 @@ export type ShareGroupOpt = {
 };
 
 function TagPicker({ tags, initial }: { tags: TagOpt[]; initial: number[] }) {
-  const [sel, setSel] = useState<number[]>(initial);
-  return (
-    <div className="flex flex-wrap gap-2">
-      {sel.map((id) => (
-        <input key={id} type="hidden" name="tagIds" value={id} />
-      ))}
-      {tags.map((t) => {
-        const on = sel.includes(t.id);
-        return (
-          <button
-            key={t.id}
-            type="button"
-            onClick={() => setSel((s) => (on ? s.filter((x) => x !== t.id) : [...s, t.id]))}
-            className={`chip border transition ${on ? "border-transparent text-white" : "border-line text-muted"}`}
-            style={on ? { background: t.color } : undefined}
-          >
-            #{t.name}
-          </button>
-        );
-      })}
-    </div>
-  );
+  return <TagCombobox tags={tags} initial={initial} name="tagIds" />;
 }
 
 function Fields({

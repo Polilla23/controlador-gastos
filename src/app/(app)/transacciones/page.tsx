@@ -183,7 +183,7 @@ export default async function TransaccionesPage({ searchParams }: { searchParams
           name="etiqueta"
           label="Etiqueta"
           initial={etiquetaRaw}
-          options={[{ id: EMPTY_FILTER, label: "(Sin etiqueta)" }, ...tags.map((t) => ({ id: t.id, label: `#${t.name}` }))]}
+          options={[{ id: EMPTY_FILTER, label: "(Sin etiqueta)" }, ...tags.map((t) => ({ id: t.id, label: t.name, color: t.color }))]}
         />
         <div>
           <label className="label">Comprobantes</label>

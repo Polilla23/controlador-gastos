@@ -1,6 +1,7 @@
 "use client";
 
 import { useTransition } from "react";
+import TagChip from "./TagChip";
 import { Pencil, Trash2 } from "lucide-react";
 import ActionForm from "./ActionForm";
 import Modal from "./Modal";
@@ -31,13 +32,11 @@ export default function TagsBoard({ tags }: { tags: TagRow[] }) {
         {(t) => (
           <div className="flex items-center justify-between gap-2 rounded-xl border border-line px-3 py-2.5">
             <span className="flex min-w-0 items-center gap-3">
-              <span className="chip shrink-0 gap-1 text-white" style={{ background: t.color }}>
-                {t.iconBody && <Icono body={t.iconBody} size={12} />}#{t.name}
-              </span>
+              <TagChip name={t.name} color={t.color} icon={t.iconBody ? <Icono body={t.iconBody} size={12} /> : undefined} className="shrink-0" />
               <span className="truncate text-xs text-muted">{t.count} movimientos</span>
             </span>
             <span className="flex shrink-0 items-center gap-1">
-              <Modal title={`Editar #${t.name}`} triggerClassName="btn-icon" trigger={<Pencil size={15} />}>
+              <Modal title={`Editar ${t.name}`} triggerClassName="btn-icon" trigger={<Pencil size={15} />}>
                 <ActionForm action={saveTag}>
                   <input type="hidden" name="id" value={t.id} />
                   <div>

@@ -9,6 +9,7 @@ import ConfirmButton from "./ConfirmButton";
 import MoneyInput from "./MoneyInput";
 import CategorySelect, { type CategoryOpt } from "./CategorySelect";
 import Tabs from "./Tabs";
+import TagCombobox from "./TagCombobox";
 import LinkTransaction from "./LinkTransaction";
 import {
   addMember,
@@ -219,25 +220,7 @@ function GastoForm({ g, categories, accounts, tags, gasto }: { g: GrupoDetalle; 
       {tags.length > 0 && (
         <div>
           <label className="label">Etiquetas</label>
-          <div className="flex flex-wrap gap-2">
-            {tagIds.map((id) => (
-              <input key={id} type="hidden" name="tagIds" value={id} />
-            ))}
-            {tags.map((t) => {
-              const on = tagIds.includes(t.id);
-              return (
-                <button
-                  key={t.id}
-                  type="button"
-                  onClick={() => setTagIds((s) => (on ? s.filter((x) => x !== t.id) : [...s, t.id]))}
-                  className={`chip border transition ${on ? "border-transparent text-white" : "border-line text-muted"}`}
-                  style={on ? { background: t.color } : undefined}
-                >
-                  #{t.name}
-                </button>
-              );
-            })}
-          </div>
+          <TagCombobox tags={tags} value={tagIds} onChange={setTagIds} name="tagIds" />
         </div>
       )}
 

@@ -78,7 +78,7 @@ const CashflowTrend = dynamic(() => import("./charts").then((m) => m.CashflowTre
 const CategoryDonut = dynamic(() => import("./charts").then((m) => m.CategoryDonut), { ssr: false, loading: box("mt-2 h-40") });
 const InvestmentMixDonut = dynamic(() => import("./charts").then((m) => m.InvestmentMixDonut), { ssr: false, loading: box("mt-2 h-40") });
 const ForecastBars = dynamic(() => import("./charts").then((m) => m.ForecastBars), { ssr: false, loading: box("mt-3 h-48") });
-const RatioDonut = dynamic(() => import("./charts").then((m) => m.RatioDonut), { ssr: false, loading: box("h-32 w-32 shrink-0 rounded-full") });
+const RatioDonut = dynamic(() => import("./charts").then((m) => m.RatioDonut), { ssr: false, loading: box("h-40 w-40 shrink-0 rounded-full") });
 
 type Props = { data: Dashboard; cards: string[]; cardsMobile: string[]; sizes: Record<string, CardLayout>; sizesMobile: Record<string, CardLayout> };
 
@@ -435,6 +435,43 @@ function DeudaIngresos({ d }: { d: Dashboard }) {
   );
 }
 
+function ProximoResumen({ d }: { d: Dashboard }) {
+  if (!d.proximosResumenes.length) return <Empty>No tenés tarjetas de crédito con día de cierre cargado.</Empty>;
+  // Total general (por moneda) sólo si hay más de una tarjeta.
+  const totales = new Map<string, number>();
+  for (const r of d.proximosResumenes) for (const i of r.importes) totales.set(i.currency, (totales.get(i.currency) ?? 0) + i.monto);
+  return (
+    <div className="mt-1 space-y-3">
+      <ul className="space-y-3">
+        {d.proximosResumenes.map((r) => (
+          <li key={r.name} className="rounded-xl border border-line px-3 py-2.5">
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="truncate font-semibold">{r.name}</span>
+              <span className="shrink-0 text-xs text-muted">vence {fmtDate(r.vence)}</span>
+            </div>
+            <div className="text-xs text-muted">
+              Del {fmtDate(r.desde)} al {fmtDate(r.hasta)}
+            </div>
+            <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-0.5 text-base font-bold">
+              {r.importes.length === 0 ? <span className="text-muted">{money(0, d.mainCurrency)}</span> : r.importes.map((i) => <span key={i.currency}>{money(i.monto, i.currency)}</span>)}
+            </div>
+          </li>
+        ))}
+      </ul>
+      {d.proximosResumenes.length > 1 && totales.size > 0 && (
+        <div className="flex items-baseline justify-between gap-2 rounded-xl bg-subtle px-3 py-2">
+          <span className="text-sm font-semibold">Total</span>
+          <span className="flex flex-wrap justify-end gap-x-4 font-bold">
+            {[...totales].map(([cur, monto]) => (
+              <span key={cur}>{money(monto, cur)}</span>
+            ))}
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Tarjetas({ d }: { d: Dashboard }) {
   if (!d.cards.length)
     return (
@@ -492,8 +529,9 @@ function Cuotas({ d }: { d: Dashboard }) {
             <div className="h-full rounded-full" style={{ width: `${(p.paidCount / p.installments) * 100}%`, background: p.color }} />
           </div>
           {p.next && (
-            <div className="mt-1 text-xs text-muted">
-              Próxima: {money(p.next.amount, p.currency)} el {fmtDate(p.next.date)}
+            <div className="mt-1.5 flex items-baseline justify-between gap-2 rounded-lg bg-subtle px-2.5 py-1.5">
+              <span className="text-xs text-muted">Próxima cuota · {fmtDate(p.next.date)}</span>
+              <b className="text-base">{money(p.next.amount, p.currency)}</b>
             </div>
           )}
         </li>
@@ -642,6 +680,8 @@ export default function DashboardCards({ data, cards, cardsMobile, sizes, sizesM
         return <Movimientos d={data} />;
       case "cuentas":
         return <Cuentas d={data} />;
+      case "proximo-resumen":
+        return <ProximoResumen d={data} />;
       case "cierres-tarjetas":
         return <CierresVencimientos cards={data.accounts.filter((a) => a.type === "CREDIT_CARD")} />;
       default:

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import TagChip from "./TagChip";
 import { useRouter } from "next/navigation";
 import { CheckCircle2, Copy, XCircle } from "lucide-react";
 import ConfirmButton from "./ConfirmButton";
@@ -147,9 +148,7 @@ export default function ImportReview({ importacion }: { importacion: ImportDetai
                 <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs">
                   {item.category && <span className="chip border border-line text-muted">{item.category.name}</span>}
                   {item.tags.map((t) => (
-                    <span key={t.id} className="chip text-white" style={{ background: t.color }}>
-                      #{t.name}
-                    </span>
+                    <TagChip key={t.id} name={t.name} color={t.color} />
                   ))}
                   {item.matchedRuleNames && (
                     <span className="flex items-center gap-1 text-muted">

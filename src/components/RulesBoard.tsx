@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
+import TagCombobox from "./TagCombobox";
+import TagChip from "./TagChip";
 import { Check, Pencil, Plus, Power, Square, SquareCheck, Trash2, Wand2 } from "lucide-react";
 import ActionForm from "./ActionForm";
 import Modal, { useCloseModal } from "./Modal";
@@ -43,29 +45,7 @@ const PERIODICIDADES: [string, string][] = [
 ];
 
 function TagPicker({ tags, initial }: { tags: Etiqueta[]; initial: number[] }) {
-  const [sel, setSel] = useState<number[]>(initial);
-  return (
-    <div className="flex flex-wrap gap-2">
-      {sel.map((id) => (
-        <input key={id} type="hidden" name="setTagIds" value={id} />
-      ))}
-      {tags.map((t) => {
-        const on = sel.includes(t.id);
-        return (
-          <button
-            key={t.id}
-            type="button"
-            onClick={() => setSel((s) => (on ? s.filter((x) => x !== t.id) : [...s, t.id]))}
-            className={`chip border transition ${on ? "border-transparent text-white" : "border-line text-muted"}`}
-            style={on ? { background: t.color } : undefined}
-          >
-            #{t.name}
-          </button>
-        );
-      })}
-      {tags.length === 0 && <p className="text-xs text-muted">No tenés etiquetas creadas.</p>}
-    </div>
-  );
+  return <TagCombobox tags={tags} initial={initial} name="setTagIds" />;
 }
 
 function Campos({ r, accounts, categories, tags, personas }: { r?: RuleRow; accounts: Cuenta[]; categories: CategoryOpt[]; tags: Etiqueta[]; personas: string[] }) {
@@ -387,9 +367,7 @@ export default function RulesBoard({
                     <li className="flex flex-wrap items-center gap-1">
                       Etiquetas
                       {r.setTags.map((t) => (
-                        <span key={t.id} className="chip text-white" style={{ background: t.color }}>
-                          #{t.name}
-                        </span>
+                        <TagChip key={t.id} name={t.name} color={t.color} />
                       ))}
                     </li>
                   )}

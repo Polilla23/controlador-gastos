@@ -9,6 +9,7 @@ import { requireUserId } from "./auth";
 import { supabaseServer } from "./supabase";
 import { adjuntarComprobante, removeStored } from "./storage";
 import { validarComprobante } from "./archivos";
+import { colorDeHija } from "./colores";
 import { hashToken, nuevoToken } from "./backup-auth";
 import { addDays, addMonths, civil, fromCivil, parseInput, startOfDay } from "./tz";
 import { statementMonthForDate } from "./tarjetas";
@@ -156,6 +157,13 @@ export async function saveCategory(fd: FormData) {
     if (!parent) throw new Error("La categoría padre no existe");
     if (parent.parentId) throw new Error("Sólo se permite un nivel de subcategorías");
     if (id === d.parentId) throw new Error("Una categoría no puede ser su propia madre");
+  }
+  // Subcategoría nueva sin color propio (el de la madre o el gris por defecto): variante de la gama de la madre.
+  if (!id && d.parentId) {
+    const madre = await prisma.category.findFirst({ where: { id: d.parentId, userId }, select: { color: true } });
+    if (madre && (d.color.toLowerCase() === madre.color.toLowerCase() || d.color.toUpperCase() === "#6B7280")) {
+      d.color = colorDeHija(madre.color, await prisma.category.count({ where: { userId, parentId: d.parentId } }));
+    }
   }
   if (d.defaultTagId && !(await prisma.tag.findFirst({ where: { id: d.defaultTagId, userId } }))) throw new Error("Etiqueta inválida");
   if (id) {

@@ -29,7 +29,7 @@ function describe(q: Record<string, string | string[]>, accounts: AccountOpt[], 
     parts.push(`Categoría: ${categoriaIds.map((id) => (id === EMPTY_FILTER ? "(sin categoría)" : (categories.find((c) => String(c.id) === id)?.name ?? id))).join(", ")}`);
   const etiquetaIds = asArr(q.etiqueta);
   if (etiquetaIds.length)
-    parts.push(`Etiqueta: ${etiquetaIds.map((id) => (id === EMPTY_FILTER ? "(sin etiqueta)" : `#${tags.find((t) => String(t.id) === id)?.name ?? id}`)).join(", ")}`);
+    parts.push(`Etiqueta: ${etiquetaIds.map((id) => (id === EMPTY_FILTER ? "(sin etiqueta)" : (tags.find((t) => String(t.id) === id)?.name ?? id))).join(", ")}`);
   const persona = asOneStr(q.persona);
   if (persona === EMPTY_FILTER) parts.push("Persona: (vacía)");
   else if (persona) parts.push(`Persona: "${persona}"`);
@@ -89,7 +89,7 @@ function CamposFiltro({
         name="etiqueta"
         label="Etiqueta"
         initial={asArr(defaults.etiqueta)}
-        options={[{ id: EMPTY_FILTER, label: "(Sin etiqueta)" }, ...tags.map((t) => ({ id: t.id, label: `#${t.name}` }))]}
+        options={[{ id: EMPTY_FILTER, label: "(Sin etiqueta)" }, ...tags.map((t) => ({ id: t.id, label: t.name, color: t.color }))]}
       />
       {!soloResumen && (
         <>

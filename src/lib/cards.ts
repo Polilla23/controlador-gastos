@@ -83,6 +83,13 @@ export const CARDS: CardDef[] = [
     span: 2,
   },
   {
+    id: "proximo-resumen",
+    title: "Próximo resumen",
+    question: "¿Cuánto me va a llegar de cada tarjeta?",
+    explanation: "Por cada tarjeta de crédito, el próximo resumen respecto del período filtrado: de qué fecha a qué fecha va, cuándo vence y cuánto se debe en pesos y en dólares.",
+    span: 1,
+  },
+  {
     id: "proximos-pagos",
     title: "Próximos vencimientos",
     question: "¿Qué tengo que pagar o cobrar?",
