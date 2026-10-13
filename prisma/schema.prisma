@@ -649,6 +649,8 @@ model StatementImportItem {
   date                     DateTime // fecha efectiva a usar en la Transaction
   rawDescription           String // texto tal cual viene del resumen
   resolvedDescription      String? // si alguna regla la renombró
+  counterparty             String          @default("") // persona (quién cobró), editable antes de importar
+  note                     String          @default("")
   amount                   Float
   currency                 String
   installmentNo            Int?
@@ -659,7 +661,7 @@ model StatementImportItem {
   category                 Category?       @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   tags                     Tag[]
   matchedRuleNames         String          @default("") // CSV, sólo para mostrar qué reglas aplicaron
-  status                   String          @default("PENDING") // PENDING | DUPLICATE | CONFIRMED | SKIPPED
+  status                   String          @default("PENDING") // PENDING | POSSIBLE_DUP | DUPLICATE | CONFIRMED | SKIPPED
   skipReason               String? // por qué no se va a crear el gasto (ej. moneda distinta a la cuenta)
   duplicateOfTransactionId Int?
   transactionId            Int? // el movimiento creado, una vez confirmado

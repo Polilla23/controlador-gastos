@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useTransition, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -16,6 +17,7 @@ import { Delta, Empty } from "./ui";
 import Icono from "./Icono";
 import CierresVencimientos from "./CierresVencimientos";
 import TrendRangeControl from "./TrendRangeControl";
+import { ResumenDetalleProvider, useDetalle, type EditorData } from "./ResumenDetalle";
 
 const ResizableGrid = WidthProvider(GridLayout);
 // 12 columnas (en vez de 3) para poder estirar el ancho de una card con la misma libertad que el alto. `span` del catálogo está pensado en tercios: 1 tercio = 4 columnas.
@@ -80,7 +82,7 @@ const InvestmentMixDonut = dynamic(() => import("./charts").then((m) => m.Invest
 const ForecastBars = dynamic(() => import("./charts").then((m) => m.ForecastBars), { ssr: false, loading: box("mt-3 h-48") });
 const RatioDonut = dynamic(() => import("./charts").then((m) => m.RatioDonut), { ssr: false, loading: box("h-40 w-40 shrink-0 rounded-full") });
 
-type Props = { data: Dashboard; cards: string[]; cardsMobile: string[]; sizes: Record<string, CardLayout>; sizesMobile: Record<string, CardLayout> };
+type Props = { data: Dashboard; cards: string[]; cardsMobile: string[]; sizes: Record<string, CardLayout>; sizesMobile: Record<string, CardLayout>; editor: EditorData };
 
 /* ---------- Individual cards ---------- */
 
@@ -222,11 +224,12 @@ function TendenciaFlujo({ d }: { d: Dashboard }) {
 }
 
 function TopGastos({ d }: { d: Dashboard }) {
+  const { abrirRegistro } = useDetalle();
   if (!d.topExpenses.length) return <Empty />;
   return (
     <ul className="mt-1 divide-y divide-line text-sm">
       {d.topExpenses.map((t) => (
-        <li key={t.id} className="flex items-center justify-between gap-2 py-2.5">
+        <li key={t.id} onClick={() => abrirRegistro(t.id)} className="-mx-1 flex cursor-pointer items-center justify-between gap-2 rounded-lg px-1 py-2.5 transition hover:bg-subtle">
           <span className="flex min-w-0 items-center gap-2.5">
             <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full" style={{ background: `${t.color}22`, border: `2px solid ${t.color}` }}>
               {t.iconBody && <Icono body={t.iconBody} size={15} />}
@@ -246,6 +249,9 @@ function TopGastos({ d }: { d: Dashboard }) {
 }
 
 function Naturaleza({ d }: { d: Dashboard }) {
+  const { abrirLista } = useDetalle();
+  // El detalle al pasar el cursor sale por un portal (posición fija): adentro de la card lo recortaría el scroll.
+  const [hover, setHover] = useState<{ key: string; x: number; y: number } | null>(null);
   const rows = Object.entries(NATURES).map(([key, label]) => ({ key, label, value: d.natureTotals[key] ?? 0, color: NATURE_COLORS[key] }));
   const total = rows.reduce((s, r) => s + r.value, 0);
   if (!total) return <Empty />;
@@ -259,17 +265,47 @@ function Naturaleza({ d }: { d: Dashboard }) {
       </div>
       <ul className="mt-3 space-y-1.5 text-sm">
         {rows.map((r) => (
-          <li key={r.key} className="flex items-center justify-between">
-            <span className="flex items-center gap-2">
-              <span className="h-2.5 w-2.5 rounded-full" style={{ background: r.color }} />
-              {r.label}
-            </span>
-            <span className="text-muted">
-              <b className="text-fg">{money(r.value, d.mainCurrency)}</b> · {Math.round((r.value / total) * 100)}%
-            </span>
+          <li
+            key={r.key}
+            onMouseEnter={(e) => {
+              const box = e.currentTarget.getBoundingClientRect();
+              setHover({ key: r.key, x: box.left, y: box.bottom + 4 });
+            }}
+            onMouseLeave={() => setHover(null)}
+          >
+            <button
+              type="button"
+              onClick={() => abrirLista(`${r.label} · detalle`, d.gastosPorNaturaleza[r.key] ?? [])}
+              className="flex w-full items-center justify-between rounded-lg px-1 py-1 text-left transition hover:bg-subtle"
+            >
+              <span className="flex items-center gap-2">
+                <span className="h-2.5 w-2.5 rounded-full" style={{ background: r.color }} />
+                {r.label}
+              </span>
+              <span className="text-muted">
+                <b className="text-fg">{money(r.value, d.mainCurrency)}</b> · {Math.round((r.value / total) * 100)}%
+              </span>
+            </button>
           </li>
         ))}
       </ul>
+      {hover &&
+        (d.gastosPorNaturaleza[hover.key]?.length ?? 0) > 0 &&
+        createPortal(
+          <div className="pointer-events-none fixed z-40 w-72 rounded-xl border border-line bg-card p-2 text-xs shadow-xl" style={{ left: Math.max(8, Math.min(hover.x, window.innerWidth - 296)), top: Math.min(hover.y, window.innerHeight - 220) }}>
+            <div className="mb-1 font-semibold text-fg">
+              {NATURES[hover.key]}: {d.gastosPorNaturaleza[hover.key].length} registro{d.gastosPorNaturaleza[hover.key].length === 1 ? "" : "s"}
+            </div>
+            {d.gastosPorNaturaleza[hover.key].slice(0, 6).map((f) => (
+              <div key={f.id} className="flex items-center justify-between gap-2 py-0.5 text-muted">
+                <span className="truncate">{f.description || f.categoryName}</span>
+                <b className="shrink-0 text-fg">{money(f.amount, f.currency)}</b>
+              </div>
+            ))}
+            {d.gastosPorNaturaleza[hover.key].length > 6 && <div className="pt-1 text-muted">… y {d.gastosPorNaturaleza[hover.key].length - 6} más (clic para ver todos)</div>}
+          </div>,
+          document.body,
+        )}
     </>
   );
 }
@@ -349,6 +385,7 @@ function VerMas({ total, shown, initial, step, onMore, onLess }: { total: number
 
 function ProximosPagos({ d }: { d: Dashboard }) {
   const [shown, setShown] = usePersistedShown("proximosPagos", 6);
+  const router = useRouter();
   if (!d.planned.length)
     return (
       <div className="py-6 text-center">
@@ -365,7 +402,7 @@ function ProximosPagos({ d }: { d: Dashboard }) {
       {d.planned.slice(0, shown).map((p) => {
         const late = new Date(p.dueDate) < today;
         return (
-          <li key={p.id} className="flex items-center justify-between gap-2 py-2.5">
+          <li key={p.id} onClick={() => router.push(`/planificados?resaltar=${p.id}`)} className="-mx-1 flex cursor-pointer items-center justify-between gap-2 rounded-lg px-1 py-2.5 transition hover:bg-subtle" title="Ver en Planificados">
             <span className="flex min-w-0 items-center gap-2.5">
               <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full" style={{ background: `${p.color}22`, border: `2px solid ${p.color}` }}>
                 {p.iconBody && <Icono body={p.iconBody} size={15} />}
@@ -393,12 +430,13 @@ function ProximosPagos({ d }: { d: Dashboard }) {
 }
 
 function Deudas({ d }: { d: Dashboard }) {
+  const { abrirLista } = useDetalle();
   if (!d.debts.length) return <Empty>No hay gastos marcados como &quot;Debo&quot; en este período.</Empty>;
   const max = Math.max(...d.debts.map((x) => x.value));
   return (
     <ul className="mt-1 space-y-3">
       {d.debts.slice(0, 6).map((x) => (
-        <li key={x.name}>
+        <li key={x.name} className="cursor-pointer rounded-lg px-1 py-0.5 transition hover:bg-subtle" onClick={() => abrirLista(`Gastos fijos · ${x.name}`, d.gastosPorNaturaleza.MUST.filter((f) => f.categoryName === x.name))}>
           <div className="mb-1 flex items-center justify-between text-sm">
             <span className="flex min-w-0 items-center gap-2">
               <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-white" style={{ background: x.color }}>
@@ -573,12 +611,13 @@ function Libro({ d }: { d: Dashboard }) {
 
 function Movimientos({ d }: { d: Dashboard }) {
   const [shown, setShown] = usePersistedShown("movimientos", 8);
+  const { abrirRegistro } = useDetalle();
   if (!d.recent.length) return <Empty>Todavía no hay movimientos.</Empty>;
   return (
     <>
     <ul className="mt-1 divide-y divide-line">
       {d.recent.slice(0, shown).map((t) => (
-        <li key={t.id} className="flex items-center justify-between gap-2 py-2.5">
+        <li key={t.id} onClick={() => abrirRegistro(t.id)} className="-mx-1 flex cursor-pointer items-center justify-between gap-2 rounded-lg px-1 py-2.5 transition hover:bg-subtle">
           <span className="flex min-w-0 items-center gap-3">
             <span
               className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full"
@@ -626,7 +665,15 @@ function Cuentas({ d }: { d: Dashboard }) {
 
 /* ---------- Renderer ---------- */
 
-export default function DashboardCards({ data, cards, cardsMobile, sizes, sizesMobile }: Props) {
+export default function DashboardCards(props: Props) {
+  return (
+    <ResumenDetalleProvider editor={props.editor}>
+      <DashboardCardsInner {...props} />
+    </ResumenDetalleProvider>
+  );
+}
+
+function DashboardCardsInner({ data, cards, cardsMobile, sizes, sizesMobile }: Props) {
   const defs = new Map(CARDS.map((c) => [c.id, c]));
   // El "?" se toca/tapea para mostrar la explicación (el hover con `title` no funciona en celular).
   const [explained, setExplained] = useState<Set<string>>(new Set());

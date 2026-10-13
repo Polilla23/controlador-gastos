@@ -79,7 +79,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
         </div>
       </PageHeader>
 
-      <DashboardCards data={data} cards={prefs.cards} cardsMobile={prefs.cardsMobile} sizes={prefs.sizes} sizesMobile={prefs.sizesMobile} />
+      <DashboardCards data={data} cards={prefs.cards} cardsMobile={prefs.cardsMobile} sizes={prefs.sizes} sizesMobile={prefs.sizesMobile} editor={{ accounts: data.accounts, categories, tags, personas, budgets, quotes }} />
     </>
   );
 }

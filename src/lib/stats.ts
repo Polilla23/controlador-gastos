@@ -186,6 +186,22 @@ export async function loadDashboard(
     natureTotals[n] = (natureTotals[n] ?? 0) + t.amount;
   }
 
+  // Los registros de cada naturaleza (para ver el detalle al pasar el cursor / hacer clic en Debo, Necesito, Quiero y en los gastos fijos).
+  const gastosPorNaturaleza: Record<string, { id: number; description: string; amount: number; currency: string; date: Date; categoryName: string; color: string; account: string }[]> = { MUST: [], NEED: [], WANT: [] };
+  for (const t of cur.filter((t) => t.type === "EXPENSE").sort((a, b) => b.amount - a.amount)) {
+    const n = t.category?.nature ?? "NEED";
+    (gastosPorNaturaleza[n] ??= []).push({
+      id: t.id,
+      description: t.description,
+      amount: t.amount,
+      currency: t.currency,
+      date: t.date,
+      categoryName: t.category?.name ?? "Sin categoría",
+      color: t.category?.color ?? "#9CA3AF",
+      account: t.account.name,
+    });
+  }
+
   /* ---------- Top expenses ---------- */
   const topExpenses = cur
     .filter((t) => t.type === "EXPENSE")
@@ -335,6 +351,7 @@ export async function loadDashboard(
     byCategory,
     byIncomeCategory,
     natureTotals,
+    gastosPorNaturaleza,
     topExpenses,
     cards,
     proximosResumenes,

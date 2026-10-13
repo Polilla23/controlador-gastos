@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import TagCombobox from "./TagCombobox";
 import { Check, Pencil, Plus, Repeat, Trash2 } from "lucide-react";
 import ActionForm from "./ActionForm";
@@ -328,6 +328,7 @@ export default function PlannedBoard({
   tags,
   groups,
   personas,
+  resaltar,
   type,
   title,
   emptyText,
@@ -338,17 +339,22 @@ export default function PlannedBoard({
   tags: TagOpt[];
   groups: ShareGroupOpt[];
   personas: string[];
+  resaltar?: number;
   type: "INCOME" | "EXPENSE";
   title: string;
   emptyText: string;
 }) {
   const rows = items.filter((i) => i.type === type);
   const today = new Date();
+  useEffect(() => {
+    if (resaltar && rows.some((r) => r.id === resaltar)) document.getElementById(`planificado-${resaltar}`)?.scrollIntoView({ block: "center", behavior: "smooth" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resaltar]);
 
   const fila = (p: PlannedRow) => {
     const late = new Date(p.dueDate) < today;
     return (
-      <li key={p.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-line px-3 py-2.5">
+      <li key={p.id} id={`planificado-${p.id}`} className={`flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3 py-2.5 ${p.id === resaltar ? "border-brand-500 bg-brand-500/10 ring-2 ring-brand-500/40" : "border-line"}`}>
         <div className="flex min-w-0 flex-1 items-center gap-3">
           <span
             className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg"

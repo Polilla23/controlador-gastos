@@ -271,6 +271,7 @@ async function handleCallback(cq: NonNullable<TgUpdate["callback_query"]>) {
       `Se detectaron <b>${res.totalLineas}</b> consumos.`,
       res.pendientes ? `✅ ${res.pendientes} listos para importar` : null,
       res.duplicados ? `♻️ ${res.duplicados} ya estaban importados (se omiten)` : null,
+      res.posibles ? `🔁 ${res.posibles} parecen estar ya registrados (por ejemplo un débito automático): no se importan; revisalos en la app` : null,
       res.omitidos ? `⚠️ ${res.omitidos} en otra moneda, se importan aparte más adelante` : null,
     ]
       .filter(Boolean)

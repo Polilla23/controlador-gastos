@@ -9,8 +9,11 @@ import PageHeader from "@/components/PageHeader";
 import PlannedBoard from "@/components/PlannedBoard";
 import PlannedTotals from "@/components/PlannedTotals";
 
-export default async function PlanificadosPage() {
+export default async function PlanificadosPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const userId = await requireUserId();
+  // ?resaltar=ID (desde "Próximos vencimientos" del Resumen): ese planificado queda destacado y a la vista.
+  const resaltarRaw = Number((await searchParams).resaltar);
+  const resaltar = Number.isInteger(resaltarRaw) && resaltarRaw > 0 ? resaltarRaw : undefined;
   const [rows, accounts, categories, tags, gruposRaw, personas, { lista: quotes }] = await Promise.all([
     // Visible si es propio, o si está compartido con un grupo al que esta cuenta tiene acceso
     // (dueña o colaboradora vinculada) -- edición conjunta de planificados compartidos.
@@ -76,6 +79,7 @@ export default async function PlanificadosPage() {
           tags={tags}
           groups={groups}
           personas={personas}
+          resaltar={resaltar}
           type="EXPENSE"
           title="Pagos y vencimientos"
           emptyText="No tenés vencimientos cargados. Agregá el alquiler, las expensas o la factura de luz."
@@ -87,6 +91,7 @@ export default async function PlanificadosPage() {
           tags={tags}
           groups={groups}
           personas={personas}
+          resaltar={resaltar}
           type="INCOME"
           title="Ingresos previstos"
           emptyText="Cargá tu sueldo o un reintegro que estés esperando."

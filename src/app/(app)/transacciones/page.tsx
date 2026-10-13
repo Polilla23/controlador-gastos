@@ -45,6 +45,12 @@ export default async function TransaccionesPage({ searchParams }: { searchParams
   // la búsqueda de texto son independientes entre sí).
   const and: Prisma.TransactionWhereInput[] = [];
   const where: Prisma.TransactionWhereInput = { userId, date: { gte: range.start, lt: range.end } };
+  // ?id=123 (desde las tarjetas del Resumen): ese registro puntual, sin acotar por período.
+  const idPuntual = Number(asOne(sp.id));
+  if (Number.isInteger(idPuntual) && idPuntual > 0) {
+    delete where.date;
+    where.id = idPuntual;
+  }
   if (sp.tipo) where.type = asOne(sp.tipo);
   if (cuentaIds.length === 1) where.accountId = cuentaIds[0];
   else if (cuentaIds.length > 1) where.accountId = { in: cuentaIds };

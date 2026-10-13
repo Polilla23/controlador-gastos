@@ -4,6 +4,7 @@ import { nombreBanco } from "./statement-parsers/types";
 import { reglasDe, efectoDe, type Candidato } from "./reglas";
 import { statementMonthForDate } from "./tarjetas";
 import { ciclosParaFechas } from "./ciclos-server";
+import { normalizarBusqueda } from "./busqueda";
 import { storeStatementPdf, downloadStored } from "./storage";
 
 /**
@@ -75,8 +76,20 @@ export async function iniciarCarga(opts: { userId: string; source: "TELEGRAM" | 
   return { ok: true, importId: creado.id, bank: resumen.banco, cardLastFour: resumen.cardLastFour, totalLineas: resumen.lineas.length };
 }
 
+/** Palabras (3+ letras) de un texto, sin acentos ni mayúsculas, para comparar descripciones parecidas. */
+const palabras = (s: string) => new Set(normalizarBusqueda(s).split(/[^a-z0-9]+/).filter((p) => p.length >= 3));
+/** Qué tan parecidas son dos descripciones (0 a 1): cuánto de la más corta aparece en la otra. */
+function similitud(a: string, b: string): number {
+  const A = palabras(a);
+  const B = palabras(b);
+  if (!A.size || !B.size) return 0;
+  let comunes = 0;
+  for (const p of A) if (B.has(p)) comunes++;
+  return comunes / Math.min(A.size, B.size);
+}
+
 export type ElegirCuentaResultado =
-  | { ok: true; totalLineas: number; pendientes: number; duplicados: number; omitidos: number }
+  | { ok: true; totalLineas: number; pendientes: number; duplicados: number; omitidos: number; posibles: number }
   | { ok: false; motivo: string };
 
 export async function elegirCuenta(userId: string, importId: number, accountId: number): Promise<ElegirCuentaResultado> {
@@ -108,6 +121,27 @@ export async function elegirCuenta(userId: string, importId: number, accountId: 
   let pendientes = 0;
   let duplicados = 0;
   let omitidos = 0;
+  let posibles = 0;
+
+  // Posibles duplicados con lo que YA está cargado en la cuenta (por ejemplo un débito automático de un
+  // planificado, que se registra sin número de comprobante): mismo monto y moneda, y descripción parecida
+  // o fecha muy cercana. Cada registro existente se ofrece como coincidencia a un solo renglón.
+  const fechas = resumen.lineas.map((l) => l.fecha.getTime());
+  const existentesCuenta = fechas.length
+    ? await prisma.transaction.findMany({
+        where: {
+          userId,
+          accountId,
+          type: "EXPENSE",
+          date: { gte: new Date(Math.min(...fechas) - 45 * 86400000), lte: new Date(Math.max(...fechas) + 45 * 86400000) },
+        },
+        select: { id: true, amount: true, currency: true, date: true, description: true, counterparty: true },
+      })
+    : [];
+  const yaImportados = new Set(
+    (await prisma.statementImportItem.findMany({ where: { transactionId: { in: existentesCuenta.map((t) => t.id) } }, select: { transactionId: true } })).map((i) => i.transactionId),
+  );
+  const usadosPorOtroRenglon = new Set<number>();
 
   await prisma.$transaction(async (tx) => {
     for (const linea of resumen.lineas) {
@@ -121,7 +155,7 @@ export async function elegirCuenta(userId: string, importId: number, accountId: 
       };
       const efecto = efectoDe(reglas, candidato);
 
-      let status: "PENDING" | "DUPLICATE" | "SKIPPED" = "PENDING";
+      let status: "PENDING" | "POSSIBLE_DUP" | "DUPLICATE" | "SKIPPED" = "PENDING";
       let skipReason: string | null = null;
       let duplicateOfTransactionId: number | null = null;
 
@@ -137,16 +171,33 @@ export async function elegirCuenta(userId: string, importId: number, accountId: 
         duplicateOfTransactionId = transaccionPorComprobante.get(linea.comprobante) ?? null;
       }
 
-      if (status === "PENDING") pendientes++;
-      else if (status === "DUPLICATE") duplicados++;
-      else omitidos++;
-
       // Para una línea en cuotas, la fecha impresa es la de la compra
       // original (a veces de meses atrás), no la de este resumen -- usarla tal
       // cual haría caer el statementMonth en el mes equivocado. Igual que el
       // resto de la app con las cuotas cargadas a mano (ver addMonths(date, i)
       // en saveTransaction), la fecha de cada cuota es la de su propio período.
       const fechaEfectiva = linea.cuota && resumen.cierreActual ? resumen.cierreActual : linea.fecha;
+
+      if (status === "PENDING") {
+        const parecido = existentesCuenta.find(
+          (t) =>
+            !yaImportados.has(t.id) &&
+            !usadosPorOtroRenglon.has(t.id) &&
+            t.currency === linea.moneda &&
+            Math.abs(t.amount - linea.monto) < 0.011 &&
+            (similitud(`${t.description} ${t.counterparty}`, linea.descripcion) >= 0.5 || Math.abs(t.date.getTime() - fechaEfectiva.getTime()) <= 3 * 86400000),
+        );
+        if (parecido) {
+          usadosPorOtroRenglon.add(parecido.id);
+          status = "POSSIBLE_DUP";
+          duplicateOfTransactionId = parecido.id;
+          skipReason = `Parece el mismo que el registro #${parecido.id} «${parecido.description || "sin descripción"}» del ${parecido.date.toISOString().slice(0, 10).split("-").reverse().join("/")}: no se importa salvo que lo tildes`;
+        }
+      }
+      if (status === "PENDING") pendientes++;
+      else if (status === "POSSIBLE_DUP") posibles++;
+      else if (status === "DUPLICATE") duplicados++;
+      else omitidos++;
 
       await tx.statementImportItem.create({
         data: {
@@ -181,7 +232,7 @@ export async function elegirCuenta(userId: string, importId: number, accountId: 
     });
   });
 
-  return { ok: true, totalLineas: resumen.lineas.length, pendientes, duplicados, omitidos };
+  return { ok: true, totalLineas: resumen.lineas.length, pendientes, duplicados, omitidos, posibles };
 }
 
 export async function obtenerImportacion(userId: string, importId: number) {
@@ -205,7 +256,8 @@ export async function importacionesRecientes(userId: string, take = 10) {
 
 export type ConfirmarImportacionResultado = { ok: true; creados: number } | { ok: false; motivo: string };
 
-export async function confirmarImportacion(userId: string, importId: number): Promise<ConfirmarImportacionResultado> {
+/** `ids`: los renglones elegidos para importar; sin ids (Telegram) se importan los que están listos (PENDING). */
+export async function confirmarImportacion(userId: string, importId: number, ids?: number[]): Promise<ConfirmarImportacionResultado> {
   const importado = await prisma.statementImport.findFirst({
     where: { id: importId, userId },
     include: { items: { include: { tags: true } }, account: true },
@@ -214,7 +266,13 @@ export async function confirmarImportacion(userId: string, importId: number): Pr
   if (importado.status !== "PENDING" || !importado.account) return { ok: false, motivo: "Esta importación ya fue confirmada o descartada" };
   const account = importado.account;
 
-  const aCrear = importado.items.filter((i) => i.status === "PENDING");
+  // Se puede importar lo que está listo, lo marcado como posible duplicado y lo ya detectado como duplicado
+  // por comprobante, SI se eligió a mano; lo omitido por moneda distinta a la de la cuenta no (primero
+  // hay que corregirle la moneda).
+  const importables = new Set(["PENDING", "POSSIBLE_DUP", "DUPLICATE"]);
+  const aCrear = importado.items.filter((i) => (ids ? ids.includes(i.id) && importables.has(i.status) : i.status === "PENDING"));
+  if (!aCrear.length) return { ok: false, motivo: "No elegiste ningún renglón para importar" };
+  if (aCrear.some((i) => i.currency !== account.currency)) return { ok: false, motivo: `Hay renglones en otra moneda que la de la cuenta (${account.currency}): corregí la moneda o destildalos` };
 
   // El resumen de cada consumo sale del maestro de cierres de la tarjeta (con sus correcciones manuales).
   const ciclos = await ciclosParaFechas(account, aCrear.map((i) => i.date));
@@ -228,6 +286,8 @@ export async function confirmarImportacion(userId: string, importId: number): Pr
           currency: item.currency,
           date: item.date,
           description: item.resolvedDescription ?? item.rawDescription,
+          counterparty: item.counterparty,
+          note: item.note,
           statementMonth: statementMonthForDate(item.date, account, ciclos),
           accountId: account.id,
           categoryId: item.categoryId,
@@ -236,6 +296,12 @@ export async function confirmarImportacion(userId: string, importId: number): Pr
       });
       await tx.statementImportItem.update({ where: { id: item.id }, data: { status: "CONFIRMED", transactionId: creado.id } });
     }
+    // Lo que no se eligió queda como omitido (no se pierde el registro de que estaba en el resumen).
+    const elegidos = new Set(aCrear.map((i) => i.id));
+    await tx.statementImportItem.updateMany({
+      where: { importId, id: { notIn: [...elegidos] }, status: { in: ["PENDING", "POSSIBLE_DUP", "DUPLICATE"] } },
+      data: { status: "SKIPPED", skipReason: "No se eligió importar" },
+    });
     await tx.statementImport.update({ where: { id: importId }, data: { status: "CONFIRMED", confirmedAt: new Date() } });
   });
 
