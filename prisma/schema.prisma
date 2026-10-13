@@ -412,6 +412,8 @@ model Rule {
   sortOrder           Int       @default(0)
   /// Cada cuántos días se ejecuta sola sobre los registros nuevos (null = sólo manual).
   scheduleDays        Int?
+  /// Hora (0-23, Argentina) a la que se ejecuta cuando le toca por periodicidad.
+  scheduleHour        Int       @default(9)
   lastRunAt           DateTime?
   /// Palabras separadas por coma; se buscan en descripción, contraparte y nota.
   keywords            String    @default("")
@@ -677,6 +679,8 @@ model PendingAttachment {
   originalName String   @default("")
   /// Telegram: file_id, para no duplicarlo si después se adjunta respondiendo con el número.
   tgFileId     String?
+  /// Telegram: id del mensaje original, para responderle citándolo desde /pendientes.
+  tgMessageId  Int?
   /// Montos y fechas leídos del PDF (no se puede leer una imagen sin OCR): { amounts: number[], dates: string[] }
   hints        Json?
   createdAt    DateTime @default(now())

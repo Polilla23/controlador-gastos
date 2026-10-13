@@ -10,7 +10,6 @@ import { supabaseServer } from "./supabase";
 import { adjuntarComprobante, removeStored } from "./storage";
 import { validarComprobante } from "./archivos";
 import { colorDeHija } from "./colores";
-import { hashToken, nuevoToken } from "./backup-auth";
 import { addDays, addMonths, civil, fromCivil, parseInput, startOfDay } from "./tz";
 import { statementMonthForDate } from "./tarjetas";
 import { ciclosParaFechas, recalcularResumenes, sincronizarFechasTarjeta } from "./ciclos-server";
@@ -801,15 +800,6 @@ export async function saveNotificationPrefs(fd: FormData) {
   const notifyDays = Math.min(30, Math.max(0, Number(fd.get("notifyDays") ?? 3)));
   await prisma.user.update({ where: { id: userId }, data: { notifyDays } });
   revalidatePath("/perfil");
-}
-
-/** Genera (o reemplaza) el token del backup automático. Se devuelve UNA vez: en la base queda sólo su hash. */
-export async function generarTokenBackup(): Promise<string> {
-  const userId = await requireUserId();
-  const token = nuevoToken();
-  await prisma.user.update({ where: { id: userId }, data: { backupTokenHash: hashToken(token) } });
-  revalidatePath("/perfil");
-  return token;
 }
 
 export async function revocarTokenBackup() {

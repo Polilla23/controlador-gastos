@@ -12,7 +12,7 @@ import MultiSelectFilter from "./MultiSelectFilter";
 import { Sortable } from "./ui";
 import { aplicarReglasA, deleteRule, previsualizarReglas, reorderRules, saveRule, toggleRule, type PreviewFila } from "@/lib/actions-reglas";
 import { fmtDate, fmtDateTime, TX_TYPES } from "@/lib/format";
-import { proximaEjecucion } from "@/lib/reglas-horario";
+import { HORA_POR_DEFECTO, proximaEjecucion } from "@/lib/reglas-horario";
 
 type Cuenta = { id: number; name: string; currency: string };
 type Etiqueta = { id: number; name: string; color: string };
@@ -33,6 +33,7 @@ export type RuleRow = {
   setTags: Etiqueta[];
   categoria: string | null;
   scheduleDays: number | null;
+  scheduleHour: number;
   lastRunAt: Date | null;
 };
 
@@ -135,15 +136,31 @@ function Campos({ r, accounts, categories, tags, personas }: { r?: RuleRow; acco
 
       <div>
         <label className="label">Ejecutar automáticamente</label>
-        <select name="scheduleDays" className="input" defaultValue={r?.scheduleDays != null ? String(r.scheduleDays) : ""}>
-          {PERIODICIDADES.map(([v, label]) => (
-            <option key={v} value={v}>
-              {label}
-            </option>
-          ))}
-          {r?.scheduleDays != null && !PERIODICIDADES.some(([v]) => v === String(r.scheduleDays)) && <option value={String(r.scheduleDays)}>Cada {r.scheduleDays} días</option>}
-        </select>
-        <p className="mt-1 text-xs text-muted">Con periodicidad, la regla se aplica sola a los registros cargados desde la última vez que corrió. Corre junto con el aviso diario (todos los días alrededor de las 09:00). Igual la podés aplicar a mano cuando quieras desde &quot;Aplicar a los registros existentes&quot;.</p>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <select name="scheduleDays" className="input" defaultValue={r?.scheduleDays != null ? String(r.scheduleDays) : ""}>
+            {PERIODICIDADES.map(([v, label]) => (
+              <option key={v} value={v}>
+                {label}
+              </option>
+            ))}
+            {r?.scheduleDays != null && !PERIODICIDADES.some(([v]) => v === String(r.scheduleDays)) && <option value={String(r.scheduleDays)}>Cada {r.scheduleDays} días</option>}
+          </select>
+          <label className="flex items-center gap-2 text-sm text-muted">
+            a las
+            <select name="scheduleHour" className="input w-28" defaultValue={String(r?.scheduleHour ?? HORA_POR_DEFECTO)}>
+              {Array.from({ length: 24 }, (_, h) => (
+                <option key={h} value={h}>
+                  {String(h).padStart(2, "0")}:00
+                </option>
+              ))}
+            </select>
+            hs
+          </label>
+        </div>
+        <p className="mt-1 text-xs text-muted">
+          Con periodicidad, la regla se aplica sola a los registros cargados desde la última vez que corrió, a la hora elegida (hora de Argentina). La hora se respeta si el sistema revisa cada hora (disparador
+          horario); si sólo hay una revisión por día, corre en la primera revisión posterior a esa hora. Igual la podés aplicar a mano cuando quieras desde &quot;Aplicar a los registros existentes&quot;.
+        </p>
       </div>
     </>
   );
@@ -281,12 +298,17 @@ export default function RulesBoard({
                 <h2 className="truncate font-bold">{r.name}</h2>
                 <p className="text-xs text-muted">
                   {r.active ? "Activa" : "Pausada"}
-                  {r.scheduleDays != null ? ` · se ejecuta ${r.scheduleDays === 1 ? "todos los días" : `cada ${r.scheduleDays} días`}` : " · sólo manual"}
+                  {r.scheduleDays != null ? ` · se ejecuta ${r.scheduleDays === 1 ? "todos los días" : `cada ${r.scheduleDays} días`} a las ${String(r.scheduleHour).padStart(2, "0")}:00` : " · sólo manual"}
                 </p>
                 {r.scheduleDays != null && (
                   <p className="text-xs text-muted">
                     Última: {r.lastRunAt ? fmtDateTime(r.lastRunAt) : "todavía no corrió"}
-                    {r.active ? ` · Próxima: ${fmtDateTime(proximaEjecucion(r.lastRunAt ? new Date(r.lastRunAt) : null, r.scheduleDays, new Date()))}` : ""}
+                    {r.active
+                      ? (() => {
+                          const p = proximaEjecucion(r.lastRunAt ? new Date(r.lastRunAt) : null, r.scheduleDays, r.scheduleHour, new Date());
+                          return p.atrasada ? " · Próxima: en la próxima revisión del sistema" : ` · Próxima: ${fmtDateTime(p.cuando)}`;
+                        })()
+                      : ""}
                   </p>
                 )}
               </div>

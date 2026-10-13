@@ -18,6 +18,7 @@ const ruleSchema = z.object({
   setNote: z.string().default(""),
   setCounterparty: z.string().default(""),
   scheduleDays: optInt,
+  scheduleHour: z.coerce.number().int().min(0).max(23).default(9),
 });
 
 export async function saveRule(fd: FormData) {

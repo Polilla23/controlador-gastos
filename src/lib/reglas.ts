@@ -120,7 +120,7 @@ export async function ejecutarReglasProgramadas(ahora = new Date()) {
   // Una regla que falla no frena a las demás (ni a las de otros usuarios).
   const { failed } = await forEachIsolated(reglas, (r) => `la regla programada #${r.id}`, async (r) => {
     const cada = r.scheduleDays!;
-    if (!leToca(r.lastRunAt, cada, ahora)) return;
+    if (!leToca(r.lastRunAt, cada, r.scheduleHour, ahora)) return;
 
     const desde = r.lastRunAt ?? r.createdAt;
     const registros = await prisma.transaction.findMany({

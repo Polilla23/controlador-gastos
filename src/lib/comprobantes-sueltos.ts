@@ -37,14 +37,14 @@ async function leerHints(data: Uint8Array, mimeType: string): Promise<Hints | nu
   }
 }
 
-export async function guardarSuelto(userId: string, data: Uint8Array, source: "WEB" | "TELEGRAM" | "SHARE", originalName = "", tgFileId?: string) {
+export async function guardarSuelto(userId: string, data: Uint8Array, source: "WEB" | "TELEGRAM" | "SHARE", originalName = "", tgFileId?: string, tgMessageId?: number) {
   const mimeType = validarComprobante(data, originalName ? `"${originalName}"` : "El archivo");
   const path = `${userId}/suelto-${Date.now()}${Math.random().toString(36).slice(2, 6)}${extensionDe(mimeType)}`;
   const { error } = await supabaseAdmin().storage.from(BUCKET).upload(path, data, { contentType: mimeType });
   if (error) throw new Error(`No se pudo guardar el archivo: ${error.message}`);
   const hints = await leerHints(data, mimeType);
   return prisma.pendingAttachment.create({
-    data: { userId, storagePath: path, mimeType, source, originalName: originalName.slice(0, 120), tgFileId: tgFileId ?? null, hints: hints ?? Prisma.JsonNull },
+    data: { userId, storagePath: path, mimeType, source, originalName: originalName.slice(0, 120), tgFileId: tgFileId ?? null, tgMessageId: tgMessageId ?? null, hints: hints ?? Prisma.JsonNull },
   });
 }
 

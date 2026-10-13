@@ -1,12 +1,12 @@
 import { prisma } from "./prisma";
 import { adjuntarComprobante } from "./storage";
-import { guardarSuelto, limpiarSueltoDeTelegram, sugerirRegistros, vincularSuelto, type Hints } from "./comprobantes-sueltos";
-import { money, fmtDate, fmtDayMonth } from "./format";
-import { APP_TZ, addDays, civil as civilOf, fromCivil, monthKey, startOfDay } from "./tz";
+import { descartarSuelto, guardarSuelto, limpiarSueltoDeTelegram, sugerirRegistros, vincularSuelto, type Hints } from "./comprobantes-sueltos";
+import { ciclosParaFechas } from "./ciclos-server";
+import { money, fmtDate, fmtDateTime, fmtDayMonth } from "./format";
+import { APP_TZ, addDays, civil as civilOf, fromCivil, startOfDay } from "./tz";
 import { cargarPresupuestos } from "./presupuestos";
 import { accountBalances } from "./balances";
 import { forEachIsolated } from "./cron-safe";
-import { proximosCierres } from "./tarjetas";
 import { cotizaciones, NOMBRE_MOSTRAR } from "./cotizaciones";
 import { iniciarCarga, elegirCuenta, confirmarImportacion, descartarImportacion, tarjetasDisponibles, nombreBanco } from "./statement-imports";
 
@@ -22,7 +22,7 @@ export async function sendText(chatId: string, text: string) {
 }
 
 /** Manda un mensaje con botones inline; cada fila es un array de {text, data}. */
-async function sendButtons(chatId: string, text: string, rows: { text: string; data: string }[][]) {
+async function sendButtons(chatId: string, text: string, rows: { text: string; data: string }[][], replyToMessageId?: number) {
   const res = await fetch(api("sendMessage"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -31,6 +31,8 @@ async function sendButtons(chatId: string, text: string, rows: { text: string; d
       text,
       parse_mode: "HTML",
       reply_markup: { inline_keyboard: rows.map((row) => row.map((b) => ({ text: b.text, callback_data: b.data }))) },
+      // Responde citando el mensaje original (si todavía existe en el chat).
+      ...(replyToMessageId ? { reply_to_message_id: replyToMessageId, allow_sending_without_reply: true } : {}),
     }),
   });
   if (!res.ok) console.error("telegram sendMessage(buttons) failed", await res.text());
@@ -67,6 +69,7 @@ async function downloadFile(fileId: string): Promise<Buffer> {
 /** Subset of a Telegram update we care about. */
 export type TgUpdate = {
   message?: {
+    message_id: number;
     chat: { id: number };
     text?: string;
     caption?: string;
@@ -100,7 +103,7 @@ const extractId = (text: string) => {
  * cada sección (convertido también a un solo número en pesos con el dólar MEP) y la diferencia
  * entre ambas secciones al final.
  */
-async function proximosDelPeriodo(userId: string, titulo: string, start: Date, end: Date): Promise<string> {
+async function proximosDelPeriodo(userId: string, titulo: string, start: Date, end: Date, startTarjetas: Date = start): Promise<string> {
   const [items, cards, debts, { lista: quotes }] = await Promise.all([
     prisma.planned.findMany({
       where: { userId, includeInTelegram: true, dueDate: { gte: start, lt: end } },
@@ -123,30 +126,56 @@ async function proximosDelPeriodo(userId: string, titulo: string, start: Date, e
     mapa.get(nombre)!.filas.push(fila);
   };
 
-  for (const card of cards) {
-    // Vencimiento de esta tarjeta que cae dentro del período (respeta las fechas concretas
-    // guardadas en la cuenta si están cargadas, en vez de asumir siempre el mismo día del mes).
-    const { vencimientoAnterior, vencimientoActual, vencimientoProximo } = proximosCierres(card);
-    const due = [vencimientoAnterior, vencimientoActual, vencimientoProximo].find((d): d is Date => !!d && d >= start && d < end);
-    if (!due) continue;
-    // Sólo lo que corresponde a ESE resumen (statementMonth), no el saldo acumulado de toda la
-    // tarjeta — si no, un consumo de un mes que todavía no vence se sumaba igual.
+  // Tarjetas: lo que hay que PAGAR del resumen que vence en este período (no el saldo de la cuenta).
+  // Una tarjeta física puede tener una cuenta en pesos y otra en dólares (mismo nombre): se muestran
+  // juntas, cada moneda por separado, con el período del resumen (desde el día siguiente al cierre
+  // anterior hasta su cierre). Los ciclos salen del maestro de cierres de la tarjeta.
+  const avisos: string[] = [];
+  const porNombre = new Map<string, typeof cards>();
+  for (const c of cards) porNombre.set(c.name, [...(porNombre.get(c.name) ?? []), c]);
+  for (const [nombre, cuentas] of porNombre) {
+    // El resumen "que vence este mes" cuenta aunque su vencimiento ya haya pasado (aparece como PAGADO si se pagó).
+    const ciclos = await ciclosParaFechas(cuentas[0], [startTarjetas, end]);
+    const idx = ciclos.findIndex((c) => c.dueDate >= startTarjetas && c.dueDate < end);
+    if (idx < 0) continue;
+    const ciclo = ciclos[idx];
+    const anterior = idx > 0 ? ciclos[idx - 1] : null;
+    const ids = cuentas.map((c) => c.id);
+    // Sólo lo que corresponde a ESE resumen (statementMonth): consumos menos devoluciones; las transferencias no.
     const txs = await prisma.transaction.findMany({
-      where: { userId, accountId: card.id, statementMonth: monthKey(due) },
-      select: { type: true, amount: true },
+      where: { userId, accountId: { in: ids }, statementMonth: ciclo.month, type: { in: ["EXPENSE", "INCOME"] } },
+      select: { accountId: true, type: true, amount: true, currency: true },
     });
-    const usado = txs.reduce((s, t) => s + (t.type === "EXPENSE" ? t.amount : -t.amount), 0);
-    // Pagada si hay un movimiento "Pago Tarjeta..." de/hacia esta cuenta dentro del período.
-    const pago = await prisma.transaction.findFirst({
-      where: {
-        userId,
-        OR: [{ accountId: card.id }, { toAccountId: card.id }],
-        description: { startsWith: "Pago Tarjeta", mode: "insensitive" },
-        date: { gte: start, lt: end },
-      },
-      select: { id: true },
+    const porMoneda = new Map<string, number>(cuentas.map((c) => [c.currency, 0]));
+    for (const t of txs) porMoneda.set(t.currency, (porMoneda.get(t.currency) ?? 0) + (t.type === "EXPENSE" ? t.amount : -t.amount));
+
+    const periodo = anterior ? ` (resumen ${fmtDayMonth(addDays(anterior.closeDate, 1))} al ${fmtDayMonth(ciclo.closeDate)})` : ` (cierra el ${fmtDayMonth(ciclo.closeDate)})`;
+    for (const cuenta of cuentas) {
+      const usado = Math.max(0, Math.round((porMoneda.get(cuenta.currency) ?? 0) * 100) / 100);
+      // Pagada si hay un movimiento "Pago Tarjeta..." de/hacia esta cuenta dentro del período.
+      const pago = await prisma.transaction.findFirst({
+        where: { userId, OR: [{ accountId: cuenta.id }, { toAccountId: cuenta.id }], description: { startsWith: "Pago Tarjeta", mode: "insensitive" }, date: { gte: startTarjetas, lt: end } },
+        select: { id: true },
+      });
+      // Una cuenta en dólares sin consumos en este resumen no suma ruido.
+      if (usado === 0 && cuentas.length > 1 && cuenta.currency !== "ARS") continue;
+      push(egresos, "Tarjetas", "💳", { fecha: ciclo.dueDate, nombre: `${nombre}${periodo}`, monto: usado, currency: cuenta.currency, pagado: !!pago });
+    }
+
+    // Si ese resumen ya se importó desde el PDF, se compara contra el total que declara el propio banco.
+    const imp = await prisma.statementImport.findFirst({
+      where: { userId, accountId: { in: ids }, status: "CONFIRMED", dueDate: { gte: addDays(ciclo.dueDate, -5), lte: addDays(ciclo.dueDate, 5) } },
+      orderBy: { confirmedAt: "desc" },
     });
-    push(egresos, "Tarjetas", "💳", { fecha: due, nombre: card.name, monto: Math.max(0, usado), currency: card.currency, pagado: !!pago });
+    if (imp) {
+      for (const [moneda, declarado] of [["ARS", imp.declaredTotalArs], ["USD", imp.declaredTotalUsd]] as const) {
+        if (declarado == null) continue;
+        const enApp = Math.round((porMoneda.get(moneda) ?? 0) * 100) / 100;
+        if (Math.abs(enApp - declarado) > 1) {
+          avisos.push(`⚠️ ${nombre}: el resumen importado declara ${money(declarado, moneda)} y en la app suman ${money(enApp, moneda)} (diferencia ${money(Math.abs(enApp - declarado), moneda)}). Revisá los registros de ese resumen.`);
+        }
+      }
+    }
   }
 
   for (const p of items) {
@@ -218,7 +247,7 @@ async function proximosDelPeriodo(userId: string, titulo: string, start: Date, e
   // bloques (cabecera, secciones, diferencia).
   const encabezado = cotizacionLinea ? `📅 <b>${titulo}</b>\n${cotizacionLinea}` : `📅 <b>${titulo}</b>`;
   const cuerpo = [ing.texto, egr.texto].filter(Boolean).join("\n\n");
-  return [encabezado, cuerpo, diferenciaLinea].filter(Boolean).join("\n\n");
+  return [encabezado, cuerpo, diferenciaLinea, avisos.join("\n")].filter(Boolean).join("\n\n");
 }
 
 /** Botones de "¿a qué tarjeta corresponde?" y "¿confirmás la importación?". */
@@ -274,6 +303,13 @@ async function handleCallback(cq: NonNullable<TgUpdate["callback_query"]>) {
     }
   }
 
+  const mDel = data.match(/^adj_del:(\d+)$/);
+  if (mDel) {
+    await descartarSuelto(user.id, Number(mDel[1]));
+    await answerCallback(cq.id, "Descartado");
+    return editText(chatId, messageId, "🗑 Comprobante descartado.");
+  }
+
   const mAdjNo = data.match(/^adj_no:(\d+)$/);
   if (mAdjNo) {
     await answerCallback(cq.id);
@@ -295,10 +331,10 @@ async function handleCallback(cq: NonNullable<TgUpdate["callback_query"]>) {
  * registros más probables con botones (de un PDF se leen montos y fechas; de una imagen no se
  * puede, así que quedan los recientes sin comprobante).
  */
-async function recibirSuelto(chatId: string, userId: string, fileId: string, nombre = "") {
+async function recibirSuelto(chatId: string, userId: string, fileId: string, nombre = "", messageId?: number) {
   let pendiente;
   try {
-    pendiente = await guardarSuelto(userId, await downloadFile(fileId), "TELEGRAM", nombre, fileId);
+    pendiente = await guardarSuelto(userId, await downloadFile(fileId), "TELEGRAM", nombre, fileId, messageId);
   } catch (e) {
     return sendText(chatId, `⚠️ ${e instanceof Error ? e.message : "No pude guardar el archivo"}`);
   }
@@ -308,6 +344,34 @@ async function recibirSuelto(chatId: string, userId: string, fileId: string, nom
   filas.push([{ text: "📥 Dejar en la bandeja", data: `adj_no:${pendiente.id}` }]);
   const base = hints && (hints.amounts.length || hints.dates.length) ? "Leí el PDF y puse primero los que coinciden." : "No puedo leer el monto de una imagen: te muestro los registros recientes que todavía no tienen comprobante.";
   return sendButtons(chatId, `📎 Guardé el comprobante. ¿A qué registro corresponde?\n<i>${base}</i>\n\nTambién podés responder a ese archivo con el número, por ejemplo <code>#123</code>.`, filas);
+}
+
+/**
+ * /pendientes: los comprobantes (imágenes y PDF) que llegaron sueltos y todavía no están asociados a
+ * ninguna transacción. Cada uno se responde CITANDO el mensaje original del chat, con la fecha de envío,
+ * lo que se leyó del PDF (si es PDF) y botones para asociarlo a un registro candidato, dejarlo o descartarlo.
+ * Todo lo que se manda sin número queda guardado al recibirlo, así que no se pierde ninguno.
+ */
+async function listarPendientes(chatId: string, userId: string) {
+  const total = await prisma.pendingAttachment.count({ where: { userId } });
+  if (!total) return sendText(chatId, "🎉 No tenés comprobantes pendientes: todo lo que mandaste está asociado a un registro.");
+  const pendientes = await prisma.pendingAttachment.findMany({ where: { userId }, orderBy: { createdAt: "desc" }, take: 10 });
+  await sendText(chatId, `📎 Tenés <b>${total}</b> comprobante${total === 1 ? "" : "s"} sin asociar${total > pendientes.length ? ` (te muestro los ${pendientes.length} más nuevos; el resto está en la app, en <b>Comprobantes sin asociar</b>)` : ""}:`);
+  for (const p of pendientes) {
+    const hints = (p.hints as Hints | null) ?? null;
+    const sugeridos = await sugerirRegistros(userId, hints, 3);
+    const leido =
+      hints && (hints.amounts.length || hints.dates.length)
+        ? `\nLeí del PDF: ${[hints.amounts.length ? `montos ${hints.amounts.slice(0, 3).map((m) => money(m, "ARS")).join(", ")}` : "", hints.dates.length ? `fechas ${hints.dates.slice(0, 3).map((d) => fmtDayMonth(new Date(`${d}T12:00:00Z`))).join(", ")}` : ""].filter(Boolean).join(" · ")}`
+        : "";
+    const origen = p.source === "TELEGRAM" ? (p.tgMessageId ? "" : " (mandado antes de que el bot guardara el mensaje: no puedo citarlo)") : p.source === "SHARE" ? " (compartido desde el celular)" : " (subido desde la web)";
+    const filas = sugeridos.map((s) => [{ text: `#${s.id} ${(s.description || s.counterparty || "sin descripción").slice(0, 22)} · ${money(s.amount, s.currency)}`, data: `adj:${p.id}:${s.id}` }]);
+    filas.push([
+      { text: "📥 Dejar", data: `adj_no:${p.id}` },
+      { text: "🗑 Descartar", data: `adj_del:${p.id}` },
+    ]);
+    await sendButtons(chatId, `${p.mimeType === "application/pdf" ? "📄 PDF" : "🖼 Imagen"} enviado el <b>${fmtDateTime(p.createdAt)}</b>${origen}${leido}\n¿A qué registro corresponde?`, filas, p.tgMessageId ?? undefined);
+  }
 }
 
 export async function handleUpdate(update: TgUpdate) {
@@ -336,13 +400,16 @@ export async function handleUpdate(update: TgUpdate) {
       `✅ Listo, quedaste vinculado como <b>${owner.name || owner.email}</b>.\n\n` +
         "• Mandame una foto o PDF con el texto <code>#123</code> y lo adjunto a ese registro.\n" +
         "• <code>/saldo</code> — tus saldos por cuenta.\n" +
+        "• <code>/pendientes</code> — comprobantes que mandaste sin número y siguen sin asociar.\n" +
         "• <code>/proximos</code> — lo que vence o cobrás este mes.\n" +
         "• <code>/proximomes</code> — lo mismo, para el mes que viene.",
     );
   }
 
   /* ---------- Commands ---------- */
-  if (/^\/start/i.test(text)) return reply("Ya estás vinculado ✅\nMandame una foto con <code>#123</code>, o usá <code>/saldo</code>, <code>/proximos</code> y <code>/proximomes</code>.");
+  if (/^\/start/i.test(text)) return reply("Ya estás vinculado ✅\nMandame una foto con <code>#123</code>, o usá <code>/saldo</code>, <code>/proximos</code>, <code>/proximomes</code> y <code>/pendientes</code> (comprobantes sin asociar).");
+
+  if (/^\/pendientes/i.test(text)) return listarPendientes(chatId, user.id);
 
   if (/^\/saldo/i.test(text)) {
     const accounts = (await accountBalances(user.id)).filter((a) => !a.archived);
@@ -354,7 +421,7 @@ export async function handleUpdate(update: TgUpdate) {
     const hoy = startOfDay();
     const c = civilOf(hoy);
     const finMes = fromCivil(c.y, c.m + 1, 1);
-    const cuerpo = await proximosDelPeriodo(user.id, "Este mes", hoy, finMes);
+    const cuerpo = await proximosDelPeriodo(user.id, "Este mes", hoy, finMes, fromCivil(c.y, c.m, 1));
     return reply(cuerpo || "🎉 No tenés nada para registrar este mes.");
   }
 
@@ -397,7 +464,7 @@ export async function handleUpdate(update: TgUpdate) {
     const data = await downloadFile(doc.file_id);
     const res = await iniciarCarga({ userId: user.id, source: "TELEGRAM", buffer: data });
     // Si no es un resumen de tarjeta, es un comprobante suelto: va a la bandeja con sugerencias.
-    if (!res.ok) return recibirSuelto(chatId, user.id, doc.file_id, doc.file_name ?? "");
+    if (!res.ok) return recibirSuelto(chatId, user.id, doc.file_id, doc.file_name ?? "", msg.message_id);
 
     const cuentas = await tarjetasDisponibles(user.id);
     if (!cuentas.length) return reply("No tenés ninguna tarjeta de crédito cargada todavía. Creála en la app y volvé a mandar el resumen.");
@@ -423,7 +490,7 @@ export async function handleUpdate(update: TgUpdate) {
   }
 
   // Sin número: no se pierde, queda en la bandeja y se proponen candidatos con botones.
-  if (id == null) return recibirSuelto(chatId, user.id, photo?.file_id ?? doc!.file_id, doc?.file_name ?? "");
+  if (id == null) return recibirSuelto(chatId, user.id, photo?.file_id ?? doc!.file_id, doc?.file_name ?? "", msg.message_id);
   const tx = await prisma.transaction.findFirst({ where: { id, userId: user.id } });
   if (!tx) return reply(`No encontré el registro <b>#${id}</b> en tu cuenta. Revisá el ID en la app.`);
 
