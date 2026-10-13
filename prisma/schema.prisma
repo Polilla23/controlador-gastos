@@ -605,6 +605,8 @@ model Attachment {
   storagePath   String // path inside the Supabase Storage bucket
   mimeType      String
   source        String      @default("WEB") // WEB | TELEGRAM
+  name          String? // nombre original del archivo (si se conoce)
+  size          Int? // bytes (los anteriores se completan al listarlos)
   createdAt     DateTime    @default(now())
 }
 

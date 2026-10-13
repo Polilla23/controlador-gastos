@@ -14,7 +14,7 @@ export async function adjuntarComprobante(userId: string, transactionId: number,
   const path = `${userId}/${transactionId}-${Date.now()}${Math.random().toString(36).slice(2, 6)}${extensionDe(mimeType)}`;
   const { error } = await supabaseAdmin().storage.from(BUCKET).upload(path, bytes, { contentType: mimeType });
   if (error) throw new Error(`No se pudo guardar el archivo: ${error.message}`);
-  return prisma.attachment.create({ data: { transactionId, storagePath: path, mimeType, source } });
+  return prisma.attachment.create({ data: { transactionId, storagePath: path, mimeType, source, name: nombre?.slice(0, 120) ?? null, size: bytes.length } });
 }
 
 /** Stores the original PDF of a card statement under <userId>/resumen-<importId>-<timestamp>.pdf. */

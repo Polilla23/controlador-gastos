@@ -126,7 +126,7 @@ function CompareControl({ compareMonths }: { compareMonths: number | null }) {
 function Patrimonio({ d }: { d: Dashboard }) {
   const label = d.compareMonths ? `hace ${d.compareMonths} mes${d.compareMonths > 1 ? "es" : ""}` : (PRESET_LABEL[d.range.preset] ?? "período anterior");
   return (
-    <>
+    <div className="flex h-full flex-col">
       <div className="kpi-value">{money(d.netWorth, d.mainCurrency)}</div>
       <div className="mt-2 flex items-center gap-2">
         <Delta value={pct(d.netWorth, d.netWorthPrev)} />
@@ -136,7 +136,7 @@ function Patrimonio({ d }: { d: Dashboard }) {
         <CompareControl compareMonths={d.compareMonths} />
       </div>
       <Sparkline data={d.balanceTrend} currency={d.mainCurrency} />
-    </>
+    </div>
   );
 }
 
@@ -320,12 +320,12 @@ function Pronostico({ d }: { d: Dashboard }) {
     { label: "Saldo final", value: f.end, fill: "#3B82F6" },
   ];
   return (
-    <>
+    <div className="flex h-full flex-col">
       <div className="text-xs font-semibold uppercase tracking-wide text-muted">{f.monthLabel}</div>
       <div className={`kpi-value ${f.end < 0 ? "text-red-500" : ""}`}>{money(f.end, d.mainCurrency)}</div>
       <ForecastBars rows={rows} currency={d.mainCurrency} />
       <p className="mt-1 text-xs text-muted">El gasto e ingreso esperados salen del promedio de los últimos 90 días.</p>
-    </>
+    </div>
   );
 }
 
@@ -457,7 +457,9 @@ function Deudas({ d }: { d: Dashboard }) {
 
 function DeudaIngresos({ d }: { d: Dashboard }) {
   return (
-    <div className="mt-2 flex items-center gap-4">
+    // Misma disposición que "Ingresos por categoría"/"Estructura de gastos": anillo + datos al lado,
+    // todo el conjunto centrado (horizontal y vertical) en la card.
+    <div className="flex h-full flex-wrap items-center justify-center gap-4">
       <RatioDonut ratio={d.debtRatio} />
       <dl className="space-y-2 text-sm">
         <div>

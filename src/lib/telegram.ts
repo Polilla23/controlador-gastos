@@ -9,6 +9,7 @@ import { accountBalances } from "./balances";
 import { forEachIsolated } from "./cron-safe";
 import { cotizaciones, NOMBRE_MOSTRAR } from "./cotizaciones";
 import { iniciarCarga, elegirCuenta, confirmarImportacion, descartarImportacion, tarjetasDisponibles, nombreBanco } from "./statement-imports";
+import { ayudaTelegramHtml } from "./telegram-comandos";
 
 const api = (method: string) => `https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/${method}`;
 
@@ -203,51 +204,65 @@ async function proximosDelPeriodo(userId: string, titulo: string, start: Date, e
     return prioridad(a) - prioridad(b) || a.localeCompare(b, "es");
   };
 
-  const seccion = (tituloSeccion: string, emoji: string, grupos: Map<string, Grupo>) => {
-    if (!grupos.size) return { texto: "", pesos: 0 };
+  type Falta = { texto: string; pesos: number; conversion: boolean };
+  const sumar = (filas: Fila[]): { porMoneda: Map<string, number>; pesos: number; conversion: boolean } => {
+    const porMoneda = new Map<string, number>();
+    let pesos = 0;
+    let conversion = true;
+    for (const f of filas) {
+      porMoneda.set(f.currency, (porMoneda.get(f.currency) ?? 0) + f.monto);
+      const enPesos = aPesos(f.monto, f.currency);
+      if (enPesos == null) conversion = false;
+      else pesos += enPesos;
+    }
+    return { porMoneda, pesos, conversion };
+  };
+  const textoTotales = (t: { porMoneda: Map<string, number>; pesos: number; conversion: boolean }) =>
+    t.porMoneda.size ? `${[...t.porMoneda].map(([cur, val]) => money(val, cur)).join(" + ")} (en pesos: ${t.conversion ? money(t.pesos, "ARS") : "—"})` : money(0, "ARS");
+
+  const seccion = (tituloSeccion: string, emoji: string, grupos: Map<string, Grupo>, cobro: boolean) => {
+    if (!grupos.size) return { texto: "", pesos: 0, falta: { texto: money(0, "ARS"), pesos: 0, conversion: true } as Falta };
     const bloques = [...grupos.keys()].sort(ordenGrupos).map((nombre) => {
       const g = grupos.get(nombre)!;
       const filas = [...g.filas].sort((a, b) => a.fecha.getTime() - b.fecha.getTime());
       const lineas = filas.map((f) =>
         f.pagado
-          ? ` ✅ PAGADO - ${f.nombre} - Vencimiento ${fmtDayMonth(f.fecha)} = ${money(f.monto, f.currency)}`
+          ? ` ✅ ${cobro ? "COBRADO" : "PAGADO"} - ${f.nombre} - Vencimiento ${fmtDayMonth(f.fecha)} = ${money(f.monto, f.currency)}`
           : `* ${f.nombre} - Vencimiento ${fmtDayMonth(f.fecha)} = ${money(f.monto, f.currency)}`,
       );
       return `${g.emoji} ${nombre}\n\n${lineas.join("\n")}`;
     });
-    // Total de lo que todavía falta (lo ya PAGADO no suma), por moneda y convertido a un único
-    // número en pesos con el dólar MEP para poder comparar/sumar entre secciones.
-    const totales = new Map<string, number>();
-    let pesos = 0;
-    let huboConversion = true;
-    for (const g of grupos.values()) {
-      for (const f of g.filas) {
-        if (f.pagado) continue;
-        totales.set(f.currency, (totales.get(f.currency) ?? 0) + f.monto);
-        const enPesos = aPesos(f.monto, f.currency);
-        if (enPesos == null) huboConversion = false;
-        else pesos += enPesos;
-      }
-    }
-    const totalTxt = [...totales.entries()].map(([cur, val]) => money(val, cur)).join(" + ");
-    const totalBloque = totalTxt ? `💲Total: ${totalTxt}\n💲Total Pesos: ${huboConversion ? money(pesos, "ARS") : "—"}` : "";
+    // Total de TODO lo del período (lo ya pagado/cobrado y lo pendiente), por moneda y convertido a un
+    // único número en pesos con el dólar MEP para poder comparar entre secciones. Aparte se calcula
+    // cuánto falta (sólo lo pendiente).
+    const todas = [...grupos.values()].flatMap((g) => g.filas);
+    const total = sumar(todas);
+    const falta = sumar(todas.filter((f) => !f.pagado));
+    const totalTxt = [...total.porMoneda.entries()].map(([cur, val]) => money(val, cur)).join(" + ");
+    const totalBloque = totalTxt ? `💲Total: ${totalTxt}\n💲Total Pesos: ${total.conversion ? money(total.pesos, "ARS") : "—"}` : "";
     const todosLosBloques = totalBloque ? [...bloques, totalBloque] : bloques;
-    return { texto: `${emoji} ${tituloSeccion}\n${todosLosBloques.join("\n\n\n")}`, pesos: huboConversion ? pesos : 0 };
+    return {
+      texto: `${emoji} ${tituloSeccion}\n${todosLosBloques.join("\n\n\n")}`,
+      pesos: total.conversion ? total.pesos : 0,
+      falta: { texto: textoTotales(falta), pesos: falta.pesos, conversion: falta.conversion } as Falta,
+    };
   };
 
-  const ing = seccion("Ingresos", "🟢", ingresos);
-  const egr = seccion("Egresos", "🔴", egresos);
+  const ing = seccion("Ingresos", "🟢", ingresos, true);
+  const egr = seccion("Egresos", "🔴", egresos, false);
 
   const hoy = civilOf(new Date());
   const fechaHoy = `${String(hoy.d).padStart(2, "0")}/${String(hoy.m).padStart(2, "0")}/${hoy.y}`;
   const cotizacionLinea = mep != null ? `💲Cotización - ${fechaHoy} - Dólar ${NOMBRE_MOSTRAR.bolsa ?? "MEP"}: ${money(mep, "ARS")}` : "";
-  const diferenciaLinea = `💲Diferencia: ${money(ing.pesos - egr.pesos, "ARS")}`;
+  // Diferencia de TODO el período (ingresos − egresos, pagado y pendiente); debajo, aparte, lo que falta cobrar y pagar.
+  const diferenciaLinea = `💲Diferencia (ingresos − egresos del período): ${money(ing.pesos - egr.pesos, "ARS")}`;
+  const faltaLinea = `⏳ Falta cobrar: ${ing.falta.texto}\n⏳ Falta pagar: ${egr.falta.texto}`;
 
   // Sin blank line entre el título y la cotización (van pegados); sí una entre el resto de los
   // bloques (cabecera, secciones, diferencia).
   const encabezado = cotizacionLinea ? `📅 <b>${titulo}</b>\n${cotizacionLinea}` : `📅 <b>${titulo}</b>`;
   const cuerpo = [ing.texto, egr.texto].filter(Boolean).join("\n\n");
-  return [encabezado, cuerpo, diferenciaLinea, avisos.join("\n")].filter(Boolean).join("\n\n");
+  return [encabezado, cuerpo, diferenciaLinea, faltaLinea, avisos.join("\n")].filter(Boolean).join("\n\n");
 }
 
 /** Botones de "¿a qué tarjeta corresponde?" y "¿confirmás la importación?". */
@@ -399,16 +414,13 @@ export async function handleUpdate(update: TgUpdate) {
     await prisma.user.update({ where: { id: owner.id }, data: { telegramChatId: chatId, telegramCode: null } });
     return reply(
       `✅ Listo, quedaste vinculado como <b>${owner.name || owner.email}</b>.\n\n` +
-        "• Mandame una foto o PDF con el texto <code>#123</code> y lo adjunto a ese registro.\n" +
-        "• <code>/saldo</code> — tus saldos por cuenta.\n" +
-        "• <code>/pendientes</code> — comprobantes que mandaste sin número y siguen sin asociar.\n" +
-        "• <code>/proximos</code> — lo que vence o cobrás este mes.\n" +
-        "• <code>/proximomes</code> — lo mismo, para el mes que viene.",
+        "Mandame una foto o PDF con el texto <code>#123</code> y lo adjunto a ese registro.\n\n" +
+        ayudaTelegramHtml(),
     );
   }
 
   /* ---------- Commands ---------- */
-  if (/^\/start/i.test(text)) return reply("Ya estás vinculado ✅\nMandame una foto con <code>#123</code>, o usá <code>/saldo</code>, <code>/proximos</code>, <code>/proximomes</code> y <code>/pendientes</code> (comprobantes sin asociar).");
+  if (/^\/start/i.test(text)) return reply(`Ya estás vinculado ✅\nMandame una foto o PDF con el texto <code>#123</code> y lo adjunto a ese registro.\n\n${ayudaTelegramHtml()}`);
 
   if (/^\/pendientes/i.test(text)) return listarPendientes(chatId, user.id);
 

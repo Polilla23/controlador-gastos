@@ -70,7 +70,9 @@ function SaldoTooltip({ active, payload, currency, data }: { active?: boolean; p
 
 export function Sparkline({ data, currency }: { data: PuntoSaldo[]; currency: string }) {
   return (
-    <div className="h-16">
+    // flex-1 + items-center: si la card se estira, el gráfico queda en el medio del espacio libre.
+    <div className="flex min-h-16 flex-1 items-center pt-4">
+     <div className="h-16 w-full">
       <ResponsiveContainer>
         <AreaChart data={data}>
           <defs>
@@ -83,13 +85,15 @@ export function Sparkline({ data, currency }: { data: PuntoSaldo[]; currency: st
           <Tooltip content={<SaldoTooltip currency={currency} data={data} />} />
         </AreaChart>
       </ResponsiveContainer>
+     </div>
     </div>
   );
 }
 
 export function BalanceTrend({ data, currency }: { data: PuntoSaldo[]; currency: string }) {
   return (
-    <div className="mt-2 h-56">
+    // h-full + min-h: el gráfico crece con la card (nunca queda pegado arriba con vacío abajo).
+    <div className="h-full min-h-56 pt-2">
       <ResponsiveContainer>
         <AreaChart data={data}>
           <defs>
@@ -111,7 +115,7 @@ export function BalanceTrend({ data, currency }: { data: PuntoSaldo[]; currency:
 
 export function CashflowTrend({ data, currency }: { data: { label: string; income: number; expense: number; net: number }[]; currency: string }) {
   return (
-    <div className="mt-2 h-56">
+    <div className="h-full min-h-56 pt-2">
       <ResponsiveContainer>
         <ComposedChart data={data}>
           <CartesianGrid vertical={false} stroke={GRID} />
@@ -255,7 +259,8 @@ export function CategoryDonut({ slices, currency, empty }: { slices: Slice[]; cu
 export function InvestmentMixDonut({ mix }: { mix: { kind: string; nombre: string; color: string; valor: number; pct: number }[] }) {
   if (!mix.length) return <Empty>Todavía no tenés tenencias cargadas.</Empty>;
   return (
-    <div className="mt-2 flex flex-col items-center gap-4 sm:flex-row">
+    <div className="flex h-full flex-col items-center justify-center">
+     <div className="flex w-full flex-col items-center gap-4 sm:flex-row">
       <div className="h-40 w-40 shrink-0">
         <ResponsiveContainer>
           <PieChart>
@@ -282,13 +287,14 @@ export function InvestmentMixDonut({ mix }: { mix: { kind: string; nombre: strin
           </li>
         ))}
       </ul>
+     </div>
     </div>
   );
 }
 
 export function ForecastBars({ rows, currency }: { rows: { label: string; value: number; fill: string }[]; currency: string }) {
   return (
-    <div className="mt-3 h-48">
+    <div className="min-h-48 flex-1 pt-3">
       <ResponsiveContainer>
         <BarChart data={rows} margin={{ top: 8 }}>
           <CartesianGrid vertical={false} stroke={GRID} />

@@ -6,7 +6,7 @@ import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { prisma } from "./prisma";
 import { requireUserId } from "./auth";
-import { supabaseServer } from "./supabase";
+import { BUCKET, supabaseAdmin, supabaseServer } from "./supabase";
 import { adjuntarComprobante, removeStored } from "./storage";
 import { validarComprobante } from "./archivos";
 import { colorDeHija } from "./colores";
@@ -770,6 +770,39 @@ export async function uploadAttachment(fd: FormData): Promise<void | { error: st
     return { error: e instanceof Error ? e.message : "No se pudo subir el archivo" };
   }
   refresh();
+}
+
+/**
+ * Los comprobantes de un registro para mostrarlos en las pantallas de edición (miniatura, nombre,
+ * tamaño). Los adjuntos viejos no guardaron el tamaño: se lo pide una vez al storage y queda guardado.
+ */
+export async function adjuntosDeRegistro(transactionId: number): Promise<{ id: number; mimeType: string; name: string; size: number | null }[]> {
+  const userId = await requireUserId();
+  const filas = await prisma.attachment.findMany({
+    where: { transactionId, transaction: { userId } },
+    orderBy: { id: "asc" },
+  });
+  const out: { id: number; mimeType: string; name: string; size: number | null }[] = [];
+  for (const [i, a] of filas.entries()) {
+    let size = a.size;
+    if (size == null) {
+      try {
+        const archivo = a.storagePath.split("/").pop() ?? "";
+        const carpeta = a.storagePath.split("/").slice(0, -1).join("/");
+        const { data } = await supabaseAdmin().storage.from(BUCKET).list(carpeta, { search: archivo, limit: 5 });
+        const tam = data?.find((f) => f.name === archivo)?.metadata?.size;
+        if (typeof tam === "number") {
+          size = tam;
+          await prisma.attachment.update({ where: { id: a.id }, data: { size } });
+        }
+      } catch {
+        // sin tamaño: se muestra "—"
+      }
+    }
+    const ext = a.mimeType === "application/pdf" ? ".pdf" : a.mimeType === "image/png" ? ".png" : a.mimeType === "image/webp" ? ".webp" : ".jpg";
+    out.push({ id: a.id, mimeType: a.mimeType, name: a.name ?? `Comprobante ${i + 1}${ext}`, size });
+  }
+  return out;
 }
 
 export async function deleteAttachment(id: number) {

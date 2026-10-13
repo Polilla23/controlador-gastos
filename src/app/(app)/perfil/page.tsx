@@ -15,6 +15,7 @@ import DangerZone from "@/components/DangerZone";
 import SyncCalendarButton from "@/components/SyncCalendarButton";
 import BackupZip from "@/components/BackupZip";
 import BackupAutomatico from "@/components/BackupAutomatico";
+import { COMANDOS_TELEGRAM } from "@/lib/telegram-comandos";
 
 export default async function PerfilPage() {
   // requireUser() puede redirigir a /login (tira una excepción especial de Next para eso): tiene
@@ -134,15 +135,11 @@ async function renderPerfil(user: Awaited<ReturnType<typeof requireUser>>) {
                 Tu Telegram está vinculado. Mandale al bot una foto o PDF con el texto <code className="rounded bg-subtle px-1">#123</code> (el número del registro) y lo adjunta solo.
               </p>
               <ul className="mt-3 space-y-1 text-sm text-muted">
-                <li>
-                  <code className="rounded bg-subtle px-1">/saldo</code> — saldos de todas tus cuentas
-                </li>
-                <li>
-                  <code className="rounded bg-subtle px-1">/proximos</code> — lo que vence o cobrás este mes
-                </li>
-                <li>
-                  <code className="rounded bg-subtle px-1">/proximomes</code> — lo mismo, para el mes que viene
-                </li>
+                {COMANDOS_TELEGRAM.map((c) => (
+                  <li key={c.comando}>
+                    <code className="rounded bg-subtle px-1">{c.comando}</code> — {c.descripcion}
+                  </li>
+                ))}
               </ul>
               <div className="mt-4">
                 <ConfirmButton

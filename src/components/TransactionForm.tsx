@@ -6,6 +6,7 @@ import ActionForm from "./ActionForm";
 import CategorySelect, { type CategoryOpt } from "./CategorySelect";
 import MoneyInput from "./MoneyInput";
 import AttachmentDrop from "./AttachmentDrop";
+import AdjuntosExistentes from "./AdjuntosExistentes";
 import TagCombobox from "./TagCombobox";
 import { confirmPlannedComplete, saveTransaction } from "@/lib/actions";
 import { listarCiclos, type FilaCiclo } from "@/lib/actions-ciclos";
@@ -422,6 +423,7 @@ export default function TransactionForm({
         />
       </div>
 
+      {initial?.id != null && <AdjuntosExistentes transactionId={initial.id} />}
       <AttachmentDrop />
     </ActionForm>
   );
