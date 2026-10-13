@@ -227,16 +227,18 @@ export async function loadDashboard(
     });
 
   /* ---------- Próximo resumen de cada tarjeta ---------- */
-  // Respecto del FIN del período que se está mirando: el resumen que cierra a partir de esa fecha,
+  // Mirando el mes actual: el resumen que cierra a partir de HOY. Mirando un período pasado o futuro: el que
+  // cierra a partir del FIN de ese período.
   // con su período (desde el día siguiente al cierre anterior hasta su cierre), su vencimiento y lo
   // que se debe en cada moneda (consumos del resumen menos devoluciones; las transferencias no).
   const finPeriodo = new Date(range.end.getTime() - 1);
+  const referencia = range.start <= now && now < range.end ? now : finPeriodo;
   const porNombre = new Map<string, typeof allAccounts>();
   for (const a of allAccounts) if (a.type === "CREDIT_CARD" && a.closingDay) porNombre.set(a.name, [...(porNombre.get(a.name) ?? []), a]);
   const proximosRaw: { name: string; ids: number[]; mes: string; desde: Date; hasta: Date; vence: Date }[] = [];
   for (const [name, cuentas] of porNombre) {
-    const ciclos = await ciclosParaFechas(cuentas[0], [finPeriodo]);
-    const idx = ciclos.findIndex((c) => isoDay(c.closeDate) >= isoDay(finPeriodo));
+    const ciclos = await ciclosParaFechas(cuentas[0], [referencia]);
+    const idx = ciclos.findIndex((c) => isoDay(c.closeDate) >= isoDay(referencia));
     if (idx < 0) continue;
     const c = ciclos[idx];
     const anterior = idx > 0 ? ciclos[idx - 1] : null;
