@@ -1,6 +1,8 @@
 import { prisma } from "./prisma";
 import { adjuntarComprobante } from "./storage";
-import { descartarSuelto, guardarSuelto, limpiarSueltoDeTelegram, sugerirRegistros, vincularSuelto, type Hints } from "./comprobantes-sueltos";
+import { buscarExistente, descartarSuelto, guardarSuelto, limpiarSueltoDeTelegram, sugerirRegistros, vincularSuelto, type Hints } from "./comprobantes-sueltos";
+import { callbackCreacion, cancelarCreacion, hayCreacionActiva, iniciarCreacion, textoCreacion, type Io } from "./telegram-crear";
+import { describirLectura, lecturaActiva } from "./lectura-comprobantes";
 import { ciclosParaFechas } from "./ciclos-server";
 import { money, fmtDate, fmtDateTime, fmtDayMonth } from "./format";
 import { APP_TZ, addDays, civil as civilOf, fromCivil, startOfDay } from "./tz";
@@ -265,6 +267,15 @@ async function proximosDelPeriodo(userId: string, titulo: string, start: Date, e
   return [encabezado, cuerpo, diferenciaLinea, faltaLinea, avisos.join("\n")].filter(Boolean).join("\n\n");
 }
 
+/** Lo que necesita la conversación de «crear registro» para hablar con este chat. */
+function ioDe(chatId: string, messageId?: number): Io {
+  return {
+    send: (t) => sendText(chatId, t),
+    buttons: (t, rows) => sendButtons(chatId, t, rows),
+    edit: (t) => editText(chatId, messageId, t),
+  };
+}
+
 /** Botones de "¿a qué tarjeta corresponde?" y "¿confirmás la importación?". */
 async function handleCallback(cq: NonNullable<TgUpdate["callback_query"]>) {
   const chatId = cq.message ? String(cq.message.chat.id) : null;
@@ -274,6 +285,18 @@ async function handleCallback(cq: NonNullable<TgUpdate["callback_query"]>) {
 
   const user = await prisma.user.findUnique({ where: { telegramChatId: chatId } });
   if (!user) return answerCallback(cq.id, "Sesión inválida, volvé a vincular la cuenta.");
+
+  // Conversación «crear registro nuevo» desde un comprobante.
+  const mNuevo = data.match(/^cr:new:(\d+)$/);
+  if (mNuevo) {
+    await answerCallback(cq.id);
+    await editText(chatId, messageId, "➕ Vamos a crear un registro nuevo con ese comprobante.");
+    return iniciarCreacion(ioDe(chatId, messageId), user.id, Number(mNuevo[1]));
+  }
+  if (data.startsWith("cr:")) {
+    const aviso = await callbackCreacion(ioDe(chatId, messageId), user.id, data);
+    return answerCallback(cq.id, aviso);
+  }
 
   const mAcc = data.match(/^simp_acct:(\d+):(\d+)$/);
   if (mAcc) {
@@ -359,11 +382,38 @@ async function recibirSuelto(chatId: string, userId: string, fileId: string, nom
     return sendText(chatId, `⚠️ ${e instanceof Error ? e.message : "No pude guardar el archivo"}`);
   }
   const hints = (pendiente.hints as Hints | null) ?? null;
-  const sugeridos = await sugerirRegistros(userId, hints, 5);
-  const filas = sugeridos.map((s) => [{ text: `#${s.id} ${(s.description || s.counterparty || "sin descripción").slice(0, 24)} · ${money(s.amount, s.currency)}`, data: `adj:${pendiente.id}:${s.id}` }]);
+  const lectura = hints?.lectura ?? null;
+  const [sugeridos, existente] = await Promise.all([sugerirRegistros(userId, hints, 4), buscarExistente(userId, pendiente)]);
+
+  const partes: string[] = ["📎 Guardé el comprobante."];
+  if (lectura) partes.push(`🔎 <b>Leí:</b>\n${describirLectura(lectura).map((l) => `• ${l}`).join("\n")}`);
+  else if (!lecturaActiva()) partes.push("<i>No puedo leer el contenido: la lectura de imágenes no está activada (ver GEMINI_API_KEY).</i>");
+  else partes.push("<i>No pude leer datos de este archivo.</i>");
+
+  // 1) ¿Ya existe? Mismo archivo, mismo número de operación o mismos datos que uno ya cargado.
+  const filas: { text: string; data: string }[][] = [];
+  if (existente) {
+    const t = existente.transaccion;
+    partes.push(
+      t
+        ? `♻️ <b>Ya existe:</b> ${existente.motivo}. Está asociado al registro <b>#${t.id}</b> (${t.description || "sin descripción"} · ${money(t.amount, t.currency)} · ${fmtDate(t.date)}).`
+        : `♻️ <b>Ya existe:</b> ${existente.motivo}.`,
+    );
+    filas.push([{ text: "🗑 Descartar este duplicado", data: `adj_del:${pendiente.id}` }]);
+  }
+
+  // 2) Asociar a un registro existente (ordenados por monto exacto, fecha, descripción parecida).
+  if (sugeridos.length) {
+    partes.push(`¿A cuál corresponde?\n${sugeridos.map((s, i) => `${i + 1}. <b>#${s.id}</b> ${s.description || s.counterparty || "sin descripción"} · ${money(s.amount, s.currency)} — <i>${s.motivo}</i>`).join("\n")}`);
+    for (const s of sugeridos) filas.push([{ text: `🔗 #${s.id} ${(s.description || s.counterparty || "sin descripción").slice(0, 22)} · ${money(s.amount, s.currency)}`, data: `adj:${pendiente.id}:${s.id}` }]);
+  } else {
+    partes.push("No encontré registros sin comprobante que coincidan.");
+  }
+  // 3) Crear un registro nuevo con lo leído   4) dejarlo en la bandeja.
+  filas.push([{ text: "➕ Crear registro nuevo", data: `cr:new:${pendiente.id}` }]);
   filas.push([{ text: "📥 Dejar en la bandeja", data: `adj_no:${pendiente.id}` }]);
-  const base = hints && (hints.amounts.length || hints.dates.length) ? "Leí el PDF y puse primero los que coinciden." : "No puedo leer el monto de una imagen: te muestro los registros recientes que todavía no tienen comprobante.";
-  return sendButtons(chatId, `📎 Guardé el comprobante. ¿A qué registro corresponde?\n<i>${base}</i>\n\nTambién podés responder a ese archivo con el número, por ejemplo <code>#123</code>.`, filas);
+  partes.push("<i>También podés responder a ese archivo con el número, por ejemplo <code>#123</code>.</i>");
+  return sendButtons(chatId, partes.join("\n\n"), filas);
 }
 
 /**
@@ -380,17 +430,20 @@ async function listarPendientes(chatId: string, userId: string) {
   for (const p of pendientes) {
     const hints = (p.hints as Hints | null) ?? null;
     const sugeridos = await sugerirRegistros(userId, hints, 3);
-    const leido =
-      hints && (hints.amounts.length || hints.dates.length)
+    const leido = hints?.lectura
+      ? `\n🔎 ${describirLectura(hints.lectura).join(" · ")}`
+      : hints && (hints.amounts.length || hints.dates.length)
         ? `\nLeí del PDF: ${[hints.amounts.length ? `montos ${hints.amounts.slice(0, 3).map((m) => money(m, "ARS")).join(", ")}` : "", hints.dates.length ? `fechas ${hints.dates.slice(0, 3).map((d) => fmtDayMonth(new Date(`${d}T12:00:00Z`))).join(", ")}` : ""].filter(Boolean).join(" · ")}`
         : "";
     const origen = p.source === "TELEGRAM" ? (p.tgMessageId ? "" : " (mandado antes de que el bot guardara el mensaje: no puedo citarlo)") : p.source === "SHARE" ? " (compartido desde el celular)" : " (subido desde la web)";
     const filas = sugeridos.map((s) => [{ text: `#${s.id} ${(s.description || s.counterparty || "sin descripción").slice(0, 22)} · ${money(s.amount, s.currency)}`, data: `adj:${p.id}:${s.id}` }]);
+    filas.push([{ text: "➕ Crear registro nuevo", data: `cr:new:${p.id}` }]);
     filas.push([
       { text: "📥 Dejar", data: `adj_no:${p.id}` },
       { text: "🗑 Descartar", data: `adj_del:${p.id}` },
     ]);
-    await sendButtons(chatId, `${p.mimeType === "application/pdf" ? "📄 PDF" : "🖼 Imagen"} enviado el <b>${fmtDateTime(p.createdAt)}</b>${origen}${leido}\n¿A qué registro corresponde?`, filas, p.tgMessageId ?? undefined);
+    const porque = sugeridos.length ? `\n${sugeridos.map((s) => `• #${s.id}: ${s.motivo}`).join("\n")}` : "";
+    await sendButtons(chatId, `${p.mimeType === "application/pdf" ? "📄 PDF" : "🖼 Imagen"} enviado el <b>${fmtDateTime(p.createdAt)}</b>${origen}${leido}${porque}\n¿A qué registro corresponde?`, filas, p.tgMessageId ?? undefined);
   }
 }
 
@@ -422,6 +475,10 @@ export async function handleUpdate(update: TgUpdate) {
         ayudaTelegramHtml(),
     );
   }
+
+  /* ---------- Conversación «crear registro nuevo» en curso ---------- */
+  if (text.startsWith("/")) await cancelarCreacion(user.id); // un comando nuevo corta la conversación
+  else if (!msg.photo?.length && !msg.document && (await hayCreacionActiva(user.id)) && (await textoCreacion(ioDe(chatId), user.id, text))) return;
 
   /* ---------- Commands ---------- */
   if (/^\/start/i.test(text)) return reply(`Ya estás vinculado ✅\nMandame una foto o PDF con el texto <code>#123</code> y lo adjunto a ese registro.\n\n${ayudaTelegramHtml()}`);

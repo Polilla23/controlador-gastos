@@ -46,6 +46,7 @@ model User {
   investMoves          InvestMove[]
   sharedGroupLinks     ShareCollaborator[]
   pendingAttachments   PendingAttachment[]
+  telegramSesion       TelegramSesion?
   statementImports     StatementImport[]
 }
 
@@ -607,6 +608,8 @@ model Attachment {
   source        String      @default("WEB") // WEB | TELEGRAM
   name          String? // nombre original del archivo (si se conoce)
   size          Int? // bytes (los anteriores se completan al listarlos)
+  sha256        String? // huella del archivo, para detectar el mismo comprobante cargado dos veces
+  lectura       Json? // lo leído de la imagen/PDF (monto, fecha, comercio, operación…), si se leyó
   createdAt     DateTime    @default(now())
 }
 
@@ -672,6 +675,16 @@ model StatementImportItem {
   @@index([importId])
 }
 
+/// Conversación en curso con el bot de Telegram (ej. «crear registro nuevo» paso a paso). Una por usuario.
+model TelegramSesion {
+  userId    String   @id
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind      String // CREAR
+  step      String
+  data      Json
+  updatedAt DateTime @updatedAt
+}
+
 /// Comprobante que llegó suelto (pegado en la bandeja, compartido desde el celular o mandado al bot sin número)
 /// y todavía no está asociado a ningún registro.
 model PendingAttachment {
@@ -686,8 +699,9 @@ model PendingAttachment {
   tgFileId     String?
   /// Telegram: id del mensaje original, para responderle citándolo desde /pendientes.
   tgMessageId  Int?
-  /// Montos y fechas leídos del PDF (no se puede leer una imagen sin OCR): { amounts: number[], dates: string[] }
+  /// Montos y fechas leídos: { amounts: number[], dates: string[], lectura?: Lectura } (ver lectura-comprobantes.ts)
   hints        Json?
+  sha256       String? // huella del archivo, para detectar el mismo comprobante cargado dos veces
   createdAt    DateTime @default(now())
 
   @@index([userId, createdAt])
