@@ -1,0 +1,20 @@
+# Actualizaciones automáticas de dependencias: Dependabot abre un PR cuando hay una versión nueva o un
+# parche de seguridad. Los menores/parches van agrupados para no llenar de PRs; los mayores, aparte.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: America/Argentina/Buenos_Aires
+    open-pull-requests-limit: 5
+    groups:
+      menores-y-parches:
+        update-types: [minor, patch]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 3

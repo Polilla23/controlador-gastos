@@ -25,7 +25,7 @@
     "fflate": "^0.8.3",
     "googleapis": "^144.0.0",
     "lucide-react": "^1.33.0",
-    "next": "16.3.8",
+    "next": "^16.4.4",
     "pdfjs-dist": "^4.10.38",
     "prisma": "^6.12.0",
     "react": "19.2.8",

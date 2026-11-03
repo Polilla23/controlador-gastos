@@ -1,0 +1,49 @@
+name: Seguridad
+
+# Controles automáticos de seguridad: vulnerabilidades en dependencias y secretos filtrados en el código.
+# Corre en cada PR, en cada push a main y una vez por semana (aparecen avisos nuevos aunque el código no cambie).
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "0 12 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: seguridad-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dependencias:
+    name: Dependencias vulnerables
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - name: Instalar dependencias (sin ejecutar scripts)
+        run: npm ci --ignore-scripts
+      # Falla con vulnerabilidades altas o críticas en lo que va a producción. Las moderadas se ven en el log
+      # y se revisan con Dependabot (ver SECURITY.md para las aceptadas a propósito).
+      - name: npm audit (producción)
+        run: npm audit --omit=dev --audit-level=high
+
+  secretos:
+    name: Secretos en el código
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # todo el historial: un secreto borrado después sigue estando en commits viejos
+          persist-credentials: false
+      - name: gitleaks
+        run: docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:v8.21.2 detect --source /repo --no-banner --redact --verbose
